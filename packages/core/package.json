@@ -1,0 +1,35 @@
+{
+	"name": "@agentokratia/guardian-core",
+	"version": "0.1.0",
+	"description": "Type definitions and interfaces for Guardian threshold wallet",
+	"license": "AGPL-3.0-only",
+	"author": "Agentokratia <hello@agentokratia.com>",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/agentokratia/guardian-wallet.git",
+		"directory": "packages/core"
+	},
+	"homepage": "https://github.com/agentokratia/guardian-wallet",
+	"bugs": "https://github.com/agentokratia/guardian-wallet/issues",
+	"keywords": ["threshold", "wallet", "mpc", "ecdsa", "ethereum", "agent", "signing", "types"],
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist"],
+	"engines": { "node": ">=20.0.0" },
+	"publishConfig": { "access": "public" },
+	"scripts": {
+		"build": "tsc",
+		"lint": "biome check src/",
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"devDependencies": {}
+}

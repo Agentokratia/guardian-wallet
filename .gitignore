@@ -1,0 +1,40 @@
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Share files (NEVER commit these)
+*.share.enc
+
+# Vault
+vault-data/
+
+# Docs (internal plans, architecture, PRDs)
+docs/
+
+# Scripts (migration/internal)
+scripts/
+
+# Claude
+CLAUDE.md
+.claude/

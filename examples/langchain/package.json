@@ -1,0 +1,19 @@
+{
+	"name": "guardian-langchain-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"start": "tsx agent.ts"
+	},
+	"dependencies": {
+		"@agentokratia/guardian-signer": "^0.1.0",
+		"@langchain/anthropic": "^0.3.0",
+		"@langchain/core": "^0.3.0",
+		"langchain": "^0.3.0",
+		"viem": "^2.21.0",
+		"zod": "^3.23.0"
+	},
+	"devDependencies": {
+		"tsx": "^4.19.0"
+	}
+}

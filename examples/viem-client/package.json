@@ -1,0 +1,15 @@
+{
+	"name": "guardian-viem-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"start": "tsx send.ts"
+	},
+	"dependencies": {
+		"@agentokratia/guardian-signer": "^0.1.0",
+		"viem": "^2.21.0"
+	},
+	"devDependencies": {
+		"tsx": "^4.19.0"
+	}
+}

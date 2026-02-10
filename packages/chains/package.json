@@ -1,0 +1,39 @@
+{
+	"name": "@agentokratia/guardian-chains",
+	"version": "0.1.0",
+	"description": "Ethereum chain adapter for Guardian threshold wallet",
+	"license": "AGPL-3.0-only",
+	"author": "Agentokratia <hello@agentokratia.com>",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/agentokratia/guardian-wallet.git",
+		"directory": "packages/chains"
+	},
+	"homepage": "https://github.com/agentokratia/guardian-wallet",
+	"bugs": "https://github.com/agentokratia/guardian-wallet/issues",
+	"keywords": ["threshold", "wallet", "ethereum", "chain", "viem", "agent"],
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist"],
+	"engines": { "node": ">=20.0.0" },
+	"publishConfig": { "access": "public" },
+	"scripts": {
+		"build": "tsc",
+		"lint": "biome check src/",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@agentokratia/guardian-core": "workspace:*",
+		"viem": "^2.21.0"
+	},
+	"devDependencies": {}
+}

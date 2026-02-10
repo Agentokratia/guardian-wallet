@@ -1,0 +1,32 @@
+{
+  "name": "guardian-wallet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agents deserve wallets without private keys — 2-of-3 threshold ECDSA signing for AI agents",
+  "author": "Agentokratia",
+  "license": "AGPL-3.0",
+  "homepage": "https://github.com/agentokratia/guardian-wallet",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentokratia/guardian-wallet.git"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "tsx": "^4.19.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
