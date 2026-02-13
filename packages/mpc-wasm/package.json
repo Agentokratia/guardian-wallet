@@ -1,0 +1,27 @@
+{
+	"name": "@agentokratia/guardian-mpc-wasm",
+	"version": "0.1.0",
+	"description": "CGGMP24 threshold ECDSA WASM module for Guardian Wallet",
+	"license": "AGPL-3.0-only",
+	"author": "Agentokratia <hello@agentokratia.com>",
+	"type": "module",
+	"main": "./pkg/guardian_mpc_wasm.js",
+	"types": "./pkg/guardian_mpc_wasm.d.ts",
+	"exports": {
+		".": {
+			"types": "./pkg/guardian_mpc_wasm.d.ts",
+			"import": "./pkg/guardian_mpc_wasm.js"
+		},
+		"./web": {
+			"types": "./pkg-web/guardian_mpc_wasm.d.ts",
+			"import": "./pkg-web/guardian_mpc_wasm.js"
+		}
+	},
+	"files": ["pkg", "pkg-web"],
+	"scripts": {
+		"build": "bash build-node.sh && bash build-web.sh",
+		"build:node": "bash build-node.sh",
+		"build:web": "bash build-web.sh",
+		"clean": "rm -rf pkg pkg-web target"
+	}
+}

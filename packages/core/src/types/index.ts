@@ -1,3 +1,4 @@
+export type { KeyMaterial } from './key-material.js';
 export type { Share, ShareFile } from './share.js';
 export type { Signer } from './signer.js';
 export type {

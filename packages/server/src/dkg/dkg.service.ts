@@ -4,16 +4,14 @@ import {
 	Injectable,
 	Logger,
 	NotFoundException,
-	OnModuleDestroy,
+	type OnModuleInit,
 } from '@nestjs/common';
-import type { DKGRoundResult, IThresholdScheme, IVaultStore } from '@agentokratia/guardian-core';
-import { DKLs23Scheme } from '@agentokratia/guardian-schemes';
+import type { IVaultStore } from '@agentokratia/guardian-core';
+import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { wipeBuffer } from '../common/crypto-utils.js';
 import { VAULT_STORE } from '../common/vault.module.js';
 import { SignerRepository } from '../signers/signer.repository.js';
-
-const DKG_SESSION_TTL_MS = 120_000; // 2 minutes
-const DKG_CLEANUP_INTERVAL_MS = 30_000;
+import { AuxInfoPoolService } from './aux-info-pool.service.js';
 
 export interface InitDKGInput {
 	signerId: string;
@@ -22,7 +20,6 @@ export interface InitDKGInput {
 export interface InitDKGOutput {
 	sessionId: string;
 	signerId: string;
-	round: number;
 }
 
 export interface FinalizeDKGInput {
@@ -33,41 +30,84 @@ export interface FinalizeDKGInput {
 export interface FinalizeDKGOutput {
 	signerId: string;
 	ethAddress: string;
+	/** Base64-encoded JSON: { coreShare, auxInfo } */
 	signerShare: string;
+	/** Base64-encoded JSON: { coreShare, auxInfo } */
 	userShare: string;
 }
 
+/**
+ * CGGMP24 DKG service.
+ *
+ * Runs a complete two-phase DKG ceremony via WASM in a single call:
+ * - Phase A: aux_info_gen (Paillier primes — expensive)
+ * - Phase B: keygen (threshold ECDSA key shares — lightweight)
+ *
+ * All 3 parties run locally inside the WASM module.
+ *
+ * Distribution:
+ * - Share[0] (signer): returned to client for encrypted .share.enc file
+ * - Share[1] (server): stored in Vault as JSON { coreShare, auxInfo }
+ * - Share[2] (user): returned to client for wallet encryption
+ */
 @Injectable()
-export class DKGService implements OnModuleDestroy {
+export class DKGService implements OnModuleInit {
 	private readonly logger = new Logger(DKGService.name);
-	private readonly scheme: IThresholdScheme;
-	/** Stores round 1 outgoing messages so finalize() can feed them to round 2. */
-	private readonly pendingOutgoing = new Map<string, { messages: Uint8Array[]; createdAt: number }>();
-	private readonly cleanupTimer: ReturnType<typeof setInterval>;
+	private readonly scheme = new CGGMP24Scheme();
+
+	// Track pending DKG sessions (validated signer IDs awaiting finalization)
+	private readonly pendingSessions = new Map<
+		string,
+		{ signerId: string; createdAt: number }
+	>();
 
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
 		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(AuxInfoPoolService) private readonly auxInfoPool: AuxInfoPoolService,
 	) {
-		this.scheme = new DKLs23Scheme();
-		this.cleanupTimer = setInterval(() => this.cleanupExpiredSessions(), DKG_CLEANUP_INTERVAL_MS);
-	}
-
-	onModuleDestroy(): void {
-		clearInterval(this.cleanupTimer);
-		this.pendingOutgoing.clear();
-	}
-
-	private cleanupExpiredSessions(): void {
-		const now = Date.now();
-		for (const [id, entry] of this.pendingOutgoing) {
-			if (now - entry.createdAt > DKG_SESSION_TTL_MS) {
-				this.pendingOutgoing.delete(id);
-				this.logger.debug(`Expired DKG session ${id} cleaned up`);
+		// Cleanup expired sessions every 30s
+		setInterval(() => {
+			const now = Date.now();
+			for (const [id, entry] of this.pendingSessions) {
+				if (now - entry.createdAt > 180_000) {
+					this.pendingSessions.delete(id);
+				}
 			}
-		}
+		}, 30_000);
 	}
 
+	/**
+	 * Load caches and initialize WASM for signing on startup.
+	 * Triggers background AuxInfo generation if none cached.
+	 */
+	async onModuleInit(): Promise<void> {
+		const loaded = await this.scheme.loadCachedPrimes();
+		const hasFast = await this.scheme.hasPrimesReady();
+		if (hasFast) {
+			this.logger.log(`Loaded ${loaded} cache items — DKG acceleration ready`);
+		} else {
+			this.logger.warn('No cached AuxInfo or primes — starting background generation');
+			await this.scheme.ensureAuxInfoCached();
+		}
+
+		// Init WASM for signing (DKG uses native binary, signing still needs WASM)
+		try {
+			await this.scheme.initWasm();
+			this.logger.log('WASM module initialized for signing');
+		} catch (err) {
+			this.logger.warn(`WASM init failed: ${String(err)} — signing will not work`);
+		}
+
+		const poolStatus = this.auxInfoPool.getStatus();
+		this.logger.log(`AuxInfo pool: ${poolStatus.size}/${poolStatus.target} entries`);
+	}
+
+	/**
+	 * Initialize DKG: validate the signer and return a session ID.
+	 *
+	 * The actual DKG computation happens in finalize().
+	 */
 	async init(input: InitDKGInput): Promise<InitDKGOutput> {
 		const signer = await this.signerRepo.findById(input.signerId);
 		if (!signer) {
@@ -78,66 +118,93 @@ export class DKGService implements OnModuleDestroy {
 		}
 
 		const sessionId = crypto.randomUUID();
-
-		const result: DKGRoundResult = await this.scheme.dkg(sessionId, 1, []);
-
-		// Store round 1 outgoing — finalize() will feed them to round 2.
-		// All 3 DKG parties are server-side, so no client round-trips needed.
-		this.pendingOutgoing.set(sessionId, { messages: result.outgoing, createdAt: Date.now() });
+		this.pendingSessions.set(sessionId, {
+			signerId: input.signerId,
+			createdAt: Date.now(),
+		});
 
 		return {
 			sessionId,
 			signerId: input.signerId,
-			round: 1,
 		};
 	}
 
+	/**
+	 * Finalize DKG: run the complete CGGMP24 ceremony and distribute shares.
+	 *
+	 * This is a blocking operation (~30-120s) that runs the full two-phase DKG
+	 * inside the WASM module. All 3 parties execute locally with automatic
+	 * message routing.
+	 */
 	async finalize(input: FinalizeDKGInput): Promise<FinalizeDKGOutput> {
 		const signer = await this.signerRepo.findById(input.signerId);
 		if (!signer) {
 			throw new NotFoundException(`Signer not found: ${input.signerId}`);
 		}
 
-		// Get the round 1 outgoing messages stored by init()
-		const pending = this.pendingOutgoing.get(input.sessionId);
+		const pending = this.pendingSessions.get(input.sessionId);
 		if (!pending) {
 			throw new BadRequestException(`No pending DKG session: ${input.sessionId}`);
 		}
-		this.pendingOutgoing.delete(input.sessionId);
-		let incoming = pending.messages;
+		if (pending.signerId !== input.signerId) {
+			throw new BadRequestException('Session/signer mismatch');
+		}
+		this.pendingSessions.delete(input.sessionId);
 
-		// Run rounds 2-5 internally. All 3 parties are server-side,
-		// so each round's outgoing feeds directly into the next round's incoming.
-		let result: DKGRoundResult = { outgoing: [], finished: false };
-		for (let round = 2; round <= 5; round++) {
-			result = await this.scheme.dkg(input.sessionId, round, incoming);
-			incoming = result.outgoing;
+		let poolAuxInfo: string | null = null;
+		try {
+			poolAuxInfo = await this.auxInfoPool.take();
+		} catch (err) {
+			this.logger.warn(`Pool take() failed: ${String(err)} — falling back to PrimeCache`);
 		}
 
-		if (!result.finished || !result.shares || !result.publicKey) {
-			throw new BadRequestException('DKG did not complete — missing shares or public key');
+		if (poolAuxInfo) {
+			this.logger.log(`Starting DKG for signer ${input.signerId}... (pool AuxInfo — ~1s)`);
+		} else {
+			const hasCachedPrimes = await this.scheme.hasPrimesReady();
+			this.logger.log(
+				`Starting DKG for signer ${input.signerId}... (no pool, primes: ${hasCachedPrimes ? 'yes' : 'no'})`,
+			);
 		}
 
-		const shares = result.shares;
+		const startTime = Date.now();
 
-		if (shares.length < 3) {
-			throw new BadRequestException(`Expected 3 shares, got ${shares.length}`);
+		const dkgResult = await this.scheme.runDkg(
+			3,
+			2,
+			poolAuxInfo ? { cachedAuxInfo: poolAuxInfo } : undefined,
+		);
+
+		const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+		this.logger.log(`DKG complete in ${elapsed}s — ${dkgResult.shares.length} shares generated`);
+
+		if (dkgResult.shares.length < 3) {
+			throw new BadRequestException(
+				`Expected 3 shares, got ${dkgResult.shares.length}`,
+			);
 		}
 
-		const signerShare = shares[0] as Uint8Array; // Index 0 -> signer share (participant 1)
-		const serverShare = shares[1] as Uint8Array; // Index 1 -> server share (participant 2)
-		const userShare = shares[2] as Uint8Array; // Index 2 -> user share (participant 3)
+		// Bundle each party's key material: { coreShare: base64, auxInfo: base64 }
+		const signerKeyMaterial = bundleKeyMaterial(
+			dkgResult.shares[0]!.coreShare,
+			dkgResult.shares[0]!.auxInfo,
+		);
+		const serverKeyMaterial = bundleKeyMaterial(
+			dkgResult.shares[1]!.coreShare,
+			dkgResult.shares[1]!.auxInfo,
+		);
+		const userKeyMaterial = bundleKeyMaterial(
+			dkgResult.shares[2]!.coreShare,
+			dkgResult.shares[2]!.auxInfo,
+		);
 
 		try {
-			// Derive Ethereum address from public key
-			const ethAddress = this.scheme.deriveAddress(result.publicKey);
+			// Derive Ethereum address from shared public key
+			const ethAddress = this.scheme.deriveAddress(dkgResult.publicKey);
 
-			// Store server share in Vault
+			// Store server key material in Vault
 			const vaultPath = input.signerId;
-			await this.vault.storeShare(vaultPath, serverShare);
-
-			// User share goes to the CLIENT — never stored server-side.
-			// Only the server share lives in Vault.
+			await this.vault.storeShare(vaultPath, serverKeyMaterial);
 
 			// Update signer record
 			await this.signerRepo.update(input.signerId, {
@@ -148,23 +215,37 @@ export class DKGService implements OnModuleDestroy {
 
 			this.logger.log(`DKG finalized for signer ${input.signerId}, address: ${ethAddress}`);
 
-			// Return both signer + user shares to the client.
-			// Server share stays in Vault — never returned.
+			// Return signer + user key material bundles.
+			// Server key material stays in Vault — never returned.
 			return {
 				signerId: input.signerId,
 				ethAddress,
-				signerShare: Buffer.from(signerShare).toString('base64'),
-				userShare: Buffer.from(userShare).toString('base64'),
+				signerShare: Buffer.from(signerKeyMaterial).toString('base64'),
+				userShare: Buffer.from(userKeyMaterial).toString('base64'),
 			};
 		} finally {
-			// CRITICAL: Wipe all share buffers
-			wipeBuffer(serverShare);
-			wipeBuffer(signerShare);
-			wipeBuffer(userShare);
-			if (result.publicKey) {
-				wipeBuffer(result.publicKey);
+			// CRITICAL: Wipe all key material buffers
+			wipeBuffer(serverKeyMaterial);
+			wipeBuffer(signerKeyMaterial);
+			wipeBuffer(userKeyMaterial);
+			for (const share of dkgResult.shares) {
+				wipeBuffer(share.coreShare);
+				wipeBuffer(share.auxInfo);
 			}
-			this.logger.debug('All share buffers wiped');
+			wipeBuffer(dkgResult.publicKey);
+			this.logger.debug('All key material buffers wiped');
 		}
 	}
+}
+
+/**
+ * Bundle a CoreKeyShare + AuxInfo into a single JSON blob.
+ * Format: { "coreShare": "<base64>", "auxInfo": "<base64>" }
+ */
+function bundleKeyMaterial(coreShare: Uint8Array, auxInfo: Uint8Array): Uint8Array {
+	const json = JSON.stringify({
+		coreShare: Buffer.from(coreShare).toString('base64'),
+		auxInfo: Buffer.from(auxInfo).toString('base64'),
+	});
+	return new Uint8Array(Buffer.from(json, 'utf-8'));
 }

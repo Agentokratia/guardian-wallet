@@ -128,7 +128,7 @@ export async function loadShareFromFile(path: string, passphrase: string): Promi
 	const fileBuffer = await readFile(path);
 
 	// Try to detect if this is a raw base64 share (downloaded from UI without encryption)
-	const raw = await tryLoadRawBase64Share(fileBuffer);
+	const raw = tryLoadRawBase64Share(fileBuffer);
 	if (raw) return raw;
 
 	// Otherwise, treat as encrypted binary format
@@ -194,35 +194,34 @@ export async function loadShareFromFile(path: string, passphrase: string): Promi
 }
 
 /**
- * Try to interpret a file buffer as a raw base64 share string
+ * Try to interpret a file buffer as a raw base64 key material string
  * (as downloaded from the dashboard UI, which writes the DKG output directly).
- * Returns null if the buffer isn't valid base64 or doesn't decode to valid keyshare bytes.
+ * Returns null if the buffer isn't valid base64 or doesn't decode to valid JSON key material.
  */
-async function tryLoadRawBase64Share(fileBuffer: Buffer): Promise<Share | null> {
+function tryLoadRawBase64Share(fileBuffer: Buffer): Share | null {
 	try {
 		const text = fileBuffer.toString('utf-8').trim();
 		// Base64 strings only contain [A-Za-z0-9+/=]
 		if (!/^[A-Za-z0-9+/=\s]+$/.test(text)) return null;
 		const data = Buffer.from(text, 'base64');
-		// DKLs23 keyshares are at least 32 bytes
 		if (data.length < 32) return null;
 
-		// Extract public key from the WASM keyshare so deriveAddress() works
+		// Try to parse as JSON key material { coreShare, auxInfo }
 		let publicKey = new Uint8Array(0);
 		try {
-			const wasm = await import('@silencelaboratories/dkls-wasm-ll-node');
-			const ks = wasm.Keyshare.fromBytes(new Uint8Array(data));
-			publicKey = new Uint8Array(ks.publicKey);
+			const json = JSON.parse(data.toString('utf-8')) as { coreShare?: string; auxInfo?: string };
+			if (!json.coreShare || !json.auxInfo) return null;
+			// Valid key material format — publicKey will be derived later by the scheme
 		} catch {
-			// WASM not available — publicKey stays empty, address derivation will
-			// fail but signing still works (server knows the address).
+			// Not valid JSON key material — unsupported format
+			return null;
 		}
 
 		return {
 			data: new Uint8Array(data),
 			participantIndex: 1,
 			publicKey,
-			scheme: 'dkls23' as Share['scheme'],
+			scheme: 'cggmp24' as Share['scheme'],
 			curve: 'secp256k1' as Share['curve'],
 		};
 	} catch {
@@ -237,9 +236,6 @@ async function tryLoadRawBase64Share(fileBuffer: Buffer): Promise<Share | null> 
 /**
  * Zero-fill the share data in memory. Call this in a `finally` block after
  * every signing operation to uphold the core invariant.
- *
- * Note: the Uint8Array contents are mutable even though the `Share` fields
- * are declared `readonly` (that only prevents property reassignment).
  */
 export function wipeShare(share: Share): void {
 	(share.data as Uint8Array).fill(0);

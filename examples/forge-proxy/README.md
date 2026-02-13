@@ -29,7 +29,7 @@ chmod +x deploy.sh
 
 1. `gw proxy` starts an RPC proxy on port 8545
 2. The proxy intercepts `eth_sendTransaction` and `eth_signTransaction` calls
-3. Each transaction is signed via the interactive DKLs23 protocol (2-of-3 MPC)
+3. Each transaction is signed via the interactive CGGMP24 protocol (2-of-3 MPC)
 4. The Guardian server enforces all configured policies before co-signing
 5. Forge/Cast see a standard JSON-RPC endpoint — no code changes needed
 

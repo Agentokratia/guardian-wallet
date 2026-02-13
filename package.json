@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Agents deserve wallets without private keys — 2-of-3 threshold ECDSA signing for AI agents",
   "author": "Agentokratia",
-  "license": "AGPL-3.0",
+  "license": "AGPL-3.0-only",
   "homepage": "https://github.com/agentokratia/guardian-wallet",
   "repository": {
     "type": "git",

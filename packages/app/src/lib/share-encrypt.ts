@@ -22,11 +22,11 @@ export async function encryptShareForCLI(
 ): Promise<Uint8Array> {
 	const encoder = new TextEncoder();
 
-	// The share is base64 from DKG — decode it to get the raw keyshare bytes,
+	// The share is base64 from DKG — decode it to get the raw key material bytes,
 	// then wrap it in the same JSON format ShareLoader expects
 	const serialized = JSON.stringify({
 		participantIndex: 1,
-		scheme: 'dkls23',
+		scheme: 'cggmp24',
 		curve: 'secp256k1',
 		publicKeyBase64: '', // Will be filled by caller if needed
 		dataBase64: shareBase64,

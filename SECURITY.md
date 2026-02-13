@@ -23,7 +23,7 @@ Please include as much detail as possible: steps to reproduce, affected versions
 | `@agentokratia/guardian-cli` | `gw` command-line tool |
 | `@agentokratia/guardian-core` | Shared interfaces and types |
 | `@agentokratia/guardian-chains` | Chain-specific transaction logic (Ethereum) |
-| `@agentokratia/guardian-schemes` | Threshold signing implementations (DKLs23) |
+| `@agentokratia/guardian-schemes` | Threshold signing implementations (CGGMP24) |
 
 ### Out of Scope
 

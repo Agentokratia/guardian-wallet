@@ -25,6 +25,7 @@ export type {
 	EvmFunctionCriterion,
 	EvmNetworkCriterion,
 	IpAddressCriterion,
+	KeyMaterial,
 	MonthlyLimitConfig,
 	MonthlyLimitCriterion,
 	Policy,
@@ -45,6 +46,7 @@ export type {
 } from './types/index.js';
 
 export type {
+	AuxInfoRoundResult,
 	DecodedAction,
 	DKGRoundResult,
 	FeeEstimate,

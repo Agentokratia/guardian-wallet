@@ -25,7 +25,7 @@ npx tsx send.ts 0xRecipient... 0.01
 
 ## How It Works
 
-`ThresholdSigner.toViemAccount()` returns a viem `Account` that can be used with any viem `WalletClient`. Under the hood, every `signTransaction` call runs the interactive DKLs23 protocol with the Guardian server.
+`ThresholdSigner.toViemAccount()` returns a viem `Account` that can be used with any viem `WalletClient`. Under the hood, every `signTransaction` call runs the interactive CGGMP24 protocol with the Guardian server.
 
 ```typescript
 const account = signer.toViemAccount();

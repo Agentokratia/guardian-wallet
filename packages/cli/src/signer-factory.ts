@@ -1,4 +1,4 @@
-import { DKLs23Scheme } from '@agentokratia/guardian-schemes';
+import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
 import { type TwConfig, resolveApiSecret } from './config.js';
 
@@ -12,6 +12,6 @@ export async function createSignerFromConfig(config: TwConfig): Promise<Threshol
 		apiSecret: resolveApiSecret(config),
 		serverUrl: config.serverUrl,
 		apiKey: config.apiKey,
-		scheme: new DKLs23Scheme(),
+		scheme: new CGGMP24Scheme(),
 	});
 }

@@ -1,27 +1,16 @@
 /**
- * Browser-side interactive DKLs23 signing for the User+Server path.
+ * Browser-side interactive CGGMP24 signing for the User+Server path.
  *
- * Uses @silencelaboratories/dkls-wasm-ll-web (browser WASM build) to run
- * the user's side of the 2-of-3 threshold signing protocol. The server
- * runs its side via the /signers/:id/sign/* endpoints.
+ * Calls the WASM module directly (not through the schemes package which
+ * has Node.js-only code paths). The WASM binary URL is resolved at import
+ * time using Vite's ?url suffix so it works correctly in dev and prod.
  *
- * The full private key is NEVER reconstructed -- signing is a distributed
- * computation between user share (browser) and server share.
+ * THE FULL PRIVATE KEY NEVER EXISTS — signing is a distributed computation
+ * between user share (browser) and server share (server).
  */
 
-import init, { Keyshare, Message, SignSession } from '@silencelaboratories/dkls-wasm-ll-web';
 import { api } from './api-client';
 import { fromBase64, toBase64 } from './encoding';
-
-let wasmReady: Promise<void> | null = null;
-
-/** Ensure the WASM module is initialized (idempotent). */
-function ensureWasmInit(): Promise<void> {
-	if (!wasmReady) {
-		wasmReady = init().then(() => undefined);
-	}
-	return wasmReady;
-}
 
 interface TransactionParams {
 	to: string;
@@ -42,111 +31,178 @@ interface SignResult {
 
 interface SessionResponse {
 	sessionId: string;
-	serverFirstMessage: string;
-	initialMessages?: string[];
+	serverFirstMessages: string[];
+	messageHash: string; // base64
+	eid: string; // base64
+	partyConfig: {
+		serverPartyIndex: number;
+		clientPartyIndex: number;
+		partiesAtKeygen: number[];
+	};
 	roundsRemaining: number;
 }
 
 interface RoundResponse {
 	messages: string[];
 	roundsRemaining: number;
-	presigned: boolean;
-	messageHash?: string;
+	complete: boolean;
 }
 
-function serializeMessage(msg: Message): Uint8Array {
-	const payload = msg.payload;
-	const buf = new Uint8Array(1 + 1 + 1 + 4 + payload.length);
-	buf[0] = msg.from_id;
-	buf[1] = msg.to_id !== undefined ? 1 : 0;
-	buf[2] = msg.to_id ?? 0;
-	const view = new DataView(buf.buffer);
-	view.setUint32(3, payload.length, false);
-	buf.set(payload, 7);
-	return buf;
+/** WASM signing session result */
+interface WasmCreateSessionResult {
+	session_id: string;
+	messages: WasmSignMessage[];
 }
 
-function deserializeMessage(bytes: Uint8Array): Message {
-	if (bytes.length < 7) {
-		throw new Error(`Message too short: ${String(bytes.length)} bytes`);
+interface WasmSignMessage {
+	sender: number;
+	is_broadcast: boolean;
+	recipient: number | null;
+	payload: string;
+}
+
+interface WasmProcessRoundResult {
+	messages: WasmSignMessage[];
+	complete: boolean;
+	signature?: { r: number[]; s: number[] };
+}
+
+// ---------------------------------------------------------------------------
+// WASM module — initialized once with explicit URL
+// ---------------------------------------------------------------------------
+
+type WasmExports = typeof import('@agentokratia/guardian-mpc-wasm');
+let wasmReady: Promise<WasmExports> | null = null;
+
+async function ensureWasm(): Promise<WasmExports> {
+	if (!wasmReady) {
+		wasmReady = (async () => {
+			const mod = await import('@agentokratia/guardian-mpc-wasm');
+			if (typeof mod.default === 'function') {
+				// Construct explicit URL to the .wasm binary.
+				// Vite transforms `new URL(path, import.meta.url)` at build time.
+				// Path: packages/app/src/lib/ → packages/mpc-wasm/pkg-web/
+				const wasmUrl = new URL(
+					'../../../mpc-wasm/pkg-web/guardian_mpc_wasm_bg.wasm',
+					import.meta.url,
+				);
+				await mod.default(wasmUrl);
+			}
+			return mod;
+		})();
 	}
-	const from = bytes[0]!;
-	const hasTo = bytes[1] === 1;
-	const to = hasTo ? bytes[2] : undefined;
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	const payloadLen = view.getUint32(3, false);
-	const payload = bytes.slice(7, 7 + payloadLen);
-	return new Message(payload, from, to);
+	return wasmReady;
 }
+
+// ---------------------------------------------------------------------------
+// Key material parsing
+// ---------------------------------------------------------------------------
 
 /**
- * Run interactive DKLs23 signing in the browser (User + Server path).
+ * Parse CGGMP24 key material from the decrypted user share.
+ * Format: JSON { coreShare: base64, auxInfo: base64 }
+ */
+function parseKeyMaterial(shareBytes: Uint8Array): { coreShare: Uint8Array; auxInfo: Uint8Array } {
+	const json = new TextDecoder().decode(shareBytes);
+	const parsed = JSON.parse(json) as { coreShare: string; auxInfo: string };
+	return {
+		coreShare: fromBase64(parsed.coreShare),
+		auxInfo: fromBase64(parsed.auxInfo),
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Browser interactive signing
+// ---------------------------------------------------------------------------
+
+/**
+ * Run interactive CGGMP24 signing in the browser (User + Server path).
  *
  * Protocol:
- * 1. Create user SignSession from keyshare, send first message to server
- * 2. Exchange rounds with server via /sign/round until presigned
- * 3. Finalize: user calls lastMessage(hash), sends to server
- * 4. Server combines and broadcasts, returns txHash
+ * 1. Send transaction to server (no first message — server computes hash)
+ * 2. Receive messageHash, eid, partyConfig, serverFirstMessages from server
+ * 3. Create local sign session with correct hash + party config
+ * 4. Process server's first messages, exchange rounds until complete
+ * 5. Server extracts signature when protocol completes and broadcasts
+ * 6. Returns { txHash, signature }
+ *
+ * THE FULL PRIVATE KEY NEVER EXISTS — signing is a distributed computation.
  */
 export async function browserInteractiveSign(
 	userShareBytes: Uint8Array,
 	signerId: string,
 	transaction: TransactionParams,
 ): Promise<SignResult> {
-	let userSession: SignSession | null = null;
+	// Parse key material from decrypted share
+	const keyMaterial = parseKeyMaterial(userShareBytes);
+	let wasmSessionId: string | undefined;
 
 	try {
-		// Step 0: Ensure WASM is initialized
-		await ensureWasmInit();
+		// Initialize WASM module (browser web build)
+		const wasm = await ensureWasm();
 
-		// Step 1: Create user SignSession from keyshare
-		const userKeyshare = Keyshare.fromBytes(userShareBytes);
-		userSession = new SignSession(userKeyshare, 'm');
-
-		// Step 2: Generate user's first message (broadcast)
-		const userFirstMsg = userSession.createFirstMessage();
-		const userFirstMsgBytes = serializeMessage(userFirstMsg);
-		userFirstMsg.free();
-
-		// Step 3: Send session creation request to server
+		// 1. Send session creation request to server (no first message)
 		const sessionRes = await api.post<SessionResponse>(
 			`/signers/${signerId}/sign/session`,
-			{
-				signerFirstMessage: toBase64(userFirstMsgBytes),
-				transaction,
-			},
+			{ transaction },
 		);
 		const { sessionId } = sessionRes;
 
-		// Step 4: Process server's first message (broadcast)
-		const serverFirstMsg = deserializeMessage(fromBase64(sessionRes.serverFirstMessage));
-		let outgoing = userSession.handleMessages([serverFirstMsg]);
-		try { serverFirstMsg.free(); } catch { /* already consumed */ }
+		// 2. Create local WASM sign session with correct hash + party config
+		const messageHash = fromBase64(sessionRes.messageHash);
+		const eid = fromBase64(sessionRes.eid);
+		const { clientPartyIndex, partiesAtKeygen } = sessionRes.partyConfig;
 
-		// Step 4b: Process server's round 1 output (initialMessages from createSession)
-		if (sessionRes.initialMessages && sessionRes.initialMessages.length > 0) {
-			const userR1 = outgoing;
-			const serverR1Msgs = sessionRes.initialMessages.map((b64) => deserializeMessage(fromBase64(b64)));
-			const userR2 = userSession.handleMessages(serverR1Msgs);
-			for (const msg of serverR1Msgs) {
-				try { msg.free(); } catch { /* already consumed */ }
+		console.log('[sign] Creating browser WASM session:', { clientPartyIndex, partiesAtKeygen });
+		const createResult = wasm.sign_create_session(
+			keyMaterial.coreShare,
+			keyMaterial.auxInfo,
+			messageHash,
+			clientPartyIndex,
+			new Uint16Array(partiesAtKeygen),
+			eid,
+		) as WasmCreateSessionResult;
+
+		wasmSessionId = createResult.session_id;
+		console.log('[sign] Browser session created, first msgs:', createResult.messages.length);
+
+		// 3. Process server's first messages
+		const serverFirstMsgs = sessionRes.serverFirstMessages.map(fromBase64);
+		const serverFirstParsed: WasmSignMessage[] = serverFirstMsgs.map(
+			(bytes) => JSON.parse(new TextDecoder().decode(bytes)) as WasmSignMessage,
+		);
+
+		console.log('[sign] Processing server first msgs:', serverFirstParsed.length);
+		const processResult = wasm.sign_process_round(
+			wasmSessionId,
+			serverFirstParsed,
+		) as WasmProcessRoundResult;
+		console.log('[sign] After processing server first msgs: outgoing=', processResult.messages.length, 'complete=', processResult.complete);
+
+		// Combine browser's first messages + messages from processing server's first
+		let outgoing: WasmSignMessage[] = [
+			...createResult.messages,
+			...processResult.messages,
+		];
+
+		console.log('[sign] Combined outgoing for round 1:', outgoing.length);
+
+		// 4. Exchange rounds until server reports complete (max 20 round-trips)
+		const MAX_ROUNDS = 20;
+		let serverComplete = false;
+		let roundCount = 0;
+
+		while (!serverComplete) {
+			if (++roundCount > MAX_ROUNDS) {
+				throw new Error(`Signing protocol did not complete after ${MAX_ROUNDS} rounds`);
 			}
-			outgoing = [...userR1, ...userR2];
-		}
 
-		// Step 5: Exchange rounds until presigned — mirrors the CLI's
-		// `while (!presigned)` loop.
-		let presigned = false;
-		let serverMessageHash: Uint8Array | undefined;
-		while (!presigned) {
-			// Serialize outgoing messages
-			const outgoingBase64 = outgoing.map((msg) => {
-				const bytes = serializeMessage(msg);
-				try { msg.free(); } catch { /* already consumed */ }
-				return toBase64(bytes);
-			});
+			// Serialize outgoing to base64 for the server
+			const outgoingBase64 = outgoing.map((msg) =>
+				toBase64(new TextEncoder().encode(JSON.stringify(msg))),
+			);
 
-			// Send round to server
+			console.log(`[sign] Round ${roundCount}: sending ${outgoingBase64.length} msgs to server`);
 			const roundRes = await api.post<RoundResponse>(
 				`/signers/${signerId}/sign/round`,
 				{
@@ -155,64 +211,49 @@ export async function browserInteractiveSign(
 				},
 			);
 
-			presigned = roundRes.presigned;
+			serverComplete = roundRes.complete;
+			console.log(`[sign] Round ${roundCount}: server returned ${roundRes.messages.length} msgs, complete=${serverComplete}`);
 
-			// Capture the server-computed messageHash when presigning completes
-			if (roundRes.messageHash) {
-				serverMessageHash = fromBase64(roundRes.messageHash);
-			}
-
-			// Process server messages one at a time (same as CLI).
+			// Always process server messages (even on the final round)
 			if (roundRes.messages.length > 0) {
-				const allOutgoing: Message[] = [];
-				for (let i = 0; i < roundRes.messages.length; i++) {
-					const serverMsg = deserializeMessage(fromBase64(roundRes.messages[i]!));
-					try {
-						const out = userSession.handleMessages([serverMsg]);
-						try { serverMsg.free(); } catch { /* already consumed */ }
-						allOutgoing.push(...out);
-					} catch {
-						// Client already presigned — stop processing.
-						try { serverMsg.free(); } catch { /* already consumed */ }
-						presigned = true;
-						break;
-					}
-				}
-				outgoing = allOutgoing;
-			}
-
-			// If presigned, free remaining outgoing
-			if (presigned) {
-				for (const msg of outgoing) {
-					try { msg.free(); } catch { /* already consumed */ }
-				}
+				const serverMsgs: WasmSignMessage[] = roundRes.messages.map(
+					(b64) => JSON.parse(new TextDecoder().decode(fromBase64(b64))) as WasmSignMessage,
+				);
+				const roundResult = wasm.sign_process_round(
+					wasmSessionId,
+					serverMsgs,
+				) as WasmProcessRoundResult;
+				outgoing = roundResult.messages;
+				console.log(`[sign] Round ${roundCount}: browser produced ${outgoing.length} msgs, browserComplete=${roundResult.complete}`);
+			} else if (!serverComplete) {
+				// Server returned no messages and is not complete — protocol stalled
+				console.warn(`[sign] Round ${roundCount}: server returned no messages but not complete — retrying with empty`);
+				outgoing = [];
+			} else {
+				outgoing = [];
 			}
 		}
 
-		if (!serverMessageHash) {
-			throw new Error('Server did not return messageHash after presigning completed');
-		}
-
-		// Step 6: Finalization
-		const userLastMsg = userSession.lastMessage(serverMessageHash);
-		const userLastMsgBytes = serializeMessage(userLastMsg);
-		userLastMsg.free();
-
-		// Step 7: Send complete request to server
-		const result = await api.post<SignResult>(
+		// 5. Complete — server extracts signature and broadcasts
+		const signResult = await api.post<SignResult>(
 			`/signers/${signerId}/sign/complete`,
-			{
-				sessionId,
-				lastMessage: toBase64(userLastMsgBytes),
-				messageHash: toBase64(serverMessageHash),
-			},
+			{ sessionId },
 		);
 
-		return result;
+		return signResult;
 	} finally {
-		// CRITICAL: Wipe share bytes from memory
+		// Destroy WASM session if created
+		if (wasmSessionId) {
+			try {
+				const wasm = await ensureWasm();
+				wasm.sign_destroy_session(wasmSessionId);
+			} catch {
+				// Best-effort cleanup
+			}
+		}
+		// CRITICAL: Wipe share bytes and key material from memory
 		userShareBytes.fill(0);
-		// Free the WASM SignSession to prevent memory leaks
-		if (userSession) userSession.free();
+		keyMaterial.coreShare.fill(0);
+		keyMaterial.auxInfo.fill(0);
 	}
 }

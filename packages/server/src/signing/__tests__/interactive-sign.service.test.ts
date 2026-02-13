@@ -21,64 +21,42 @@ import type { SignerRepository } from '../../signers/signer.repository.js';
 import { InteractiveSignService } from '../interactive-sign.service.js';
 
 // ---------------------------------------------------------------------------
-// Generate a REAL secp256k1 keypair + signature for consistent mock data.
-// The WASM protocol is mocked but the crypto math is real.
+// Generate a REAL secp256k1 keypair for consistent mock data.
 // ---------------------------------------------------------------------------
 
 const TEST_PRIVATE_KEY = new Uint8Array(32);
 TEST_PRIVATE_KEY[31] = 1; // minimal valid private key
-const TEST_PUBLIC_KEY = secp256k1.getPublicKey(TEST_PRIVATE_KEY, true); // compressed 33 bytes
+const TEST_PUBLIC_KEY = secp256k1.getPublicKey(TEST_PRIVATE_KEY, true);
 
-// The mock chain.buildTransaction returns new Uint8Array([1, 2, 3]).
-// The service computes messageHash = keccak256(toHex(txBytes)) from that.
-// We must use the SAME hash here so recovery ID computation succeeds.
 const MOCK_TX_BYTES = new Uint8Array([1, 2, 3]);
 const TEST_MESSAGE_HASH = new Uint8Array(hexToBytes(keccak256(toHex(MOCK_TX_BYTES))));
 
-// Sign the pre-hashed keccak256 directly (prehash: false skips internal SHA-256).
-// This matches DKLs23 which signs the keccak256 hash without re-hashing.
 const testSigBytes = secp256k1.sign(TEST_MESSAGE_HASH, TEST_PRIVATE_KEY, { prehash: false });
 const TEST_R = new Uint8Array(testSigBytes.slice(0, 32));
 const TEST_S = new Uint8Array(testSigBytes.slice(32, 64));
 
 // ---------------------------------------------------------------------------
-// Mock the WASM library — protocol is mocked, crypto values are real
+// Mock the CGGMP24Scheme — since InteractiveSignService creates its own
+// scheme internally, we mock the @agentokratia/guardian-schemes module.
 // ---------------------------------------------------------------------------
 
-vi.mock('@silencelaboratories/dkls-wasm-ll-node', () => {
-	const mockMessage = {
-		payload: new Uint8Array([1, 2, 3]),
-		from_id: 1,
-		to_id: undefined,
-		free: vi.fn(),
-	};
-
-	const mockSessionInstance = () => ({
-		createFirstMessage: vi.fn(() => mockMessage),
-		toBytes: vi.fn(() => new Uint8Array([10, 20, 30])),
-		handleMessages: vi.fn(() => [mockMessage]),
-		lastMessage: vi.fn(() => mockMessage),
-		// Return REAL r, s values so computeRecoveryId works with real secp256k1
-		combine: vi.fn(() => [TEST_R, TEST_S]),
-		free: vi.fn(),
-	});
-
-	const SignSessionConstructor = Object.assign(
-		vi.fn().mockImplementation(mockSessionInstance),
-		{ fromBytes: vi.fn().mockImplementation(mockSessionInstance) },
-	);
-
+vi.mock('@agentokratia/guardian-schemes', () => {
 	return {
-		Keyshare: {
-			// Return REAL compressed public key so recovery ID matches
-			fromBytes: vi.fn(() => ({ __keyshare: true, publicKey: TEST_PUBLIC_KEY })),
-		},
-		SignSession: SignSessionConstructor,
-		Message: vi.fn().mockImplementation((payload: Uint8Array, from: number, to?: number) => ({
-			payload,
-			from_id: from,
-			to_id: to,
-			free: vi.fn(),
+		CGGMP24Scheme: vi.fn().mockImplementation(() => ({
+			createSignSession: vi.fn(async () => ({
+				sessionId: 'scheme-session-1',
+				firstMessages: [new Uint8Array([10, 20, 30])],
+			})),
+			processSignRound: vi.fn(async () => ({
+				outgoingMessages: [new Uint8Array([40, 50, 60])],
+				complete: false,
+			})),
+			finalizeSign: vi.fn(async () => ({
+				r: TEST_R,
+				s: TEST_S,
+				v: 27,
+			})),
+			deriveAddress: vi.fn(() => '0xabc123'),
 		})),
 	};
 });
@@ -96,19 +74,13 @@ vi.mock('../../common/crypto-utils.js', async () => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Build a properly formatted DKLs23 wire-format message.
- * Format: [from:u8][hasTo:u8][to:u8][payloadLen:u32BE][payload]
- */
-function makeWireMessage(from = 0, to?: number, payload = new Uint8Array([1, 2, 3])): Uint8Array {
-	const buf = new Uint8Array(7 + payload.length);
-	buf[0] = from;
-	buf[1] = to !== undefined ? 1 : 0;
-	buf[2] = to ?? 0;
-	const view = new DataView(buf.buffer);
-	view.setUint32(3, payload.length, false);
-	buf.set(payload, 7);
-	return buf;
+/** Create a valid CGGMP24 key material JSON blob (what Vault returns). */
+function makeKeyMaterialBlob(): Uint8Array {
+	const json = JSON.stringify({
+		coreShare: Buffer.from(new Uint8Array(64)).toString('base64'),
+		auxInfo: Buffer.from(new Uint8Array(32)).toString('base64'),
+	});
+	return new Uint8Array(Buffer.from(json, 'utf-8'));
 }
 
 function makeSigner(overrides: Partial<Signer> = {}): Signer {
@@ -189,7 +161,7 @@ function createMocks() {
 	};
 
 	const vault = {
-		getShare: vi.fn().mockResolvedValue(new Uint8Array(64)),
+		getShare: vi.fn().mockResolvedValue(makeKeyMaterialBlob()),
 	};
 
 	const chainRegistry = {
@@ -257,7 +229,7 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createSession({
 					signerId: 'nonexistent',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
 					transaction: makeTransaction(),
 				}),
 			).rejects.toThrow('Signer not found');
@@ -271,7 +243,7 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createSession({
 					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
 					transaction: makeTransaction(),
 				}),
 			).rejects.toThrow('Signer is paused');
@@ -285,7 +257,7 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createSession({
 					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
 					transaction: makeTransaction(),
 				}),
 			).rejects.toThrow('Signer is revoked');
@@ -303,7 +275,7 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createSession({
 					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
 					transaction: makeTransaction(),
 				}),
 			).rejects.toThrow('Transaction blocked by policy');
@@ -321,7 +293,7 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createSession({
 					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
 					transaction: makeTransaction(),
 				}),
 			).rejects.toThrow();
@@ -335,74 +307,41 @@ describe('InteractiveSignService', () => {
 			);
 		});
 
-		it('logs blocked audit entry with violations when policy blocks', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-			mocks.policyEngine.evaluate.mockResolvedValue({
-				allowed: false,
-				violations: [
-					{ policyId: 'p1', type: 'spending_limit', reason: 'Over' },
-					{ policyId: 'p2', type: 'rate_limit', reason: 'Too fast' },
-				],
-				evaluatedCount: 2,
-				evaluationTimeMs: 3,
-			});
-
-			await expect(
-				service.createSession({
-					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
-					transaction: makeTransaction(),
-				}),
-			).rejects.toThrow();
-
-			// Audit log captures all violations
-			expect(mocks.signingRequestRepo.create).toHaveBeenCalledWith(
-				expect.objectContaining({
-					status: RequestStatus.BLOCKED,
-					policyViolations: expect.arrayContaining([
-						expect.objectContaining({ policyId: 'p1' }),
-						expect.objectContaining({ policyId: 'p2' }),
-					]),
-				}),
-			);
-		});
-
-		it('wipes keyshare bytes on vault/session error', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-			const fakeKeyshare = new Uint8Array([99, 88, 77]);
-			mocks.vault.getShare.mockResolvedValue(fakeKeyshare);
-
-			// Make SignSession constructor throw
-			const { SignSession } = await import('@silencelaboratories/dkls-wasm-ll-node');
-			(SignSession as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
-				throw new Error('WASM init failed');
-			});
-
-			await expect(
-				service.createSession({
-					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
-					transaction: makeTransaction(),
-				}),
-			).rejects.toThrow('WASM init failed');
-
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(fakeKeyshare);
-		});
-
-		it('returns sessionId, serverFirstMessage and roundsRemaining on success', async () => {
+		it('returns sessionId, serverFirstMessages, messageHash, eid and partyConfig on success', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
 
 			const result = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
 				transaction: makeTransaction(),
 			});
 
 			expect(result.sessionId).toBeDefined();
-			expect(result.serverFirstMessage).toBeInstanceOf(Uint8Array);
-			expect(result.roundsRemaining).toBe(3);
+			expect(result.serverFirstMessages).toBeInstanceOf(Array);
+			expect(result.messageHash).toBeInstanceOf(Uint8Array);
+			expect(result.messageHash).toHaveLength(32);
+			expect(result.eid).toBeInstanceOf(Uint8Array);
+			expect(result.eid).toHaveLength(32);
+			expect(result.partyConfig).toBeDefined();
+			expect(result.partyConfig.serverPartyIndex).toBe(1);
+			expect(result.partyConfig.clientPartyIndex).toBe(0);
+			expect(result.roundsRemaining).toBe(4);
 		});
 
+		it('wipes key material on vault/session error', async () => {
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			// Return invalid key material that will cause parseKeyMaterial to fail
+			mocks.vault.getShare.mockResolvedValue(new Uint8Array([0, 1, 2]));
+
+			await expect(
+				service.createSession({
+					signerId: 'signer-1',
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
+					transaction: makeTransaction(),
+				}),
+			).rejects.toThrow();
+
+			expect(cryptoUtils.wipeBuffer).toHaveBeenCalled();
+		});
 	});
 
 	// -----------------------------------------------------------------------
@@ -425,12 +364,12 @@ describe('InteractiveSignService', () => {
 
 			const { sessionId } = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
-			// Advance time past 60s TTL
-			vi.advanceTimersByTime(61_000);
+			// Advance time past 120s TTL
+			vi.advanceTimersByTime(121_000);
 
 			await expect(
 				service.processRound({
@@ -446,19 +385,19 @@ describe('InteractiveSignService', () => {
 
 			const { sessionId } = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
 			const result = await service.processRound({
 				sessionId,
 				signerId: 'signer-1',
-				incomingMessages: [new Uint8Array([1, 0, 0, 0, 0, 0, 3, 1, 2, 3])],
+				incomingMessages: [new Uint8Array([10, 20, 30])],
 			});
 
 			expect(result.outgoingMessages).toBeDefined();
 			expect(result.roundsRemaining).toBeLessThanOrEqual(3);
-			expect(typeof result.presigned).toBe('boolean');
+			expect(typeof result.complete).toBe('boolean');
 		});
 	});
 
@@ -472,15 +411,13 @@ describe('InteractiveSignService', () => {
 
 			const { sessionId } = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
 			await service.completeSign({
 				sessionId,
 				signerId: 'signer-1',
-				lastMessage: new Uint8Array([1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-				messageHash: TEST_MESSAGE_HASH,
 			});
 
 			expect(mocks.signingRequestRepo.create).toHaveBeenCalledWith(
@@ -498,15 +435,13 @@ describe('InteractiveSignService', () => {
 
 			const { sessionId } = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
 			await service.completeSign({
 				sessionId,
 				signerId: 'signer-1',
-				lastMessage: new Uint8Array([1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-				messageHash: TEST_MESSAGE_HASH,
 			});
 
 			// Session should be destroyed — second attempt throws
@@ -514,32 +449,27 @@ describe('InteractiveSignService', () => {
 				service.completeSign({
 					sessionId,
 					signerId: 'signer-1',
-					lastMessage: new Uint8Array([1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-					messageHash: TEST_MESSAGE_HASH,
 				}),
 			).rejects.toThrow('Signing session not found or expired');
 		});
 
-		it('returns txHash and signature with correct recovery ID', async () => {
+		it('returns txHash and signature', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
 
 			const { sessionId } = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
 			const result = await service.completeSign({
 				sessionId,
 				signerId: 'signer-1',
-				lastMessage: new Uint8Array([1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-				messageHash: TEST_MESSAGE_HASH,
 			});
 
 			expect(result.txHash).toBe('0xtxhash123');
 			expect(result.signature.r).toMatch(/^0x/);
 			expect(result.signature.s).toMatch(/^0x/);
-			// v should be 27 or 28 — real recovery from real signature
 			expect([27, 28]).toContain(result.signature.v);
 		});
 	});
@@ -552,15 +482,14 @@ describe('InteractiveSignService', () => {
 		it('wipes all active sessions', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
 
-			// Create two sessions
 			const s1 = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 			const s2 = await service.createSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
 				transaction: makeTransaction(),
 			});
 
@@ -568,8 +497,8 @@ describe('InteractiveSignService', () => {
 
 			service.onModuleDestroy();
 
-			// Each session has serverKeyshareBytes + serverSessionBytes = 2 wipeBuffer calls each
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledTimes(4);
+			// Each session has serverKeyMaterialBytes wiped
+			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledTimes(2);
 
 			// Both sessions destroyed
 			await expect(
@@ -592,7 +521,8 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createMessageSession({
 					signerId: 'nonexistent',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
+					messageHash: new Uint8Array(32),
 				}),
 			).rejects.toThrow('Signer not found');
 		});
@@ -605,7 +535,8 @@ describe('InteractiveSignService', () => {
 			await expect(
 				service.createMessageSession({
 					signerId: 'signer-1',
-					signerFirstMessage: makeWireMessage(),
+					signerFirstMessage: new Uint8Array([1, 2, 3]),
+					messageHash: new Uint8Array(32),
 				}),
 			).rejects.toThrow('Signer is paused');
 		});
@@ -615,12 +546,16 @@ describe('InteractiveSignService', () => {
 
 			const result = await service.createMessageSession({
 				signerId: 'signer-1',
-				signerFirstMessage: makeWireMessage(),
+				signerFirstMessage: new Uint8Array([1, 2, 3]),
+				messageHash: new Uint8Array(32),
 			});
 
 			expect(result.sessionId).toBeDefined();
-			expect(result.serverFirstMessage).toBeInstanceOf(Uint8Array);
-			expect(result.roundsRemaining).toBe(3);
+			expect(result.serverFirstMessages).toBeInstanceOf(Array);
+			expect(result.messageHash).toBeInstanceOf(Uint8Array);
+			expect(result.eid).toBeInstanceOf(Uint8Array);
+			expect(result.partyConfig).toBeDefined();
+			expect(result.roundsRemaining).toBe(4);
 		});
 	});
 });

@@ -33,8 +33,7 @@
 	},
 	"dependencies": {
 		"@agentokratia/guardian-core": "workspace:*",
-		"@agentokratia/guardian-schemes": "workspace:*",
-		"@silencelaboratories/dkls-wasm-ll-node": "^1.2.0"
+		"@agentokratia/guardian-schemes": "workspace:*"
 	},
 	"peerDependencies": {
 		"viem": "^2.0.0"

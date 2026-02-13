@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
 	ForbiddenException,
 	Inject,
@@ -7,17 +7,18 @@ import {
 	NotFoundException,
 	OnModuleDestroy,
 } from '@nestjs/common';
-import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type {
 	IChain,
 	IPolicyEngine,
 	IRulesEngine,
+	IThresholdScheme,
 	IVaultStore,
+	KeyMaterial,
 	PolicyContext,
 	TransactionRequest,
 } from '@agentokratia/guardian-core';
 import { RequestStatus, RequestType, SigningPath } from '@agentokratia/guardian-core';
-import { Keyshare, Message, SignSession } from '@silencelaboratories/dkls-wasm-ll-node';
+import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { hexToBytes, keccak256, toHex } from 'viem';
 import { SigningRequestRepository } from '../audit/signing-request.repository.js';
 import { ChainRegistryService } from '../common/chain.module.js';
@@ -27,9 +28,8 @@ import { PolicyDocumentRepository } from '../policies/policy-document.repository
 import { PolicyRepository } from '../policies/policy.repository.js';
 import { SignerRepository } from '../signers/signer.repository.js';
 
-const SESSION_TTL_MS = 60_000;
+const SESSION_TTL_MS = 120_000;
 const CLEANUP_INTERVAL_MS = 10_000;
-const MAX_MESSAGE_PAYLOAD_BYTES = 10 * 1024 * 1024; // 10 MB — DKLs23 messages are small, this is a safety cap
 const MAX_CONCURRENT_SESSIONS = 1_000;
 
 interface BaseSessionState {
@@ -38,14 +38,12 @@ interface BaseSessionState {
 	readonly ownerAddress: string;
 	readonly expectedPublicKey: Uint8Array;
 	readonly signingPath: SigningPath;
-	readonly serverKeyshareBytes: Uint8Array;
+	readonly serverKeyMaterialBytes: Uint8Array;
 	readonly policyResult: { evaluatedCount: number; evaluationTimeMs: number };
+	/** The scheme's internal sign session ID */
+	readonly schemeSessionId: string;
 	round: number;
 	readonly createdAt: number;
-	serverSessionBytes: Uint8Array;
-	/** Live WASM SignSession — kept in memory for presigned sessions to avoid
-	 *  serialization issues with toBytes()/fromBytes() during combine(). */
-	liveSession?: SignSession;
 }
 
 interface TxSessionState extends BaseSessionState {
@@ -53,6 +51,7 @@ interface TxSessionState extends BaseSessionState {
 	readonly transaction: TransactionRequest;
 	readonly decodedTo: string;
 	readonly decodedFunctionName: string | undefined;
+	readonly messageHash: Uint8Array;
 }
 
 interface MessageSessionState extends BaseSessionState {
@@ -63,7 +62,7 @@ type SignSessionState = TxSessionState | MessageSessionState;
 
 export interface CreateSessionInput {
 	readonly signerId: string;
-	readonly signerFirstMessage: Uint8Array;
+	readonly signerFirstMessage?: Uint8Array;
 	readonly transaction: TransactionRequest;
 	readonly signingPath?: SigningPath;
 	readonly callerIp?: string;
@@ -71,8 +70,10 @@ export interface CreateSessionInput {
 
 export interface CreateSessionOutput {
 	readonly sessionId: string;
-	readonly serverFirstMessage: Uint8Array;
-	readonly initialRoundMessages: Uint8Array[];
+	readonly serverFirstMessages: Uint8Array[];
+	readonly messageHash: Uint8Array;
+	readonly eid: Uint8Array;
+	readonly partyConfig: { serverPartyIndex: number; clientPartyIndex: number; partiesAtKeygen: number[] };
 	readonly roundsRemaining: number;
 }
 
@@ -85,15 +86,12 @@ export interface ProcessRoundInput {
 export interface ProcessRoundOutput {
 	readonly outgoingMessages: Uint8Array[];
 	readonly roundsRemaining: number;
-	readonly presigned: boolean;
-	readonly messageHash?: Uint8Array;
+	readonly complete: boolean;
 }
 
 export interface CompleteSignInput {
 	readonly sessionId: string;
 	readonly signerId: string;
-	readonly lastMessage: Uint8Array;
-	readonly messageHash: Uint8Array;
 }
 
 export interface CompleteSignOutput {
@@ -103,7 +101,8 @@ export interface CompleteSignOutput {
 
 export interface CreateMessageSessionInput {
 	readonly signerId: string;
-	readonly signerFirstMessage: Uint8Array;
+	readonly signerFirstMessage?: Uint8Array;
+	readonly messageHash: Uint8Array;
 	readonly signingPath?: SigningPath;
 	readonly callerIp?: string;
 }
@@ -112,46 +111,19 @@ export interface CompleteMessageSignOutput {
 	readonly signature: { r: string; s: string; v: number };
 }
 
-// DKLs23 message wire format: [from:u8][hasTo:u8][to:u8][payloadLen:u32BE][payload]
-const MSG_HEADER_SIZE = 7;
-
-function serializeMessage(msg: Message): Uint8Array {
-	const payload = msg.payload;
-	const buf = new Uint8Array(MSG_HEADER_SIZE + payload.length);
-	buf[0] = msg.from_id;
-	buf[1] = msg.to_id !== undefined ? 1 : 0;
-	buf[2] = msg.to_id ?? 0;
-	const view = new DataView(buf.buffer);
-	view.setUint32(3, payload.length, false);
-	buf.set(payload, MSG_HEADER_SIZE);
-	return buf;
-}
-
-function deserializeMessage(bytes: Uint8Array): Message {
-	if (bytes.length < MSG_HEADER_SIZE) {
-		throw new Error(`Message too short: expected at least ${MSG_HEADER_SIZE} bytes, got ${bytes.length}`);
-	}
-	const from = bytes[0]!;
-	const hasTo = bytes[1] === 1;
-	const to = hasTo ? bytes[2] : undefined;
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	const payloadLen = view.getUint32(3, false);
-	if (payloadLen > MAX_MESSAGE_PAYLOAD_BYTES) {
-		throw new Error(`Message payload length ${payloadLen} exceeds maximum ${MAX_MESSAGE_PAYLOAD_BYTES}`);
-	}
-	if (payloadLen > bytes.length - MSG_HEADER_SIZE) {
-		throw new Error(
-			`Message payload length ${payloadLen} exceeds available data (${bytes.length - MSG_HEADER_SIZE} bytes)`,
-		);
-	}
-	const payload = bytes.slice(MSG_HEADER_SIZE, MSG_HEADER_SIZE + payloadLen);
-	return new Message(payload, from, to);
-}
-
+/**
+ * CGGMP24 interactive signing service.
+ *
+ * - Message hash computed BEFORE signing starts
+ * - Signature extracted when protocol completes (no separate finalize step)
+ * - State machine API: safe to serialize between rounds
+ * - Key material is { coreShare, auxInfo }
+ */
 @Injectable()
 export class InteractiveSignService implements OnModuleDestroy {
 	private readonly logger = new Logger(InteractiveSignService.name);
 	private readonly sessions = new Map<string, SignSessionState>();
+	private readonly scheme: IThresholdScheme;
 	private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
 	constructor(
@@ -164,14 +136,14 @@ export class InteractiveSignService implements OnModuleDestroy {
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
 		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
 	) {
+		this.scheme = new CGGMP24Scheme();
 		this.cleanupTimer = setInterval(() => this.cleanupExpiredSessions(), CLEANUP_INTERVAL_MS);
 	}
 
 	onModuleDestroy(): void {
 		clearInterval(this.cleanupTimer);
 		for (const [id, state] of this.sessions) {
-			wipeBuffer(state.serverKeyshareBytes);
-			wipeBuffer(state.serverSessionBytes);
+			wipeBuffer(state.serverKeyMaterialBytes);
 			this.sessions.delete(id);
 		}
 	}
@@ -191,13 +163,11 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException(`Signer is ${signer.status}`);
 		}
 
-		// Step 2: Resolve chain from transaction chainId
+		// Step 2: Resolve chain and populate transaction
 		if (!input.transaction.chainId || input.transaction.chainId === 0) {
 			throw new ForbiddenException('chainId is required in transaction');
 		}
 		const chain = await this.chainRegistry.getChain(input.transaction.chainId);
-
-		// Step 2b: Auto-populate missing transaction fields (nonce, gas)
 		const populatedTx = await this.populateTransaction(input.transaction, signer.ethAddress, chain);
 
 		// Step 2c: Decode transaction
@@ -234,14 +204,13 @@ export class InteractiveSignService implements OnModuleDestroy {
 			callerIp: input.callerIp,
 		};
 
-		// Step 4: Evaluate policies — try rules engine first, fall back to legacy
+		// Step 4: Evaluate policies
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
 		let policyResult;
 
 		if (policyDoc) {
 			policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
 		} else {
-			// Legacy path: old per-policy evaluation
 			const enabledPolicies = await this.policyRepo.findEnabledBySigner(signer.id);
 			policyResult = await this.policyEngine.evaluate(
 				enabledPolicies.map((p) => ({
@@ -277,42 +246,52 @@ export class InteractiveSignService implements OnModuleDestroy {
 			});
 		}
 
-		// Step 6: Fetch server keyshare from Vault
-		let serverKeyshareBytes: Uint8Array | null = null;
-		let serverSession: SignSession | null = null;
+		// Step 6: Compute messageHash BEFORE signing starts (CGGMP24 requirement)
+		const messageHash = new Uint8Array(hexToBytes(keccak256(toHex(txBytes))));
+
+		// Step 6b: Generate execution ID and determine party config
+		const eid = Uint8Array.from(randomBytes(32));
+		const { serverPartyIndex, clientPartyIndex, partiesAtKeygen } =
+			this.getPartyConfig(signingPath);
+
+		// Step 7: Fetch server key material from Vault
+		let serverKeyMaterialBytes: Uint8Array | null = null;
 		try {
-			serverKeyshareBytes = await this.vault.getShare(signer.vaultSharePath);
+			serverKeyMaterialBytes = await this.vault.getShare(signer.vaultSharePath);
 
-			// Step 7: Create server SignSession from keyshare
-			const serverKeyshare = Keyshare.fromBytes(serverKeyshareBytes);
-			// Extract public key before keyshare is consumed by SignSession constructor
-			const expectedPublicKey = new Uint8Array(serverKeyshare.publicKey);
-			serverSession = new SignSession(serverKeyshare, 'm');
+			// Parse key material: { coreShare, auxInfo }
+			const keyMaterial = parseKeyMaterial(serverKeyMaterialBytes);
 
-			// Step 8: Get server first message (broadcast)
-			const serverFirstMsg = serverSession.createFirstMessage();
-			const serverFirstMsgBytes = serializeMessage(serverFirstMsg);
-			serverFirstMsg.free();
-
-			// Step 9: Process signer's first message (broadcast) immediately
-			// so the server advances to round 1 during session creation.
-			const signerFirstMsg = deserializeMessage(input.signerFirstMessage);
-			const serverRound1Msgs = serverSession.handleMessages([signerFirstMsg]);
-			try { signerFirstMsg.free(); } catch { /* already consumed */ }
-
-			// Serialize the round 1 output to return alongside serverFirstMessage
-			const round1Bytes: Uint8Array[] = [];
-			for (const msg of serverRound1Msgs) {
-				round1Bytes.push(serializeMessage(msg));
-				try { msg.free(); } catch { /* already consumed */ }
+			// Extract public key for recovery ID computation
+			let expectedPublicKey: Uint8Array = new Uint8Array(33);
+			if (this.scheme.extractPublicKey) {
+				try {
+					expectedPublicKey = this.scheme.extractPublicKey(
+						new Uint8Array(keyMaterial.coreShare),
+					);
+				} catch {
+					// Non-fatal — recovery ID computation will fail gracefully
+				}
 			}
 
-			// Step 10: Serialize server session (now at round 1) for storage
-			const serverSessionBytes = serverSession.toBytes();
-			try { serverSession.free(); } catch { /* may be consumed */ }
-			serverSession = null; // ownership transferred to serialized bytes
+			// Step 8: Create server sign session with hash + party config
+			// User+Server path: force WASM backend so both sides (browser + server)
+			// use the same num-bigint backend. Native GMP (rug) protocol messages
+			// are incompatible with browser WASM (num-bigint).
+			const forceWasm = signingPath === SigningPath.USER_SERVER;
+			const { sessionId: schemeSessionId, firstMessages } =
+				await this.scheme.createSignSession(
+					[keyMaterial.coreShare, keyMaterial.auxInfo],
+					messageHash,
+					{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
+				);
 
-			// Step 11: Store session state
+			// Wipe parsed key material (the raw bytes are kept for session state)
+			wipeBuffer(keyMaterial.coreShare);
+			wipeBuffer(keyMaterial.auxInfo);
+
+			// Step 9: Store session state (no immediate processSignRound —
+			// the client hasn't created its session yet for tx signing)
 			const sessionId = randomUUID();
 			this.sessions.set(sessionId, {
 				type: 'tx',
@@ -321,33 +300,31 @@ export class InteractiveSignService implements OnModuleDestroy {
 				ownerAddress: signer.ownerAddress,
 				expectedPublicKey,
 				signingPath,
-				serverKeyshareBytes,
+				serverKeyMaterialBytes,
 				transaction: populatedTx,
 				decodedTo: decoded.to,
 				decodedFunctionName: decoded.functionName,
+				messageHash,
 				policyResult: {
 					evaluatedCount: policyResult.evaluatedCount,
 					evaluationTimeMs: policyResult.evaluationTimeMs,
 				},
-				round: 1,
+				schemeSessionId,
+				round: 0,
 				createdAt: Date.now(),
-				serverSessionBytes,
 			});
 
 			return {
 				sessionId,
-				serverFirstMessage: serverFirstMsgBytes,
-				initialRoundMessages: round1Bytes,
-				roundsRemaining: 3,
+				serverFirstMessages: firstMessages,
+				messageHash,
+				eid,
+				partyConfig: { serverPartyIndex, clientPartyIndex, partiesAtKeygen },
+				roundsRemaining: 4,
 			};
 		} catch (error) {
-			// Free WASM session if it wasn't serialized yet
-			if (serverSession) {
-				try { serverSession.free(); } catch { /* may be consumed */ }
-			}
-			// Wipe keyshare bytes if session creation failed
-			if (serverKeyshareBytes) {
-				wipeBuffer(serverKeyshareBytes);
+			if (serverKeyMaterialBytes) {
+				wipeBuffer(serverKeyMaterialBytes);
 			}
 			if (!(error instanceof ForbiddenException) && !(error instanceof NotFoundException)) {
 				await this.signingRequestRepo.create({
@@ -374,84 +351,34 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException('Session does not belong to this signer');
 		}
 
-		// Re-check signer status — reject if paused/revoked since session creation
 		const signer = await this.signerRepo.findById(state.signerId);
 		if (!signer || signer.status !== 'active') {
 			this.destroySession(input.sessionId);
 			throw new ForbiddenException(`Signer is ${signer?.status ?? 'deleted'}`);
 		}
 
-		// Deserialize server SignSession from stored bytes
-		const serverSession = SignSession.fromBytes(state.serverSessionBytes);
+		// Drive the scheme's state machine with incoming messages
+		let result: { outgoingMessages: Uint8Array[]; complete: boolean };
 		try {
-			const allOutgoingBytes: Uint8Array[] = [];
-			let lastRoundOutputCount = 0;
-
-			// Process each incoming message sequentially — this supports
-			// multi-message batches (e.g. when client sends signerR1 + signerR2
-			// after processing both serverBroadcast and initialRoundMessages).
-			// IMPORTANT: stop as soon as presigning is detected (output is empty)
-			// because calling handleMessages on a presigned session throws
-			// "invalid state". This matters for the User+Server path (party 2+1)
-			// where presigning can complete on the first message of a batch.
-			for (const incomingBytes of input.incomingMessages) {
-				const msg = deserializeMessage(incomingBytes);
-				const outgoing = serverSession.handleMessages([msg]);
-				try { msg.free(); } catch { /* already consumed */ }
-
-				lastRoundOutputCount = outgoing.length;
-				for (const outMsg of outgoing) {
-					allOutgoingBytes.push(serializeMessage(outMsg));
-					try { outMsg.free(); } catch { /* already consumed */ }
-				}
-
-				state.round += 1;
-
-				// Presigning detected — the session can no longer accept messages.
-				if (outgoing.length === 0) break;
-			}
-
-			// Detect presigning completion: the DKLs23 protocol is presigned
-			// when the last handleMessages call produces 0 outgoing messages,
-			// meaning both parties have computed their presignature shares.
-			const presigned = input.incomingMessages.length > 0 && lastRoundOutputCount === 0;
-			const roundsRemaining = presigned ? 0 : Math.max(1, 4 - state.round);
-
-			if (presigned) {
-				// Keep the live WASM session in memory — toBytes()/fromBytes()
-				// can lose internal state needed for lastMessage() + combine().
-				state.liveSession = serverSession;
-			} else {
-				// Not presigned yet — serialize session for next round
-				state.serverSessionBytes = serverSession.toBytes();
-				try { serverSession.free(); } catch { /* may be consumed */ }
-			}
-
-			// When presigning is complete, compute the canonical messageHash
-			// so the client can use it in lastMessage(). For transactions the
-			// hash is keccak256(serialized unsigned tx). For messages the
-			// client provides its own hash via completeMessageSign.
-			let messageHash: Uint8Array | undefined;
-			if (presigned && state.type === 'tx') {
-				const chain = await this.chainRegistry.getChain(state.transaction.chainId);
-				const txBytes = await chain.buildTransaction(state.transaction);
-				messageHash = new Uint8Array(
-					hexToBytes(keccak256(toHex(txBytes))),
-				);
-			}
-
-			return {
-				outgoingMessages: allOutgoingBytes,
-				roundsRemaining,
-				presigned,
-				messageHash,
-			};
-		} catch (error) {
-			// On error during round processing, clean up the session
-			try { serverSession.free(); } catch { /* may be consumed */ }
+			result = await this.scheme.processSignRound(
+				state.schemeSessionId,
+				input.incomingMessages,
+			);
+			this.logger.debug(`processRound: session=${input.sessionId.slice(0, 8)} round=${state.round + 1} msgs=${input.incomingMessages.length} → outgoing=${result.outgoingMessages.length} complete=${result.complete}`);
+		} catch (err) {
+			this.logger.error(`processSignRound WASM error (round ${state.round + 1}): ${String(err)}`);
 			this.destroySession(input.sessionId);
-			throw error;
+			throw err;
 		}
+
+		state.round += 1;
+		const roundsRemaining = result.complete ? 0 : Math.max(1, 4 - state.round);
+
+		return {
+			outgoingMessages: result.outgoingMessages,
+			roundsRemaining,
+			complete: result.complete,
+		};
 	}
 
 	async completeSign(input: CompleteSignInput): Promise<CompleteSignOutput> {
@@ -463,49 +390,21 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException('Session is not a transaction session. Use /sign-message/complete instead.');
 		}
 
-		// Re-check signer status — reject if paused/revoked since session creation
 		const signer = await this.signerRepo.findById(state.signerId);
 		if (!signer || signer.status !== 'active') {
 			this.destroySession(input.sessionId);
 			throw new ForbiddenException(`Signer is ${signer?.status ?? 'deleted'}`);
 		}
 
-		// Use live session from processRound (avoids toBytes/fromBytes corruption)
-		// or fall back to deserializing from stored bytes
-		const serverSession = state.liveSession ?? SignSession.fromBytes(state.serverSessionBytes);
-		state.liveSession = undefined; // clear reference — we own it now
 		let signatureHex: { r: string; s: string; v: number } | undefined;
 		try {
-			// Resolve chain from stored transaction chainId
-			const chain = await this.chainRegistry.getChain(state.transaction.chainId);
-
-			// SECURITY: Server computes the messageHash from the stored transaction
-			// rather than trusting the client-provided hash. This prevents hash
-			// substitution attacks where the client signs a different message.
-			const txBytes = await chain.buildTransaction(state.transaction);
-			const messageHash = new Uint8Array(
-				hexToBytes(keccak256(toHex(txBytes))),
-			);
-
-			// DKLs23 signing finalization:
-			// 1. Server calls lastMessage(messageHash) to get server's last broadcast
-			const serverLastMsg = serverSession.lastMessage(messageHash);
-
-			// 2. Deserialize signer's lastMessage
-			const signerLastMsg = deserializeMessage(input.lastMessage);
-
-			// 3. combine() with signer's lastMessage → [R, S]
-			// combine() consumes the session and deallocates all internal data
-			const result = serverSession.combine([signerLastMsg]) as [Uint8Array, Uint8Array];
-			try { serverLastMsg.free(); } catch { /* consumed */ }
-			try { signerLastMsg.free(); } catch { /* consumed */ }
-
-			const r = new Uint8Array(result[0]);
-			const s = new Uint8Array(result[1]);
-			const v = this.computeRecoveryId(r, s, messageHash, state.expectedPublicKey);
+			// Extract signature from completed session (no lastMessage step)
+			const { r, s, v } = await this.scheme.finalizeSign(state.schemeSessionId);
 			signatureHex = { r: toHex(r), s: toHex(s), v };
 
 			// Broadcast the signed transaction
+			const chain = await this.chainRegistry.getChain(state.transaction.chainId);
+			const txBytes = await chain.buildTransaction(state.transaction);
 			const signedTxBytes = chain.serializeSignedTransaction(txBytes, { r, s, v });
 			const txHash = await chain.broadcastTransaction(signedTxBytes);
 
@@ -525,12 +424,8 @@ export class InteractiveSignService implements OnModuleDestroy {
 				evaluationTimeMs: state.policyResult.evaluationTimeMs,
 			});
 
-			return {
-				txHash,
-				signature: signatureHex,
-			};
+			return { txHash, signature: signatureHex };
 		} catch (error) {
-			// Log failure — include signature details if signing succeeded but broadcast failed
 			if (signatureHex) {
 				this.logger.error(
 					`Broadcast failed but signature was produced: r=${signatureHex.r} s=${signatureHex.s} v=${signatureHex.v}`,
@@ -552,8 +447,6 @@ export class InteractiveSignService implements OnModuleDestroy {
 			});
 			throw error;
 		} finally {
-			try { serverSession.free(); } catch { /* already consumed by combine() */ }
-			// CRITICAL: Wipe session state including server keyshare bytes
 			this.destroySession(input.sessionId);
 		}
 	}
@@ -564,7 +457,6 @@ export class InteractiveSignService implements OnModuleDestroy {
 		}
 		const signingPath = input.signingPath ?? SigningPath.SIGNER_SERVER;
 
-		// Step 1: Verify signer
 		const signer = await this.signerRepo.findById(input.signerId);
 		if (!signer) {
 			throw new NotFoundException('Signer not found');
@@ -573,7 +465,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException(`Signer is ${signer.status}`);
 		}
 
-		// Step 2: Build policy context (message signing has zero value, no tx)
+		// Policy evaluation for message signing
 		const now = new Date();
 		const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 		const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
@@ -596,7 +488,6 @@ export class InteractiveSignService implements OnModuleDestroy {
 			callerIp: input.callerIp,
 		};
 
-		// Step 3: Evaluate policies — try rules engine first, fall back to legacy
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
 		let policyResult;
 
@@ -633,34 +524,54 @@ export class InteractiveSignService implements OnModuleDestroy {
 			});
 		}
 
-		// Step 4: Fetch server keyshare and create SignSession
-		let serverKeyshareBytes: Uint8Array | null = null;
-		let serverSession: SignSession | null = null;
+		// Generate EID and determine party config
+		const eid = Uint8Array.from(randomBytes(32));
+		const { serverPartyIndex, clientPartyIndex, partiesAtKeygen } =
+			this.getPartyConfig(signingPath);
+
+		// Fetch server key material and create sign session with hash upfront
+		let serverKeyMaterialBytes: Uint8Array | null = null;
 		try {
-			serverKeyshareBytes = await this.vault.getShare(signer.vaultSharePath);
+			serverKeyMaterialBytes = await this.vault.getShare(signer.vaultSharePath);
+			const keyMaterial = parseKeyMaterial(serverKeyMaterialBytes);
 
-			const serverKeyshare = Keyshare.fromBytes(serverKeyshareBytes);
-			const expectedPublicKey = new Uint8Array(serverKeyshare.publicKey);
-			serverSession = new SignSession(serverKeyshare, 'm');
-
-			const serverFirstMsg = serverSession.createFirstMessage();
-			const serverFirstMsgBytes = serializeMessage(serverFirstMsg);
-			serverFirstMsg.free();
-
-			// Process signer's first message (broadcast) immediately
-			const signerFirstMsg = deserializeMessage(input.signerFirstMessage);
-			const serverRound1Msgs = serverSession.handleMessages([signerFirstMsg]);
-			try { signerFirstMsg.free(); } catch { /* already consumed */ }
-
-			const round1Bytes: Uint8Array[] = [];
-			for (const msg of serverRound1Msgs) {
-				round1Bytes.push(serializeMessage(msg));
-				try { msg.free(); } catch { /* already consumed */ }
+			// Extract public key for recovery ID computation
+			let expectedPublicKey: Uint8Array = new Uint8Array(33);
+			if (this.scheme.extractPublicKey) {
+				try {
+					expectedPublicKey = this.scheme.extractPublicKey(
+						new Uint8Array(keyMaterial.coreShare),
+					);
+				} catch {
+					// Non-fatal
+				}
 			}
 
-			const serverSessionBytes = serverSession.toBytes();
-			try { serverSession.free(); } catch { /* may be consumed */ }
-			serverSession = null;
+			// CGGMP24: messageHash required upfront
+			// Force WASM for User+Server path (browser uses WASM num-bigint backend)
+			const forceWasm = signingPath === SigningPath.USER_SERVER;
+			const { sessionId: schemeSessionId, firstMessages } =
+				await this.scheme.createSignSession(
+					[keyMaterial.coreShare, keyMaterial.auxInfo],
+					input.messageHash,
+					{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
+				);
+
+			wipeBuffer(keyMaterial.coreShare);
+			wipeBuffer(keyMaterial.auxInfo);
+
+			// For message signing, client may send signerFirstMessage upfront
+			// Process it immediately to get server's round 1 response
+			let allServerMessages = [...firstMessages];
+			let round = 0;
+			if (input.signerFirstMessage) {
+				const signerResult = await this.scheme.processSignRound(
+					schemeSessionId,
+					[input.signerFirstMessage],
+				);
+				allServerMessages = [...allServerMessages, ...signerResult.outgoingMessages];
+				round = 1;
+			}
 
 			const sessionId = randomUUID();
 			this.sessions.set(sessionId, {
@@ -670,28 +581,27 @@ export class InteractiveSignService implements OnModuleDestroy {
 				ownerAddress: signer.ownerAddress,
 				expectedPublicKey,
 				signingPath,
-				serverKeyshareBytes,
+				serverKeyMaterialBytes,
 				policyResult: {
 					evaluatedCount: policyResult.evaluatedCount,
 					evaluationTimeMs: policyResult.evaluationTimeMs,
 				},
-				round: 1,
+				schemeSessionId,
+				round,
 				createdAt: Date.now(),
-				serverSessionBytes,
 			});
 
 			return {
 				sessionId,
-				serverFirstMessage: serverFirstMsgBytes,
-				initialRoundMessages: round1Bytes,
-				roundsRemaining: 3,
+				serverFirstMessages: allServerMessages,
+				messageHash: input.messageHash,
+				eid,
+				partyConfig: { serverPartyIndex, clientPartyIndex, partiesAtKeygen },
+				roundsRemaining: 4,
 			};
 		} catch (error) {
-			if (serverSession) {
-				try { serverSession.free(); } catch { /* may be consumed */ }
-			}
-			if (serverKeyshareBytes) {
-				wipeBuffer(serverKeyshareBytes);
+			if (serverKeyMaterialBytes) {
+				wipeBuffer(serverKeyMaterialBytes);
 			}
 			if (!(error instanceof ForbiddenException) && !(error instanceof NotFoundException)) {
 				await this.signingRequestRepo.create({
@@ -714,28 +624,16 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException('Session does not belong to this signer');
 		}
 
-		// Re-check signer status — reject if paused/revoked since session creation
 		const signer = await this.signerRepo.findById(state.signerId);
 		if (!signer || signer.status !== 'active') {
 			this.destroySession(input.sessionId);
 			throw new ForbiddenException(`Signer is ${signer?.status ?? 'deleted'}`);
 		}
 
-		const serverSession = state.liveSession ?? SignSession.fromBytes(state.serverSessionBytes);
-		state.liveSession = undefined;
 		try {
-			const serverLastMsg = serverSession.lastMessage(input.messageHash);
-			const signerLastMsg = deserializeMessage(input.lastMessage);
+			// Extract signature — no lastMessage step in CGGMP24
+			const { r, s, v } = await this.scheme.finalizeSign(state.schemeSessionId);
 
-			const result = serverSession.combine([signerLastMsg]) as [Uint8Array, Uint8Array];
-			try { serverLastMsg.free(); } catch { /* consumed */ }
-			try { signerLastMsg.free(); } catch { /* consumed */ }
-
-			const r = new Uint8Array(result[0]);
-			const s = new Uint8Array(result[1]);
-			const v = this.computeRecoveryId(r, s, input.messageHash, state.expectedPublicKey);
-
-			// Log success to audit
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
 				ownerAddress: state.ownerAddress,
@@ -746,13 +644,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 				evaluationTimeMs: state.policyResult.evaluationTimeMs,
 			});
 
-			return {
-				signature: {
-					r: toHex(r),
-					s: toHex(s),
-					v,
-				},
-			};
+			return { signature: { r: toHex(r), s: toHex(s), v } };
 		} catch (error) {
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
@@ -765,42 +657,8 @@ export class InteractiveSignService implements OnModuleDestroy {
 			});
 			throw error;
 		} finally {
-			try { serverSession.free(); } catch { /* may be consumed by handleMessages/combine */ }
 			this.destroySession(input.sessionId);
 		}
-	}
-
-	/**
-	 * Computes the Ethereum signature recovery ID (v = 27 or 28).
-	 * Tries both recovery bits and returns the one whose recovered
-	 * public key matches the expected DKG public key.
-	 */
-	private computeRecoveryId(
-		r: Uint8Array,
-		s: Uint8Array,
-		messageHash: Uint8Array,
-		expectedPublicKey: Uint8Array,
-	): number {
-		const rBig = BigInt(`0x${Buffer.from(r).toString('hex')}`);
-		const sBig = BigInt(`0x${Buffer.from(s).toString('hex')}`);
-		const expectedHex = Buffer.from(expectedPublicKey).toString('hex');
-
-		for (const recoveryBit of [0, 1] as const) {
-			try {
-				const sig = new secp256k1.Signature(rBig, sBig).addRecoveryBit(recoveryBit);
-				const recovered = sig.recoverPublicKey(messageHash);
-				const recoveredHex = Buffer.from(recovered.toBytes(true)).toString('hex');
-				if (recoveredHex === expectedHex) {
-					return recoveryBit + 27;
-				}
-			} catch {
-				// Try next recovery bit
-			}
-		}
-
-		throw new Error(
-			'Failed to compute recovery ID: neither v=27 nor v=28 recovers the expected public key',
-		);
 	}
 
 	private getValidSession(sessionId: string): SignSessionState {
@@ -818,28 +676,14 @@ export class InteractiveSignService implements OnModuleDestroy {
 	private destroySession(sessionId: string): void {
 		const state = this.sessions.get(sessionId);
 		if (state) {
-			wipeBuffer(state.serverKeyshareBytes);
-			wipeBuffer(state.serverSessionBytes);
-			if (state.liveSession) {
-				try { state.liveSession.free(); } catch { /* may be consumed */ }
-				state.liveSession = undefined;
-			}
+			wipeBuffer(state.serverKeyMaterialBytes);
 			this.sessions.delete(sessionId);
-			this.logger.debug(`Session ${sessionId} destroyed, keyshare wiped`);
+			this.logger.debug(`Session ${sessionId} destroyed, key material wiped`);
 		}
 	}
 
-	/** 20% buffer on top of estimated gas to handle variance. */
 	private static readonly GAS_LIMIT_BUFFER = 120n;
 
-	/**
-	 * Auto-populate missing transaction fields (chainId, nonce, gas)
-	 * from on-chain state so clients don't need to provide them.
-	 *
-	 * Fee estimation delegates to the RPC node via `estimateFeesPerGas()`
-	 * which returns EIP-1559 fee suggestions based on recent blocks.
-	 * No hardcoded gas prices — works on L1, L2s, and testnets.
-	 */
 	private async populateTransaction(
 		tx: TransactionRequest,
 		signerAddress: string,
@@ -869,6 +713,29 @@ export class InteractiveSignService implements OnModuleDestroy {
 		return { ...tx, chainId, nonce, gasLimit, maxFeePerGas, maxPriorityFeePerGas, gasPrice };
 	}
 
+	/**
+	 * Determine party indices based on the signing path.
+	 *
+	 * DKG party assignments:
+	 *   0 = signer (CLI/SDK agent)
+	 *   1 = server
+	 *   2 = user (browser/wallet)
+	 */
+	private getPartyConfig(signingPath: SigningPath): {
+		serverPartyIndex: number;
+		clientPartyIndex: number;
+		partiesAtKeygen: number[];
+	} {
+		switch (signingPath) {
+			case SigningPath.SIGNER_SERVER:
+				return { serverPartyIndex: 1, clientPartyIndex: 0, partiesAtKeygen: [0, 1] };
+			case SigningPath.USER_SERVER:
+				return { serverPartyIndex: 1, clientPartyIndex: 2, partiesAtKeygen: [1, 2] };
+			default:
+				return { serverPartyIndex: 1, clientPartyIndex: 0, partiesAtKeygen: [0, 1] };
+		}
+	}
+
 	private cleanupExpiredSessions(): void {
 		const now = Date.now();
 		for (const [id, state] of this.sessions) {
@@ -878,4 +745,16 @@ export class InteractiveSignService implements OnModuleDestroy {
 			}
 		}
 	}
+}
+
+/**
+ * Parse key material from Vault: JSON { coreShare: base64, auxInfo: base64 }
+ */
+function parseKeyMaterial(bytes: Uint8Array): { coreShare: Uint8Array; auxInfo: Uint8Array } {
+	const json = new TextDecoder().decode(bytes);
+	const parsed = JSON.parse(json) as { coreShare: string; auxInfo: string };
+	return {
+		coreShare: new Uint8Array(Buffer.from(parsed.coreShare, 'base64')),
+		auxInfo: new Uint8Array(Buffer.from(parsed.auxInfo, 'base64')),
+	};
 }

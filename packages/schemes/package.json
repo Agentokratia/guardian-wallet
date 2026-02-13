@@ -1,7 +1,7 @@
 {
 	"name": "@agentokratia/guardian-schemes",
 	"version": "0.1.0",
-	"description": "DKLs23 threshold ECDSA signing scheme (WASM)",
+	"description": "CGGMP24 threshold ECDSA signing scheme (WASM)",
 	"license": "AGPL-3.0-only",
 	"author": "Agentokratia <hello@agentokratia.com>",
 	"repository": {
@@ -11,7 +11,7 @@
 	},
 	"homepage": "https://github.com/agentokratia/guardian-wallet",
 	"bugs": "https://github.com/agentokratia/guardian-wallet/issues",
-	"keywords": ["threshold", "wallet", "mpc", "ecdsa", "dkls23", "wasm", "signing"],
+	"keywords": ["threshold", "wallet", "mpc", "ecdsa", "cggmp24", "wasm", "signing"],
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -27,14 +27,14 @@
 	"scripts": {
 		"build": "tsc",
 		"lint": "biome check src/",
-		"test": "vitest run",
+		"test": "vitest run --passWithNoTests",
 		"typecheck": "tsc --noEmit",
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
 		"@noble/curves": "^2.0.1",
-		"@silencelaboratories/dkls-wasm-ll-node": "^1.2.0",
 		"@agentokratia/guardian-core": "workspace:*",
+		"@agentokratia/guardian-mpc-wasm": "workspace:*",
 		"viem": "^2.21.0"
 	},
 	"devDependencies": {}

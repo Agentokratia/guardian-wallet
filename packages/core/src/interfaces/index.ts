@@ -1,4 +1,5 @@
 export type {
+	AuxInfoRoundResult,
 	DKGRoundResult,
 	IThresholdScheme,
 } from './threshold-scheme.interface.js';
