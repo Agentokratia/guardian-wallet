@@ -618,13 +618,13 @@ gw send 0x... 0.01`;
 
 	const sdkSnippet = `import { readFileSync } from 'fs';
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
-import { DKLs23Scheme } from '@agentokratia/guardian-schemes';
+import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 
 const signer = await ThresholdSigner.fromSecret({
   serverUrl: '${window.location.origin}',
   apiKey: process.env.GW_API_KEY,
   apiSecret: readFileSync(process.env.GW_API_SECRET_FILE, 'utf-8'),
-  scheme: new DKLs23Scheme(),
+  scheme: new CGGMP24Scheme(),
 });
 
 // Use with viem

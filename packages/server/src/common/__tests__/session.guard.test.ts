@@ -25,6 +25,9 @@ function makeConfig(): AppConfig {
 		VAULT_SHARE_PREFIX: 'threshold/shares',
 		JWT_SECRET,
 		JWT_EXPIRY: '24h',
+		AUXINFO_POOL_TARGET: 5,
+		AUXINFO_POOL_LOW_WATERMARK: 2,
+		AUXINFO_POOL_MAX_GENERATORS: 2,
 	};
 }
 

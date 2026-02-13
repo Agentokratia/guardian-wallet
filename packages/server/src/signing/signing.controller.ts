@@ -30,7 +30,7 @@ export class SigningController {
 	) {}
 
 	/**
-	 * Override sign — interactive DKLs23 session creation (User+Server path).
+	 * Override sign — interactive CGGMP24 session creation (User+Server path).
 	 * Called from the dashboard with session auth (wallet login).
 	 */
 	@Post('signers/:id/sign/session')
@@ -43,21 +43,23 @@ export class SigningController {
 		requireSessionUser(req);
 		const result = await this.interactiveSign.createSession({
 			signerId,
-			signerFirstMessage: base64ToBytes(body.signerFirstMessage),
+			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
 			transaction: await this.toTransactionRequest(body.transaction),
 			signingPath: SigningPath.USER_SERVER,
 			callerIp: req.ip,
 		});
 		return {
 			sessionId: result.sessionId,
-			serverFirstMessage: bytesToBase64(result.serverFirstMessage),
-			initialMessages: result.initialRoundMessages.map(bytesToBase64),
+			serverFirstMessages: result.serverFirstMessages.map(bytesToBase64),
+			messageHash: bytesToBase64(result.messageHash),
+			eid: bytesToBase64(result.eid),
+			partyConfig: result.partyConfig,
 			roundsRemaining: result.roundsRemaining,
 		};
 	}
 
 	/**
-	 * Override sign — interactive DKLs23 round exchange (User+Server path).
+	 * Override sign — interactive CGGMP24 round exchange (User+Server path).
 	 */
 	@Post('signers/:id/sign/round')
 	@UseGuards(SessionGuard)
@@ -75,14 +77,13 @@ export class SigningController {
 		return {
 			messages: result.outgoingMessages.map(bytesToBase64),
 			roundsRemaining: result.roundsRemaining,
-			presigned: result.presigned,
-			messageHash: result.messageHash ? bytesToBase64(result.messageHash) : undefined,
+			complete: result.complete,
 		};
 	}
 
 	/**
-	 * Override sign — interactive DKLs23 finalization (User+Server path).
-	 * Server combines signature and broadcasts the transaction.
+	 * Override sign — interactive CGGMP24 finalization (User+Server path).
+	 * Server extracts signature and broadcasts the transaction.
 	 */
 	@Post('signers/:id/sign/complete')
 	@UseGuards(SessionGuard)
@@ -95,8 +96,6 @@ export class SigningController {
 		return this.interactiveSign.completeSign({
 			sessionId: body.sessionId,
 			signerId,
-			lastMessage: base64ToBytes(body.lastMessage),
-			messageHash: base64ToBytes(body.messageHash),
 		});
 	}
 
@@ -106,14 +105,16 @@ export class SigningController {
 		const signerId = requireSignerId(req);
 		const result = await this.interactiveSign.createSession({
 			signerId,
-			signerFirstMessage: base64ToBytes(body.signerFirstMessage),
+			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
 			transaction: await this.toTransactionRequest(body.transaction),
 			callerIp: req.ip,
 		});
 		return {
 			sessionId: result.sessionId,
-			serverFirstMessage: bytesToBase64(result.serverFirstMessage),
-			initialMessages: result.initialRoundMessages.map(bytesToBase64),
+			serverFirstMessages: result.serverFirstMessages.map(bytesToBase64),
+			messageHash: bytesToBase64(result.messageHash),
+			eid: bytesToBase64(result.eid),
+			partyConfig: result.partyConfig,
 			roundsRemaining: result.roundsRemaining,
 		};
 	}
@@ -130,8 +131,7 @@ export class SigningController {
 		return {
 			messages: result.outgoingMessages.map(bytesToBase64),
 			roundsRemaining: result.roundsRemaining,
-			presigned: result.presigned,
-			messageHash: result.messageHash ? bytesToBase64(result.messageHash) : undefined,
+			complete: result.complete,
 		};
 	}
 
@@ -142,8 +142,6 @@ export class SigningController {
 		return this.interactiveSign.completeSign({
 			sessionId: body.sessionId,
 			signerId,
-			lastMessage: base64ToBytes(body.lastMessage),
-			messageHash: base64ToBytes(body.messageHash),
 		});
 	}
 
@@ -156,13 +154,16 @@ export class SigningController {
 		const signerId = requireSignerId(req);
 		const result = await this.interactiveSign.createMessageSession({
 			signerId,
-			signerFirstMessage: base64ToBytes(body.signerFirstMessage),
+			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
+			messageHash: base64ToBytes(body.messageHash),
 			callerIp: req.ip,
 		});
 		return {
 			sessionId: result.sessionId,
-			serverFirstMessage: bytesToBase64(result.serverFirstMessage),
-			initialMessages: result.initialRoundMessages.map(bytesToBase64),
+			serverFirstMessages: result.serverFirstMessages.map(bytesToBase64),
+			messageHash: bytesToBase64(result.messageHash),
+			eid: bytesToBase64(result.eid),
+			partyConfig: result.partyConfig,
 			roundsRemaining: result.roundsRemaining,
 		};
 	}
@@ -174,8 +175,6 @@ export class SigningController {
 		return this.interactiveSign.completeMessageSign({
 			sessionId: body.sessionId,
 			signerId,
-			lastMessage: base64ToBytes(body.lastMessage),
-			messageHash: base64ToBytes(body.messageHash),
 		});
 	}
 

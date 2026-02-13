@@ -10,19 +10,20 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as cryptoUtils from '../../common/crypto-utils.js';
 import type { SignerRepository } from '../../signers/signer.repository.js';
+import type { AuxInfoPoolService } from '../aux-info-pool.service.js';
 import { DKGService } from '../dkg.service.js';
 
 // ---------------------------------------------------------------------------
-// Mock DKLs23Scheme and WASM dependencies
+// Mock CGGMP24Scheme and WASM dependencies
 // ---------------------------------------------------------------------------
 
 const mockScheme = {
-	dkg: vi.fn(),
+	runDkg: vi.fn(),
 	deriveAddress: vi.fn().mockReturnValue('0xDerivedAddress123'),
 };
 
 vi.mock('@agentokratia/guardian-schemes', () => ({
-	DKLs23Scheme: vi.fn(() => mockScheme),
+	CGGMP24Scheme: vi.fn(() => mockScheme),
 }));
 
 // Spy on wipeBuffer
@@ -45,7 +46,7 @@ function makeSigner(overrides: Partial<Signer> = {}): Signer {
 		type: SignerType.AI_AGENT,
 		ethAddress: '',
 		chain: ChainName.ETHEREUM,
-		scheme: SchemeName.CGGMP21,
+		scheme: SchemeName.CGGMP24,
 		network: NetworkName.SEPOLIA,
 		status: SignerStatus.ACTIVE,
 		ownerAddress: '0xTestOwner',
@@ -74,7 +75,47 @@ function createMocks() {
 		deleteShare: vi.fn(),
 	};
 
-	return { signerRepo, vault };
+	const auxInfoPool = {
+		take: vi.fn().mockResolvedValue(null),
+		getStatus: vi.fn().mockReturnValue({
+			size: 0,
+			target: 5,
+			lowWatermark: 2,
+			activeGenerators: 0,
+			maxGenerators: 2,
+			healthy: true,
+		}),
+	};
+
+	return { signerRepo, vault, auxInfoPool };
+}
+
+/**
+ * Helper: set up mock for single-call DKG via scheme.runDkg().
+ *
+ * CGGMP24 DKG runs as a single WASM call that returns all shares + publicKey.
+ */
+function setupRunDkg(
+	options: {
+		coreShares?: Uint8Array[];
+		auxInfos?: Uint8Array[];
+		publicKey?: Uint8Array;
+	} = {},
+) {
+	const {
+		coreShares = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])],
+		auxInfos = [new Uint8Array([11, 12]), new Uint8Array([13, 14]), new Uint8Array([15, 16])],
+		publicKey = new Uint8Array([10, 20]),
+	} = options;
+
+	const shares = coreShares.map((cs, i) => ({
+		coreShare: cs,
+		auxInfo: auxInfos[i]!,
+	}));
+
+	mockScheme.runDkg.mockResolvedValueOnce({ shares, publicKey });
+
+	return { coreShares, auxInfos, publicKey, shares };
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +133,7 @@ describe('DKGService', () => {
 		service = new DKGService(
 			mocks.signerRepo as unknown as SignerRepository,
 			mocks.vault as unknown as IVaultStore,
+			mocks.auxInfoPool as unknown as AuxInfoPoolService,
 		);
 	});
 
@@ -108,23 +150,26 @@ describe('DKGService', () => {
 			);
 		});
 
-		it('creates a new session and returns sessionId', async () => {
+		it('throws BadRequestException when DKG already completed', async () => {
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ dkgCompleted: true }));
+
+			await expect(service.init({ signerId: 'signer-1' })).rejects.toThrow(
+				BadRequestException,
+			);
+		});
+
+		it('creates a new session and returns sessionId + signerId', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-			mockScheme.dkg.mockResolvedValue({
-				outgoing: [new Uint8Array([1, 2, 3])],
-				finished: false,
-			});
 
 			const result = await service.init({ signerId: 'signer-1' });
 
 			expect(result.sessionId).toBeDefined();
 			expect(result.signerId).toBe('signer-1');
-			expect(result.round).toBe(1);
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// finalize (runs rounds 2-5 internally)
+	// finalize (single-call WASM DKG)
 	// -----------------------------------------------------------------------
 
 	describe('finalize', () => {
@@ -150,122 +195,47 @@ describe('DKGService', () => {
 			).rejects.toThrow(BadRequestException);
 		});
 
-		it('runs all 5 DKG rounds and stores server share in vault', async () => {
+		it('throws BadRequestException on session/signer mismatch', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
 
-			// Round 1 (init)
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1, 2, 3])],
-				finished: false,
-			});
 			const initResult = await service.init({ signerId: 'signer-1' });
 
-			// Rounds 2-4: return outgoing, not finished
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10 + i])],
-					finished: false,
-				});
-			}
-			// Round 5: finished with shares
-			const serverShare = new Uint8Array([7, 8, 9]);
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [new Uint8Array([1, 2, 3]), serverShare, new Uint8Array([4, 5, 6])],
-				publicKey: new Uint8Array([10, 20]),
-			});
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ id: 'signer-2' }));
 
+			await expect(
+				service.finalize({
+					sessionId: initResult.sessionId,
+					signerId: 'signer-2',
+				}),
+			).rejects.toThrow('Session/signer mismatch');
+		});
+
+		it('runs single-call DKG via WASM and stores server share in vault', async () => {
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			setupRunDkg();
+
+			const initResult = await service.init({ signerId: 'signer-1' });
 			await service.finalize({
 				sessionId: initResult.sessionId,
 				signerId: 'signer-1',
 			});
 
-			// scheme.dkg called 5 times total: round 1 in init + rounds 2-5 in finalize
-			expect(mockScheme.dkg).toHaveBeenCalledTimes(5);
-			expect(mocks.vault.storeShare).toHaveBeenCalledWith('signer-1', serverShare);
-		});
-
-		it('throws BadRequestException when DKG does not complete after round 5', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-
-			// Round 1 (init)
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
-			const initResult = await service.init({ signerId: 'signer-1' });
-
-			// All rounds 2-5 return not finished
-			for (let i = 0; i < 4; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [],
-					finished: false,
-				});
-			}
-
-			await expect(
-				service.finalize({
-					sessionId: initResult.sessionId,
-					signerId: 'signer-1',
-				}),
-			).rejects.toThrow('DKG did not complete');
-		});
-
-		it('throws BadRequestException when fewer than 3 shares', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
-			const initResult = await service.init({ signerId: 'signer-1' });
-
-			// Rounds 2-4
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10])],
-					finished: false,
-				});
-			}
-			// Round 5 with only 2 shares
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [new Uint8Array([1]), new Uint8Array([2])],
-				publicKey: new Uint8Array([99]),
-			});
-
-			await expect(
-				service.finalize({
-					sessionId: initResult.sessionId,
-					signerId: 'signer-1',
-				}),
-			).rejects.toThrow('Expected 3 shares');
+			// runDkg called exactly once with (3, 2)
+			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2);
+			// Server share stored in Vault (bundled as JSON key material)
+			expect(mocks.vault.storeShare).toHaveBeenCalledTimes(1);
+			expect(mocks.vault.storeShare).toHaveBeenCalledWith(
+				'signer-1',
+				expect.any(Uint8Array),
+			);
 		});
 
 		it('updates signer record with ethAddress and dkgCompleted', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			setupRunDkg();
 
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
 			const initResult = await service.init({ signerId: 'signer-1' });
-
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10])],
-					finished: false,
-				});
-			}
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])],
-				publicKey: new Uint8Array([10]),
-			});
-
 			await service.finalize({
 				sessionId: initResult.sessionId,
 				signerId: 'signer-1',
@@ -280,105 +250,82 @@ describe('DKGService', () => {
 
 		it('returns signerShare and userShare as base64', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			setupRunDkg();
 
-			const signerShareExpectedB64 = Buffer.from(new Uint8Array([1, 2, 3])).toString('base64');
-
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
 			const initResult = await service.init({ signerId: 'signer-1' });
-
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10])],
-					finished: false,
-				});
-			}
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])],
-				publicKey: new Uint8Array([10]),
-			});
-
 			const result = await service.finalize({
 				sessionId: initResult.sessionId,
 				signerId: 'signer-1',
 			});
 
 			expect(result.ethAddress).toBe('0xDerivedAddress123');
-			expect(result.signerShare).toBe(signerShareExpectedB64);
+			expect(typeof result.signerShare).toBe('string');
 			expect(typeof result.userShare).toBe('string');
+
+			// Signer share is base64-encoded JSON { coreShare, auxInfo }
+			const signerKm = JSON.parse(
+				Buffer.from(result.signerShare, 'base64').toString('utf-8'),
+			);
+			expect(signerKm).toHaveProperty('coreShare');
+			expect(signerKm).toHaveProperty('auxInfo');
 		});
 
-		it('wipes all share buffers in finally block', async () => {
-			const signerShare = new Uint8Array([1, 2, 3]);
-			const serverShare = new Uint8Array([4, 5, 6]);
-			const userShare = new Uint8Array([7, 8, 9]);
+		it('throws when fewer than 3 shares', async () => {
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+
+			// runDkg returns only 2 shares
+			mockScheme.runDkg.mockResolvedValueOnce({
+				shares: [
+					{ coreShare: new Uint8Array([1]), auxInfo: new Uint8Array([2]) },
+					{ coreShare: new Uint8Array([3]), auxInfo: new Uint8Array([4]) },
+				],
+				publicKey: new Uint8Array([99]),
+			});
+
+			const initResult = await service.init({ signerId: 'signer-1' });
+
+			await expect(
+				service.finalize({
+					sessionId: initResult.sessionId,
+					signerId: 'signer-1',
+				}),
+			).rejects.toThrow('Expected 3 shares');
+		});
+
+		it('wipes all key material buffers in finally block', async () => {
+			const coreShares = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])];
+			const auxInfos = [new Uint8Array([11, 12]), new Uint8Array([13, 14]), new Uint8Array([15, 16])];
 			const publicKey = new Uint8Array([10, 20]);
 
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			setupRunDkg({ coreShares, auxInfos, publicKey });
 
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
 			const initResult = await service.init({ signerId: 'signer-1' });
-
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10])],
-					finished: false,
-				});
-			}
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [signerShare, serverShare, userShare],
-				publicKey,
-			});
-
 			await service.finalize({
 				sessionId: initResult.sessionId,
 				signerId: 'signer-1',
 			});
 
-			// 4 calls: serverShare, signerShare, userShare, publicKey
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(signerShare);
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(serverShare);
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(userShare);
+			// wipeBuffer called for: 3 bundled key materials + 3 coreShares + 3 auxInfos + 1 publicKey = 10 calls
 			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(publicKey);
+			for (const share of coreShares) {
+				expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(share);
+			}
+			for (const aux of auxInfos) {
+				expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(aux);
+			}
 		});
 
 		it('wipes buffers even when vault store fails', async () => {
-			const signerShare = new Uint8Array([1, 2, 3]);
-			const serverShare = new Uint8Array([4, 5, 6]);
-			const userShare = new Uint8Array([7, 8, 9]);
+			const coreShares = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])];
+			const auxInfos = [new Uint8Array([11, 12]), new Uint8Array([13, 14]), new Uint8Array([15, 16])];
 			const publicKey = new Uint8Array([10, 20]);
 
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1])],
-				finished: false,
-			});
-			const initResult = await service.init({ signerId: 'signer-1' });
-
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10])],
-					finished: false,
-				});
-			}
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [signerShare, serverShare, userShare],
-				publicKey,
-			});
+			setupRunDkg({ coreShares, auxInfos, publicKey });
 			mocks.vault.storeShare.mockRejectedValue(new Error('Vault down'));
 
+			const initResult = await service.init({ signerId: 'signer-1' });
 			await expect(
 				service.finalize({
 					sessionId: initResult.sessionId,
@@ -387,9 +334,13 @@ describe('DKGService', () => {
 			).rejects.toThrow('Vault down');
 
 			// Buffers still wiped despite error
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(serverShare);
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(signerShare);
-			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(userShare);
+			for (const share of coreShares) {
+				expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(share);
+			}
+			for (const aux of auxInfos) {
+				expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(aux);
+			}
+			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(publicKey);
 		});
 	});
 });

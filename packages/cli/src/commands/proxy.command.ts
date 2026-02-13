@@ -50,6 +50,9 @@ const SIGNING_METHODS = new Set([
 	'personal_sign',
 ]);
 
+/** Methods that should return the signer's address (enables --unlocked in Forge/Hardhat). */
+const ACCOUNT_METHODS = new Set(['eth_accounts', 'eth_requestAccounts']);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -145,11 +148,14 @@ async function handleSigningRequest(
 			if (txParams.to !== undefined) transaction.to = txParams.to;
 			if (txParams.value !== undefined) transaction.value = txParams.value;
 			if (txParams.data !== undefined) transaction.data = txParams.data;
+			if (txParams.input !== undefined) transaction.data = txParams.input;
 			if (txParams.gas !== undefined) transaction.gasLimit = txParams.gas;
 			if (txParams.gasLimit !== undefined) transaction.gasLimit = txParams.gasLimit;
-			if (txParams.nonce !== undefined) transaction.nonce = txParams.nonce;
-
-			// Forge/Hardhat send chainId as hex (e.g. "0x14a34"); server expects a number.
+			// Forge/Hardhat send numeric fields as hex (e.g. "0xe"); server expects numbers/strings.
+			if (txParams.nonce !== undefined) {
+				const raw = txParams.nonce;
+				transaction.nonce = typeof raw === 'string' ? Number.parseInt(raw, 16) : raw;
+			}
 			if (txParams.chainId !== undefined) {
 				const raw = txParams.chainId;
 				transaction.chainId = typeof raw === 'string' ? Number.parseInt(raw, 16) : raw;
@@ -303,7 +309,14 @@ export const proxyCommand = new Command('proxy')
 				const reqNum = requestCount;
 				const method = rpcRequest.method;
 
-				if (SIGNING_METHODS.has(method)) {
+				if (ACCOUNT_METHODS.has(method)) {
+					console.log(chalk.dim(`  #${reqNum} ${method} -> [${signer.address}]`));
+					sendJsonResponse(res, {
+						jsonrpc: '2.0',
+						id: rpcRequest.id,
+						result: [signer.address],
+					});
+				} else if (SIGNING_METHODS.has(method)) {
 					console.log(
 						chalk.yellow(`  #${reqNum}`) + chalk.dim(` ${method} `) + chalk.yellow('(signing)'),
 					);

@@ -21,6 +21,7 @@ import { HttpException, NotFoundException } from '@nestjs/common';
 import type { IChain, IVaultStore, Signer } from '@agentokratia/guardian-core';
 import { ChainName, NetworkName, SchemeName, SignerStatus, SignerType } from '@agentokratia/guardian-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuxInfoPoolService } from '../dkg/aux-info-pool.service.js';
 import { DKGService } from '../dkg/dkg.service.js';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { SignerController } from '../signers/signer.controller.js';
@@ -417,9 +418,9 @@ describe('Guardian API Integration Tests', () => {
 
 	describe('DKG End-to-End', () => {
 		it('create signer → init DKG → finalize → returns signerShare + userShare + ethAddress', async () => {
-			// Set up a real-ish DKG flow with mock scheme
+			// Set up a single-call DKG mock (CGGMP24 runs entirely inside WASM)
 			const mockScheme = {
-				dkg: vi.fn(),
+				runDkg: vi.fn(),
 				deriveAddress: vi.fn().mockReturnValue('0xE2E_DKG_Address_1234567890abcdef'),
 			};
 
@@ -437,9 +438,17 @@ describe('Guardian API Integration Tests', () => {
 			};
 
 			const dkgVault = new MockVaultStore();
+			const mockAuxInfoPool = {
+				take: vi.fn().mockResolvedValue(null),
+				getStatus: vi.fn().mockReturnValue({
+					size: 0, target: 5, lowWatermark: 2,
+					activeGenerators: 0, maxGenerators: 2, healthy: true,
+				}),
+			};
 			const dkgService = new DKGService(
 				signerRepo as unknown as SignerRepository,
 				dkgVault,
+				mockAuxInfoPool as unknown as AuxInfoPoolService,
 			);
 			// Replace the scheme with our mock (it's private, use any cast)
 			(dkgService as unknown as Record<string, unknown>).scheme = mockScheme;
@@ -464,33 +473,26 @@ describe('Guardian API Integration Tests', () => {
 			};
 			signers.set(signerId, signer);
 
-			// Step 2: Init DKG (round 1)
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [new Uint8Array([1, 2, 3])],
-				finished: false,
-			});
+			// Step 2: Init DKG (validates signer, creates session)
 			const initResult = await dkgService.init({ signerId });
 
 			expect(initResult.sessionId).toBeDefined();
 			expect(initResult.signerId).toBe(signerId);
-			expect(initResult.round).toBe(1);
 
-			// Step 3: Finalize DKG (runs rounds 2-5 internally)
-			// Rounds 2-4: return outgoing, not finished
-			for (let i = 0; i < 3; i++) {
-				mockScheme.dkg.mockResolvedValueOnce({
-					outgoing: [new Uint8Array([10 + i])],
-					finished: false,
-				});
-			}
-			// Round 5: finished with 3 shares
-			const signerShareBytes = new Uint8Array([100, 101, 102]);
-			const serverShareBytes = new Uint8Array([200, 201, 202]);
-			const userShareBytes = new Uint8Array([50, 51, 52]);
-			mockScheme.dkg.mockResolvedValueOnce({
-				outgoing: [],
-				finished: true,
-				shares: [signerShareBytes, serverShareBytes, userShareBytes],
+			// Step 3: Finalize DKG (single WASM call — aux_info_gen + keygen all at once)
+			const signerCoreShare = new Uint8Array([100, 101, 102]);
+			const serverCoreShare = new Uint8Array([200, 201, 202]);
+			const userCoreShare = new Uint8Array([50, 51, 52]);
+			const signerAuxInfo = new Uint8Array([11, 12]);
+			const serverAuxInfo = new Uint8Array([13, 14]);
+			const userAuxInfo = new Uint8Array([15, 16]);
+
+			mockScheme.runDkg.mockResolvedValueOnce({
+				shares: [
+					{ coreShare: signerCoreShare, auxInfo: signerAuxInfo },
+					{ coreShare: serverCoreShare, auxInfo: serverAuxInfo },
+					{ coreShare: userCoreShare, auxInfo: userAuxInfo },
+				],
 				publicKey: new Uint8Array([4, 10, 20]),
 			});
 
@@ -507,6 +509,11 @@ describe('Guardian API Integration Tests', () => {
 			expect(finalResult.signerShare.length).toBeGreaterThan(0);
 			expect(finalResult.userShare.length).toBeGreaterThan(0);
 
+			// Signer share is base64-encoded JSON { coreShare, auxInfo }
+			const signerKm = JSON.parse(Buffer.from(finalResult.signerShare, 'base64').toString('utf-8'));
+			expect(signerKm).toHaveProperty('coreShare');
+			expect(signerKm).toHaveProperty('auxInfo');
+
 			// Verify server share is in Vault
 			expect(dkgVault.has(signerId)).toBe(true);
 
@@ -516,37 +523,26 @@ describe('Guardian API Integration Tests', () => {
 			expect(updatedSigner?.ethAddress).toBe('0xE2E_DKG_Address_1234567890abcdef');
 			expect(updatedSigner?.vaultSharePath).toBe(signerId);
 
-			// Verify scheme.dkg was called 5 times (round 1 in init + rounds 2-5 in finalize)
-			expect(mockScheme.dkg).toHaveBeenCalledTimes(5);
-
-			// Verify round numbers passed to scheme
-			expect(mockScheme.dkg).toHaveBeenNthCalledWith(1, initResult.sessionId, 1, []);
-			expect(mockScheme.dkg).toHaveBeenNthCalledWith(2, initResult.sessionId, 2, expect.any(Array));
-			expect(mockScheme.dkg).toHaveBeenNthCalledWith(3, initResult.sessionId, 3, expect.any(Array));
-			expect(mockScheme.dkg).toHaveBeenNthCalledWith(4, initResult.sessionId, 4, expect.any(Array));
-			expect(mockScheme.dkg).toHaveBeenNthCalledWith(5, initResult.sessionId, 5, expect.any(Array));
-
-			// Verify outgoing from each round fed as incoming to the next
-			const round2Call = mockScheme.dkg.mock.calls[1];
-			expect(round2Call?.[2]).toHaveLength(1); // round 1 had 1 outgoing
+			// Single-call DKG: runDkg called exactly once
+			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2);
 
 			console.log('');
-			console.log('  ┌─── DKG E2E FLOW ──────────────────────────────────');
+			console.log('  ┌─── DKG E2E FLOW (CGGMP24 single-call WASM) ──────');
 			console.log(`  │ Signer ID    : ${signerId}`);
 			console.log(`  │ ETH Address  : ${finalResult.ethAddress}`);
-			console.log(`  │ Signer Share : ${finalResult.signerShare.slice(0, 16)}... (base64)`);
-			console.log(`  │ User Share   : ${finalResult.userShare.slice(0, 16)}... (base64)`);
+			console.log(`  │ Signer Share : ${finalResult.signerShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`);
+			console.log(`  │ User Share   : ${finalResult.userShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`);
 			console.log(`  │ Server Share : stored in Vault at "${signerId}"`);
-			console.log(`  │ DKG Rounds   : 5 (init=1 + finalize=2-5)`);
+			console.log(`  │ DKG          : single WASM call (aux_info_gen + keygen)`);
 			console.log('  │');
 			console.log('  │ VERIFIED:');
 			console.log('  │   ✓ Signer record created before DKG');
-			console.log('  │   ✓ DKG init returns sessionId (no shares)');
-			console.log('  │   ✓ DKG finalize runs all 5 rounds server-side');
-			console.log('  │   ✓ Server share stored in Vault');
-			console.log('  │   ✓ Signer + User shares returned to client');
+			console.log('  │   ✓ DKG init validates signer + creates session');
+			console.log('  │   ✓ DKG finalize runs single-call WASM ceremony');
+			console.log('  │   ✓ Server share stored in Vault as JSON key material');
+			console.log('  │   ✓ Signer + User key material returned to client');
 			console.log('  │   ✓ Signer record updated (ethAddress, dkgCompleted)');
-			console.log('  │   ✓ Round outgoing → incoming chain correct');
 			console.log('  └────────────────────────────────────────────────────');
 			console.log('');
 		});

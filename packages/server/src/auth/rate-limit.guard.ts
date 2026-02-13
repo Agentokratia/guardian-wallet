@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-const MAX_REQUESTS = 10;
+const MAX_REQUESTS = 100;
 const WINDOW_MS = 60_000; // 1 minute
 const CLEANUP_INTERVAL_MS = 60_000;
 

@@ -14,7 +14,6 @@ interface CreateSignerResult {
 interface DKGInitResult {
 	sessionId: string;
 	signerId: string;
-	round: number;
 }
 
 interface DKGFinalizeResult {

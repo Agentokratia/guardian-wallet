@@ -32,7 +32,6 @@
 		"@nestjs/core": "^10.4.0",
 		"@nestjs/platform-express": "^10.4.0",
 		"@noble/curves": "^2.0.1",
-		"@silencelaboratories/dkls-wasm-ll-node": "^1.2.0",
 		"@supabase/supabase-js": "^2.45.0",
 		"@agentokratia/guardian-chains": "workspace:*",
 		"@agentokratia/guardian-core": "workspace:*",

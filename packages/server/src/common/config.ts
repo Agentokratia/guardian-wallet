@@ -26,6 +26,27 @@ export interface AppConfig {
 	// Auth
 	readonly JWT_SECRET: string;
 	readonly JWT_EXPIRY: string;
+
+	// AuxInfo Pool
+	readonly AUXINFO_POOL_TARGET: number;
+	readonly AUXINFO_POOL_LOW_WATERMARK: number;
+	readonly AUXINFO_POOL_MAX_GENERATORS: number;
+}
+
+function parsePoolInt(name: string, fallback: string): number {
+	const val = Number.parseInt(optionalEnv(name, fallback), 10);
+	if (Number.isNaN(val) || val < 0) {
+		throw new Error(`${name} must be a non-negative integer`);
+	}
+	return val;
+}
+
+function parsePoolMaxGenerators(name: string, fallback: string): number {
+	const val = Number.parseInt(optionalEnv(name, fallback), 10);
+	if (Number.isNaN(val) || val < 1 || val > 10) {
+		throw new Error(`${name} must be between 1 and 10`);
+	}
+	return val;
 }
 
 export function parseConfig(): AppConfig {
@@ -38,6 +59,16 @@ export function parseConfig(): AppConfig {
 	const port = portStr ? Number.parseInt(portStr, 10) : 8080;
 	if (Number.isNaN(port)) {
 		throw new Error(`PORT must be a valid number, got: ${portStr}`);
+	}
+
+	const poolTarget = parsePoolInt('AUXINFO_POOL_TARGET', '5');
+	const poolLowWatermark = parsePoolInt('AUXINFO_POOL_LOW_WATERMARK', '2');
+	const poolMaxGenerators = parsePoolMaxGenerators('AUXINFO_POOL_MAX_GENERATORS', '2');
+
+	if (poolLowWatermark >= poolTarget) {
+		throw new Error(
+			`AUXINFO_POOL_LOW_WATERMARK (${poolLowWatermark}) must be less than AUXINFO_POOL_TARGET (${poolTarget})`,
+		);
 	}
 
 	return {
@@ -54,6 +85,10 @@ export function parseConfig(): AppConfig {
 
 		JWT_SECRET: jwtSecret,
 		JWT_EXPIRY: optionalEnv('JWT_EXPIRY', '24h'),
+
+		AUXINFO_POOL_TARGET: poolTarget,
+		AUXINFO_POOL_LOW_WATERMARK: poolLowWatermark,
+		AUXINFO_POOL_MAX_GENERATORS: poolMaxGenerators,
 	};
 }
 

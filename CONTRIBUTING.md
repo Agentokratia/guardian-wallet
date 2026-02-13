@@ -36,7 +36,7 @@ pnpm lint
 The monorepo follows a strict layered architecture:
 
 - **core** -- Interfaces and shared types only (zero dependencies)
-- **schemes** -- Threshold signing implementations (CGGMP21/DKLs23 via WASM)
+- **schemes** -- Threshold signing implementations (CGGMP24 via WASM)
 - **chains** -- Chain-specific transaction logic (Ethereum via viem)
 - **server** -- NestJS API server (policy engine, signing orchestration, auth)
 - **signer** -- Signer-side SDK (share loading, partial signing, HTTP client)

@@ -9,30 +9,43 @@ export interface HttpClientConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Interactive signing session types (DKLs23 multi-round protocol)
+// Interactive signing session types (CGGMP24 multi-round protocol)
 // ---------------------------------------------------------------------------
 
 export interface CreateSignSessionRequest {
-	readonly signerFirstMessage: string; // base64
+	readonly signerFirstMessage?: string; // base64 — optional for tx signing (server computes hash)
 	readonly transaction: Record<string, unknown>;
 }
 
 export interface CreateSignSessionResponse {
 	readonly sessionId: string;
-	readonly serverFirstMessage: string; // base64
-	readonly initialMessages?: string[]; // base64 — server's round 1 outgoing
+	readonly serverFirstMessages: string[]; // base64 — server's first protocol messages
+	readonly messageHash: string; // base64 — 32-byte hash computed by server
+	readonly eid: string; // base64 — execution ID
+	readonly partyConfig: {
+		readonly serverPartyIndex: number;
+		readonly clientPartyIndex: number;
+		readonly partiesAtKeygen: number[];
+	};
 	readonly roundsRemaining: number;
 }
 
 export interface CreateMessageSignSessionRequest {
-	readonly signerFirstMessage: string; // base64
+	readonly signerFirstMessage?: string; // base64 — optional (server generates EID first)
+	readonly messageHash: string; // base64 — CGGMP24 requires hash upfront
 	readonly message: unknown;
 }
 
 export interface CreateMessageSignSessionResponse {
 	readonly sessionId: string;
-	readonly serverFirstMessage: string; // base64
-	readonly initialMessages?: string[]; // base64 — server's round 1 outgoing
+	readonly serverFirstMessages: string[]; // base64 — server's first protocol messages
+	readonly messageHash: string; // base64
+	readonly eid: string; // base64
+	readonly partyConfig: {
+		readonly serverPartyIndex: number;
+		readonly clientPartyIndex: number;
+		readonly partiesAtKeygen: number[];
+	};
 	readonly roundsRemaining: number;
 }
 
@@ -44,14 +57,11 @@ export interface ProcessSignRoundRequest {
 export interface ProcessSignRoundResponse {
 	readonly messages: string[]; // base64
 	readonly roundsRemaining: number;
-	readonly presigned: boolean;
-	readonly messageHash?: string; // base64 — server-computed hash, returned when presigned
+	readonly complete: boolean;
 }
 
 export interface CompleteSignRequest {
 	readonly sessionId: string;
-	readonly lastMessage: string; // base64
-	readonly messageHash: string; // base64
 }
 
 export interface CompleteSignResponse {
@@ -111,7 +121,9 @@ export class HttpClient {
 				'Content-Type': 'application/json',
 				'x-api-key': this.apiKey,
 			},
-			body: JSON.stringify(body),
+			body: JSON.stringify(body, (_key, value) =>
+				typeof value === 'bigint' ? value.toString() : value,
+			),
 		});
 	}
 
@@ -135,7 +147,24 @@ export class HttpClient {
 			if (err instanceof Error && err.name === 'AbortError') {
 				throw new HttpClientError(408, `Request timed out after ${this.timeout}ms: ${init.method} ${path}`);
 			}
-			throw err;
+			// Retry once on ECONNRESET — Node.js fetch (undici) can hit a stale
+			// keep-alive connection that the server already closed.
+			if (this.isConnectionReset(err)) {
+				await new Promise((r) => setTimeout(r, 100));
+				try {
+					response = await fetch(`${this.baseUrl}${path}`, {
+						...init,
+						signal: AbortSignal.timeout(this.timeout),
+					});
+				} catch (retryErr: unknown) {
+					if (retryErr instanceof Error && retryErr.name === 'AbortError') {
+						throw new HttpClientError(408, `Request timed out after ${this.timeout}ms: ${init.method} ${path}`);
+					}
+					throw retryErr;
+				}
+			} else {
+				throw err;
+			}
 		}
 
 		if (!response.ok) {
@@ -152,12 +181,22 @@ export class HttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// Interactive signing session (DKLs23 multi-round protocol)
+	// Helpers
+	// -----------------------------------------------------------------------
+
+	private isConnectionReset(err: unknown): boolean {
+		if (!(err instanceof Error)) return false;
+		const msg = err.message + (err.cause instanceof Error ? ` ${err.cause.message}` : '');
+		return msg.includes('ECONNRESET') || msg.includes('socket hang up') || msg.includes('network socket disconnected');
+	}
+
+	// -----------------------------------------------------------------------
+	// Interactive signing session (CGGMP24 multi-round protocol)
 	// -----------------------------------------------------------------------
 
 	/**
 	 * Start an interactive signing session for a transaction.
-	 * Sends the signer's first DKLs23 message + transaction data.
+	 * Sends the signer's first CGGMP24 message + transaction data.
 	 */
 	async createSignSession(data: CreateSignSessionRequest): Promise<CreateSignSessionResponse> {
 		return this.post<CreateSignSessionResponse>(`${API_PREFIX}/sign/session`, data);
@@ -165,7 +204,7 @@ export class HttpClient {
 
 	/**
 	 * Start an interactive signing session for a message (raw or EIP-712).
-	 * Sends the signer's first DKLs23 message + message data.
+	 * Sends the signer's first CGGMP24 message + message hash + message data.
 	 */
 	async createMessageSignSession(
 		data: CreateMessageSignSessionRequest,
@@ -177,7 +216,7 @@ export class HttpClient {
 	}
 
 	/**
-	 * Exchange a round of DKLs23 messages with the server.
+	 * Exchange a round of CGGMP24 messages with the server.
 	 */
 	async processSignRound(data: ProcessSignRoundRequest): Promise<ProcessSignRoundResponse> {
 		return this.post<ProcessSignRoundResponse>(`${API_PREFIX}/sign/round`, data);

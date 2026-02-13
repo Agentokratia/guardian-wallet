@@ -1,52 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Hoisted mock variables — vi.hoisted runs before vi.mock factories
+// Hoisted mock variables
 // ---------------------------------------------------------------------------
 
-const { mockSessionInstance, mockApiPost, mockSignSession, mockKeyshare } =
-	vi.hoisted(() => {
-		const mockFree = vi.fn();
+const { mockApiPost, mockSchemeInstance } = vi.hoisted(() => {
+	const mockApiPost = vi.fn();
 
-		function makeMockMessage(from: number, to?: number) {
-			return {
-				from_id: from,
-				to_id: to,
-				payload: new Uint8Array([1, 2, 3]),
-				free: mockFree,
-			};
-		}
+	const mockSchemeInstance = {
+		createSignSession: vi.fn(async () => ({
+			sessionId: 'scheme-session-1',
+			firstMessages: [new Uint8Array([10, 20, 30])],
+		})),
+		processSignRound: vi.fn(async () => ({
+			outgoingMessages: [new Uint8Array([40, 50, 60])],
+			complete: false,
+		})),
+		finalizeSign: vi.fn(async () => ({
+			r: new Uint8Array(32).fill(0xaa),
+			s: new Uint8Array(32).fill(0xbb),
+			v: 27,
+		})),
+	};
 
-		const mockSessionInstance = {
-			createFirstMessage: vi.fn(() => makeMockMessage(0)),
-			handleMessages: vi.fn(() => [makeMockMessage(0, 1)]),
-			lastMessage: vi.fn(() => makeMockMessage(0, 1)),
-			free: vi.fn(),
-		};
-
-		const mockApiPost = vi.fn();
-		const mockSignSession = vi.fn(() => mockSessionInstance);
-		const mockKeyshare = { fromBytes: vi.fn(() => ({ __keyshare: true })) };
-
-		return { mockSessionInstance, mockApiPost, mockSignSession, mockKeyshare };
-	});
+	return { mockApiPost, mockSchemeInstance };
+});
 
 // ---------------------------------------------------------------------------
-// Mock the WASM module
+// Mock the schemes module (CGGMP24Scheme)
 // ---------------------------------------------------------------------------
 
-vi.mock('@silencelaboratories/dkls-wasm-ll-web', () => ({
-	default: vi.fn(() => Promise.resolve()),
-	Keyshare: mockKeyshare,
-	SignSession: mockSignSession,
-	Message: vi.fn().mockImplementation(
-		(payload: Uint8Array, from: number, to?: number) => ({
-			from_id: from,
-			to_id: to,
-			payload,
-			free: vi.fn(),
-		}),
-	),
+vi.mock('@agentokratia/guardian-schemes', () => ({
+	CGGMP24Scheme: vi.fn(() => mockSchemeInstance),
 }));
 
 // ---------------------------------------------------------------------------
@@ -69,25 +54,37 @@ vi.mock('../lib/api-client', () => ({
 import { browserInteractiveSign } from '../lib/browser-signer';
 
 // ---------------------------------------------------------------------------
-// Helper
+// Helper: create valid CGGMP24 key material as user share bytes
 // ---------------------------------------------------------------------------
 
-function makeMockMessage(from: number, to?: number) {
-	return {
-		from_id: from,
-		to_id: to,
-		payload: new Uint8Array([1, 2, 3]),
-		free: vi.fn(),
-	};
+function makeKeyMaterialBytes(): Uint8Array {
+	const json = JSON.stringify({
+		coreShare: btoa(String.fromCharCode(...new Uint8Array(64).fill(1))),
+		auxInfo: btoa(String.fromCharCode(...new Uint8Array(32).fill(2))),
+	});
+	return new TextEncoder().encode(json);
 }
 
-// Base64 encode a Uint8Array (for mock messageHash)
-function toBase64(bytes: Uint8Array): string {
-	let binary = '';
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte);
-	}
-	return btoa(binary);
+/** Helper: base64 encode a byte array (browser-compatible) */
+function toBase64(bytes: number[]): string {
+	return btoa(String.fromCharCode(...bytes));
+}
+
+/** Helper: make a standard session response with the new API shape */
+function makeSessionResponse(overrides: Record<string, unknown> = {}) {
+	return {
+		sessionId: 'session-123',
+		serverFirstMessages: [toBase64([10, 20, 30])],
+		messageHash: toBase64(new Array(32).fill(0xab)),
+		eid: toBase64(new Array(32).fill(0xcd)),
+		partyConfig: {
+			serverPartyIndex: 1,
+			clientPartyIndex: 2,
+			partiesAtKeygen: [1, 2],
+		},
+		roundsRemaining: 4,
+		...overrides,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -101,43 +98,20 @@ describe('browserInteractiveSign', () => {
 		value: '1000000000000000',
 		chainId: 11155111,
 	};
-	// Server-provided messageHash (returned in the final round response)
-	const serverMessageHash = toBase64(new Uint8Array(32).fill(0xaa));
 
 	beforeEach(() => {
-		// Reset call counts but preserve implementations
 		mockApiPost.mockReset();
-		mockSignSession.mockClear();
-		mockKeyshare.fromBytes.mockClear();
+		mockSchemeInstance.createSignSession.mockClear();
+		mockSchemeInstance.processSignRound.mockClear();
 
-		// Re-set session instance mock implementations (mockClear preserves them, but be safe)
-		mockSessionInstance.createFirstMessage.mockImplementation(() =>
-			makeMockMessage(0),
-		);
-		mockSessionInstance.handleMessages.mockImplementation(() => [
-			makeMockMessage(0, 1),
-		]);
-		mockSessionInstance.lastMessage.mockImplementation(() =>
-			makeMockMessage(0, 1),
-		);
+		// Call 1: POST /signers/:id/sign/session — new response shape
+		mockApiPost.mockResolvedValueOnce(makeSessionResponse());
 
-		// Set up the mock API responses
-		// Call 1: POST /signers/:id/sign/session
-		mockApiPost.mockResolvedValueOnce({
-			sessionId: 'session-123',
-			serverFirstMessage: btoa(
-				String.fromCharCode(...[1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-			),
-			roundsRemaining: 1,
-		});
-
-		// Call 2: POST /signers/:id/sign/round (roundsRemaining=0 to end loop)
-		// Server returns messageHash when presigning completes
+		// Call 2: POST /signers/:id/sign/round (complete=true to end loop)
 		mockApiPost.mockResolvedValueOnce({
 			messages: [],
 			roundsRemaining: 0,
-			presigned: true,
-			messageHash: serverMessageHash,
+			complete: true,
 		});
 
 		// Call 3: POST /signers/:id/sign/complete
@@ -152,44 +126,47 @@ describe('browserInteractiveSign', () => {
 	});
 
 	it('calls API endpoints in correct order', async () => {
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
+		const shareBytes = makeKeyMaterialBytes();
 
 		await browserInteractiveSign(shareBytes, signerId, transaction);
 
 		expect(mockApiPost).toHaveBeenCalledTimes(3);
 
-		// 1st call: session creation
-		expect(mockApiPost.mock.calls[0][0]).toBe(
-			`/signers/${signerId}/sign/session`,
-		);
-		expect(mockApiPost.mock.calls[0][1]).toHaveProperty(
-			'signerFirstMessage',
-		);
+		// 1st call: session creation — no signerFirstMessage (server computes hash)
+		expect(mockApiPost.mock.calls[0][0]).toBe(`/signers/${signerId}/sign/session`);
 		expect(mockApiPost.mock.calls[0][1]).toHaveProperty('transaction');
+		expect(mockApiPost.mock.calls[0][1]).not.toHaveProperty('signerFirstMessage');
 
 		// 2nd call: round
-		expect(mockApiPost.mock.calls[1][0]).toBe(
-			`/signers/${signerId}/sign/round`,
-		);
-		expect(mockApiPost.mock.calls[1][1]).toHaveProperty(
-			'sessionId',
-			'session-123',
-		);
+		expect(mockApiPost.mock.calls[1][0]).toBe(`/signers/${signerId}/sign/round`);
+		expect(mockApiPost.mock.calls[1][1]).toHaveProperty('sessionId', 'session-123');
 
-		// 3rd call: complete
-		expect(mockApiPost.mock.calls[2][0]).toBe(
-			`/signers/${signerId}/sign/complete`,
+		// 3rd call: complete (no lastMessage or messageHash — CGGMP24)
+		expect(mockApiPost.mock.calls[2][0]).toBe(`/signers/${signerId}/sign/complete`);
+		expect(mockApiPost.mock.calls[2][1]).toHaveProperty('sessionId', 'session-123');
+		expect(mockApiPost.mock.calls[2][1]).not.toHaveProperty('lastMessage');
+		expect(mockApiPost.mock.calls[2][1]).not.toHaveProperty('messageHash');
+	});
+
+	it('creates local session with correct hash and party config from server', async () => {
+		const shareBytes = makeKeyMaterialBytes();
+
+		await browserInteractiveSign(shareBytes, signerId, transaction);
+
+		// createSignSession should be called with messageHash from server, plus options
+		expect(mockSchemeInstance.createSignSession).toHaveBeenCalledWith(
+			expect.any(Array), // [coreShare, auxInfo]
+			expect.any(Uint8Array), // messageHash from server
+			expect.objectContaining({
+				partyIndex: 2, // clientPartyIndex for USER_SERVER
+				partiesAtKeygen: [1, 2],
+				eid: expect.any(Uint8Array),
+			}),
 		);
-		expect(mockApiPost.mock.calls[2][1]).toHaveProperty(
-			'sessionId',
-			'session-123',
-		);
-		expect(mockApiPost.mock.calls[2][1]).toHaveProperty('lastMessage');
-		expect(mockApiPost.mock.calls[2][1]).toHaveProperty('messageHash');
 	});
 
 	it('returns txHash and signature from server', async () => {
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
+		const shareBytes = makeKeyMaterialBytes();
 
 		const result = await browserInteractiveSign(shareBytes, signerId, transaction);
 
@@ -198,18 +175,20 @@ describe('browserInteractiveSign', () => {
 	});
 
 	it('wipes share bytes after successful signing', async () => {
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
+		const shareBytes = makeKeyMaterialBytes();
+		const originalLength = shareBytes.length;
 
 		await browserInteractiveSign(shareBytes, signerId, transaction);
 
 		expect(shareBytes.every((b) => b === 0)).toBe(true);
+		expect(shareBytes.length).toBe(originalLength);
 	});
 
 	it('wipes share bytes even when API call fails', async () => {
 		mockApiPost.mockReset();
 		mockApiPost.mockRejectedValueOnce(new Error('Network error'));
 
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
+		const shareBytes = makeKeyMaterialBytes();
 
 		await expect(
 			browserInteractiveSign(shareBytes, signerId, transaction),
@@ -218,77 +197,29 @@ describe('browserInteractiveSign', () => {
 		expect(shareBytes.every((b) => b === 0)).toBe(true);
 	});
 
-	it('creates SignSession with keyshare from bytes', async () => {
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
-
-		await browserInteractiveSign(shareBytes, signerId, transaction);
-
-		expect(mockKeyshare.fromBytes).toHaveBeenCalledWith(shareBytes);
-		expect(mockSignSession).toHaveBeenCalled();
-	});
-
-	it('calls lastMessage with the server-provided message hash', async () => {
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
-
-		await browserInteractiveSign(shareBytes, signerId, transaction);
-
-		// lastMessage should be called with the decoded server messageHash
-		expect(mockSessionInstance.lastMessage).toHaveBeenCalledTimes(1);
-	});
-
-	it('throws if server does not return messageHash', async () => {
-		mockApiPost.mockReset();
-
-		// Session creation
-		mockApiPost.mockResolvedValueOnce({
-			sessionId: 'session-no-hash',
-			serverFirstMessage: btoa(
-				String.fromCharCode(...[1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-			),
-			roundsRemaining: 1,
-		});
-
-		// Round completes but no messageHash
-		mockApiPost.mockResolvedValueOnce({
-			messages: [],
-			roundsRemaining: 0,
-			presigned: true,
-		});
-
-		const shareBytes = new Uint8Array([10, 20, 30, 40, 50]);
-
-		await expect(
-			browserInteractiveSign(shareBytes, signerId, transaction),
-		).rejects.toThrow('Server did not return messageHash');
-	});
-
 	it('handles multiple rounds correctly', async () => {
 		mockApiPost.mockReset();
 
-		// Session creation
-		mockApiPost.mockResolvedValueOnce({
-			sessionId: 'session-multi',
-			serverFirstMessage: btoa(
-				String.fromCharCode(...[1, 0, 0, 0, 0, 0, 3, 1, 2, 3]),
-			),
-			roundsRemaining: 2,
-		});
+		// Session creation — new response shape
+		mockApiPost.mockResolvedValueOnce(makeSessionResponse({ sessionId: 'session-multi' }));
 
-		// Round 1: still more rounds
+		// Round exchange
+		mockSchemeInstance.processSignRound
+			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([1])], complete: false })
+			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([2])], complete: false })
+			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([3])], complete: false });
+
 		mockApiPost.mockResolvedValueOnce({
-			messages: [
-				btoa(String.fromCharCode(...[1, 1, 0, 0, 0, 0, 3, 4, 5, 6])),
-			],
+			messages: [toBase64([4, 5, 6])],
 			roundsRemaining: 1,
-			presigned: false,
+			complete: false,
 		});
 
-		// Round 2: done, server returns messageHash
+		// Round 2: done
 		mockApiPost.mockResolvedValueOnce({
 			messages: [],
 			roundsRemaining: 0,
-			presigned: true,
-			messageHash: serverMessageHash,
+			complete: true,
 		});
 
 		// Complete
@@ -297,7 +228,7 @@ describe('browserInteractiveSign', () => {
 			signature: { r: '0x111', s: '0x222', v: 28 },
 		});
 
-		const shareBytes = new Uint8Array([99, 88, 77]);
+		const shareBytes = makeKeyMaterialBytes();
 
 		const result = await browserInteractiveSign(shareBytes, signerId, transaction);
 

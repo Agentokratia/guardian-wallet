@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Guardian Wallet + Forge Proxy
 #
-# Deploys a contract using Foundry's `forge create` through the Guardian
+# Deploys a contract using Foundry's `forge script` through the Guardian
 # signing proxy. The proxy intercepts eth_sendTransaction and signs via
 # 2-of-3 threshold MPC — the full private key never exists.
 #
@@ -17,13 +17,14 @@ set -euo pipefail
 #   ./deploy.sh
 
 PROXY_PORT="${PROXY_PORT:-8545}"
+SENDER="${ETH_FROM:-$(cast rpc eth_accounts --rpc-url "http://localhost:${PROXY_PORT}" 2>/dev/null | jq -r '.[0]')}"
 
 echo "==> Starting Guardian signing proxy on port ${PROXY_PORT}..."
 gw proxy --port "${PROXY_PORT}" &
 PROXY_PID=$!
 
 # Wait for proxy to be ready
-sleep 2
+sleep 3
 
 cleanup() {
     echo "==> Stopping proxy..."
@@ -34,12 +35,13 @@ trap cleanup EXIT
 echo "==> Verifying proxy connection..."
 CHAIN_ID=$(cast chain-id --rpc-url "http://localhost:${PROXY_PORT}")
 echo "    Chain ID: ${CHAIN_ID}"
+echo "    Sender:   ${SENDER}"
 
-echo "==> Deploying GuardianTest contract..."
-forge create \
+echo "==> Deploying GuardianTest contract via forge script..."
+forge script Deploy.s.sol:DeployScript \
     --rpc-url "http://localhost:${PROXY_PORT}" \
-    --constructor-args "Hello from Guardian!" \
+    --sender "${SENDER}" \
     --unlocked \
-    GuardianTest.sol:GuardianTest
+    --broadcast
 
 echo "==> Done! Contract deployed via threshold signing."

@@ -17,7 +17,7 @@
 ```
                     ┌─────────────┐
                     │  3 Shares   │
-                    │  (DKLs23)   │
+                    │  (CGGMP24)  │
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
@@ -99,7 +99,7 @@ See [`.env.example`](.env.example) for the full list with defaults.
 | Package | Description |
 |---------|-------------|
 | [`@agentokratia/guardian-core`](packages/core) | Shared types and interfaces |
-| [`@agentokratia/guardian-schemes`](packages/schemes) | DKLs23 threshold ECDSA (Rust WASM) |
+| [`@agentokratia/guardian-schemes`](packages/schemes) | CGGMP24 threshold ECDSA (Rust WASM) |
 | [`@agentokratia/guardian-chains`](packages/chains) | Ethereum chain adapter (viem) |
 | [`@agentokratia/guardian-server`](packages/server) | NestJS policy server |
 | [`@agentokratia/guardian-signer`](packages/signer) | TypeScript SDK with viem integration |
@@ -186,7 +186,7 @@ A declarative rules engine with 10 criterion types for complex policy logic:
 | Layer | Choice |
 |-------|--------|
 | Language | TypeScript (strict mode, ESM) |
-| MPC | DKLs23 via `@silencelaboratories/dkls-wasm-ll-node` |
+| MPC | CGGMP24 via custom Rust WASM crate (`packages/mpc-wasm/`) |
 | API | NestJS |
 | Dashboard | React + Vite + Tailwind + shadcn/ui |
 | Database | Supabase (PostgreSQL) |
@@ -202,10 +202,10 @@ The core invariant: **THE FULL PRIVATE KEY MUST NEVER EXIST.**
 
 - Server shares are wiped from memory (`buffer.fill(0)`) after every operation
 - User shares are encrypted with wallet signatures (HKDF + AES-256-GCM) — server cannot decrypt
-- Browser signing runs DKLs23 client-side via WASM — server only sees protocol messages
+- Browser signing runs CGGMP24 client-side via WASM — server only sees protocol messages
 - API keys are stored as SHA-256 hashes
-- All signing is interactive multi-round (4-round DKLs23 protocol)
-- Same MPC protocol used by MetaMask
+- All signing is interactive multi-round (CGGMP24 protocol, Kudelski audited)
+- MIT/Apache 2.0 licensed MPC implementation (LFDT-Lockness/cggmp21)
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
