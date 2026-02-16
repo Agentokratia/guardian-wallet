@@ -78,10 +78,18 @@ CREATE POLICY "signing_requests_select_own" ON signing_requests
 -- No insert/update/delete policies needed for authenticated role.
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- AUTH TABLES: enable RLS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE passkey_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_verifications ENABLE ROW LEVEL SECURITY;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- PASSKEYS: users can only see their own passkeys
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE POLICY "passkeys_select_own" ON passkeys
+CREATE POLICY "passkeys_select_own" ON passkey_credentials
   FOR SELECT USING (
     user_id = (current_setting('request.jwt.claims', true)::json->>'sub')::uuid
   );
