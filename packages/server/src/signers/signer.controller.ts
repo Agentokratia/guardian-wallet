@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpException, HttpStatus, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpException, HttpStatus, Inject, Logger, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { IVaultStore } from '@agentokratia/guardian-core';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
@@ -15,9 +15,18 @@ import { UpdateSignerDto } from './dto/update-signer.dto.js';
 import { SignerService } from './signer.service.js';
 import { signerToPublic } from './signer.types.js';
 
+const BALANCE_CACHE_TTL = 15_000;
+interface BalanceResult {
+	address: string;
+	balances: { network: string; chainId: number; balance: string; rpcError?: boolean }[];
+}
+const balanceCache = new Map<string, { data: BalanceResult; ts: number }>();
+
 @Controller('signers')
 @UseGuards(EitherAuthGuard)
 export class SignerController {
+	private readonly logger = new Logger(SignerController.name);
+
 	constructor(
 		@Inject(SignerService) private readonly signerService: SignerService,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
@@ -112,6 +121,13 @@ export class SignerController {
 	) {
 		const signer = await this.getOwnedSigner(id, req);
 
+		// Cache key — address + filters
+		const cacheKey = `${signer.ethAddress}:${networkFilter ?? ''}:${chainIdFilter ?? ''}`;
+		const cached = balanceCache.get(cacheKey);
+		if (cached && Date.now() - cached.ts < BALANCE_CACHE_TTL) {
+			return cached.data;
+		}
+
 		let networks;
 		if (chainIdFilter) {
 			networks = [await this.networkService.getByChainId(Number(chainIdFilter))];
@@ -121,19 +137,32 @@ export class SignerController {
 			networks = await this.networkService.listEnabled();
 		}
 
-		const balances = await Promise.all(
+		// Race all networks — return whatever responds within 3s, drop the rest
+		const RPC_TIMEOUT = 3_000;
+		const timeout = (ms: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+
+		const results = await Promise.allSettled(
 			networks.map(async (n) => {
-				try {
-					const chain = await this.chainRegistry.getChain(n.chainId);
-					const wei = await chain.getBalance(signer.ethAddress);
-					return { network: n.name, chainId: n.chainId, balance: wei.toString() };
-				} catch {
-					return { network: n.name, chainId: n.chainId, balance: '0', rpcError: true };
-				}
+				const chain = await this.chainRegistry.getChain(n.chainId);
+				const wei = await Promise.race([
+					chain.getBalance(signer.ethAddress),
+					timeout(RPC_TIMEOUT),
+				]);
+				return { network: n.name, chainId: n.chainId, balance: wei.toString() };
 			}),
 		);
 
-		return { address: signer.ethAddress, balances };
+		const balances = results.map((r, i) => {
+			if (r.status === 'fulfilled') return r.value;
+			const n = networks[i]!;
+			const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+			this.logger.warn(`RPC failed for ${n.name} (chainId=${n.chainId}): ${reason}`);
+			return { network: n.name, chainId: n.chainId, balance: '0', rpcError: true };
+		});
+
+		const response = { address: signer.ethAddress, balances };
+		balanceCache.set(cacheKey, { data: response, ts: Date.now() });
+		return response;
 	}
 
 	@Post(':id/simulate')
@@ -183,16 +212,19 @@ export class SignerController {
 			const bytes = await this.vault.getShare(`user-encrypted/${id}`);
 			const json = new TextDecoder().decode(bytes);
 			const blob = JSON.parse(json);
+			this.logger.log(`getUserShare: sessionUser=${req.sessionUser}, blob.walletAddress=${blob.walletAddress}, iv=${blob.iv?.slice(0, 20)}, salt=${blob.salt?.slice(0, 20)}, ct_len=${blob.ciphertext?.length}`);
 			if (
 				req.sessionUser &&
 				blob.walletAddress &&
 				req.sessionUser.toLowerCase() !== blob.walletAddress.toLowerCase()
 			) {
+				this.logger.warn(`getUserShare: walletAddress MISMATCH — session=${req.sessionUser} vs stored=${blob.walletAddress}`);
 				throw new ForbiddenException('Wallet address mismatch');
 			}
 			return blob;
 		} catch (error: unknown) {
 			if (error instanceof HttpException) throw error;
+			this.logger.error(`getUserShare: Vault read failed for user-encrypted/${id}:`, error);
 			throw new HttpException('User share not found', HttpStatus.NOT_FOUND);
 		}
 	}

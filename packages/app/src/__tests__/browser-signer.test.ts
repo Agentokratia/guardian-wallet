@@ -4,35 +4,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Hoisted mock variables
 // ---------------------------------------------------------------------------
 
-const { mockApiPost, mockSchemeInstance } = vi.hoisted(() => {
+const { mockApiPost, mockWasm } = vi.hoisted(() => {
 	const mockApiPost = vi.fn();
 
-	const mockSchemeInstance = {
-		createSignSession: vi.fn(async () => ({
-			sessionId: 'scheme-session-1',
-			firstMessages: [new Uint8Array([10, 20, 30])],
+	const mockWasm = {
+		default: vi.fn(),
+		sign_create_session: vi.fn(() => ({
+			session_id: 'wasm-session-1',
+			messages: [
+				{ sender: 2, is_broadcast: true, recipient: null, payload: 'msg1' },
+			],
 		})),
-		processSignRound: vi.fn(async () => ({
-			outgoingMessages: [new Uint8Array([40, 50, 60])],
+		sign_process_round: vi.fn(() => ({
+			messages: [
+				{ sender: 2, is_broadcast: false, recipient: 1, payload: 'msg2' },
+			],
 			complete: false,
 		})),
-		finalizeSign: vi.fn(async () => ({
-			r: new Uint8Array(32).fill(0xaa),
-			s: new Uint8Array(32).fill(0xbb),
-			v: 27,
-		})),
+		sign_destroy_session: vi.fn(),
 	};
 
-	return { mockApiPost, mockSchemeInstance };
+	return { mockApiPost, mockWasm };
 });
 
 // ---------------------------------------------------------------------------
-// Mock the schemes module (CGGMP24Scheme)
+// Mock the WASM module (browser-signer imports this directly, not schemes)
 // ---------------------------------------------------------------------------
 
-vi.mock('@agentokratia/guardian-schemes', () => ({
-	CGGMP24Scheme: vi.fn(() => mockSchemeInstance),
-}));
+vi.mock('@agentokratia/guardian-mpc-wasm', () => mockWasm);
 
 // ---------------------------------------------------------------------------
 // Mock the api-client
@@ -45,6 +44,16 @@ vi.mock('../lib/api-client', () => ({
 		patch: vi.fn(),
 		del: vi.fn(),
 	},
+	ApiError: class ApiError extends Error {
+		status: number;
+		constructor(status: number, message: string) {
+			super(message);
+			this.status = status;
+			this.name = 'ApiError';
+		}
+	},
+	authEvents: new EventTarget(),
+	AUTH_EXPIRED_EVENT: 'auth:expired',
 }));
 
 // ---------------------------------------------------------------------------
@@ -70,11 +79,18 @@ function toBase64(bytes: number[]): string {
 	return btoa(String.fromCharCode(...bytes));
 }
 
+/** Helper: encode a WasmSignMessage as base64 JSON (matches server response) */
+function encodeWasmMsg(msg: { sender: number; is_broadcast: boolean; recipient: number | null; payload: string }): string {
+	return btoa(JSON.stringify(msg));
+}
+
 /** Helper: make a standard session response with the new API shape */
 function makeSessionResponse(overrides: Record<string, unknown> = {}) {
 	return {
 		sessionId: 'session-123',
-		serverFirstMessages: [toBase64([10, 20, 30])],
+		serverFirstMessages: [
+			encodeWasmMsg({ sender: 1, is_broadcast: true, recipient: null, payload: 'server-first' }),
+		],
 		messageHash: toBase64(new Array(32).fill(0xab)),
 		eid: toBase64(new Array(32).fill(0xcd)),
 		partyConfig: {
@@ -101,8 +117,21 @@ describe('browserInteractiveSign', () => {
 
 	beforeEach(() => {
 		mockApiPost.mockReset();
-		mockSchemeInstance.createSignSession.mockClear();
-		mockSchemeInstance.processSignRound.mockClear();
+		mockWasm.sign_create_session.mockClear();
+		mockWasm.sign_process_round.mockClear();
+		mockWasm.sign_destroy_session.mockClear();
+
+		// Reset WASM mock return values
+		mockWasm.sign_create_session.mockReturnValue({
+			session_id: 'wasm-session-1',
+			messages: [
+				{ sender: 2, is_broadcast: true, recipient: null, payload: 'client-first' },
+			],
+		});
+		mockWasm.sign_process_round.mockReturnValue({
+			messages: [],
+			complete: false,
+		});
 
 		// Call 1: POST /signers/:id/sign/session — new response shape
 		mockApiPost.mockResolvedValueOnce(makeSessionResponse());
@@ -132,36 +161,31 @@ describe('browserInteractiveSign', () => {
 
 		expect(mockApiPost).toHaveBeenCalledTimes(3);
 
-		// 1st call: session creation — no signerFirstMessage (server computes hash)
+		// 1st call: session creation
 		expect(mockApiPost.mock.calls[0][0]).toBe(`/signers/${signerId}/sign/session`);
 		expect(mockApiPost.mock.calls[0][1]).toHaveProperty('transaction');
-		expect(mockApiPost.mock.calls[0][1]).not.toHaveProperty('signerFirstMessage');
 
 		// 2nd call: round
 		expect(mockApiPost.mock.calls[1][0]).toBe(`/signers/${signerId}/sign/round`);
 		expect(mockApiPost.mock.calls[1][1]).toHaveProperty('sessionId', 'session-123');
 
-		// 3rd call: complete (no lastMessage or messageHash — CGGMP24)
+		// 3rd call: complete
 		expect(mockApiPost.mock.calls[2][0]).toBe(`/signers/${signerId}/sign/complete`);
 		expect(mockApiPost.mock.calls[2][1]).toHaveProperty('sessionId', 'session-123');
-		expect(mockApiPost.mock.calls[2][1]).not.toHaveProperty('lastMessage');
-		expect(mockApiPost.mock.calls[2][1]).not.toHaveProperty('messageHash');
 	});
 
-	it('creates local session with correct hash and party config from server', async () => {
+	it('creates WASM session with correct hash and party config from server', async () => {
 		const shareBytes = makeKeyMaterialBytes();
 
 		await browserInteractiveSign(shareBytes, signerId, transaction);
 
-		// createSignSession should be called with messageHash from server, plus options
-		expect(mockSchemeInstance.createSignSession).toHaveBeenCalledWith(
-			expect.any(Array), // [coreShare, auxInfo]
-			expect.any(Uint8Array), // messageHash from server
-			expect.objectContaining({
-				partyIndex: 2, // clientPartyIndex for USER_SERVER
-				partiesAtKeygen: [1, 2],
-				eid: expect.any(Uint8Array),
-			}),
+		expect(mockWasm.sign_create_session).toHaveBeenCalledWith(
+			expect.any(Uint8Array), // coreShare
+			expect.any(Uint8Array), // auxInfo
+			expect.any(Uint8Array), // messageHash
+			2, // clientPartyIndex
+			expect.any(Uint16Array), // partiesAtKeygen
+			expect.any(Uint8Array), // eid
 		);
 	});
 
@@ -197,25 +221,30 @@ describe('browserInteractiveSign', () => {
 		expect(shareBytes.every((b) => b === 0)).toBe(true);
 	});
 
+	it('destroys WASM session in finally block', async () => {
+		const shareBytes = makeKeyMaterialBytes();
+
+		await browserInteractiveSign(shareBytes, signerId, transaction);
+
+		expect(mockWasm.sign_destroy_session).toHaveBeenCalledWith('wasm-session-1');
+	});
+
 	it('handles multiple rounds correctly', async () => {
 		mockApiPost.mockReset();
 
-		// Session creation — new response shape
+		// Session creation
 		mockApiPost.mockResolvedValueOnce(makeSessionResponse({ sessionId: 'session-multi' }));
 
-		// Round exchange
-		mockSchemeInstance.processSignRound
-			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([1])], complete: false })
-			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([2])], complete: false })
-			.mockResolvedValueOnce({ outgoingMessages: [new Uint8Array([3])], complete: false });
-
+		// Round 1: server returns messages, not complete
 		mockApiPost.mockResolvedValueOnce({
-			messages: [toBase64([4, 5, 6])],
+			messages: [
+				encodeWasmMsg({ sender: 1, is_broadcast: false, recipient: 2, payload: 'round1' }),
+			],
 			roundsRemaining: 1,
 			complete: false,
 		});
 
-		// Round 2: done
+		// Round 2: complete
 		mockApiPost.mockResolvedValueOnce({
 			messages: [],
 			roundsRemaining: 0,

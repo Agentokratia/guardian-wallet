@@ -26,7 +26,7 @@ export function useTokenBalances(signerId: string, chainId?: number) {
 			api.get<TokenBalancesResponse>(
 				`/signers/${signerId}/token-balances${chainId ? `?chainId=${chainId}` : ''}`,
 			),
-		enabled: !!signerId && !!chainId,
+		enabled: !!signerId,
 		refetchInterval: 30_000,
 	});
 }

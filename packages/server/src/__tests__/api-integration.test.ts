@@ -422,6 +422,7 @@ describe('Guardian API Integration Tests', () => {
 			const mockScheme = {
 				runDkg: vi.fn(),
 				deriveAddress: vi.fn().mockReturnValue('0xE2E_DKG_Address_1234567890abcdef'),
+				hasPrimesReady: vi.fn().mockResolvedValue(false),
 			};
 
 			// Simulate in-memory signer store for DKG
@@ -525,7 +526,7 @@ describe('Guardian API Integration Tests', () => {
 
 			// Single-call DKG: runDkg called exactly once
 			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
-			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, undefined);
 
 			console.log('');
 			console.log('  ┌─── DKG E2E FLOW (CGGMP24 single-call WASM) ──────');

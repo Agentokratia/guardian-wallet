@@ -2,26 +2,41 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
 
-interface JwtPayload {
+export interface JwtPayload {
 	sub: string;
+	address?: string;
+	email?: string;
 	iat: number;
 	exp: number;
+}
+
+export interface CreateTokenInput {
+	userId: string;
+	address?: string;
+	email?: string;
 }
 
 @Injectable()
 export class SessionService {
 	constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-	createToken(subject: string): string {
+	createToken(input: CreateTokenInput | string): string {
 		const now = Math.floor(Date.now() / 1000);
 		const expiresIn = this.parseExpiry(this.config.JWT_EXPIRY);
 
 		const header = { alg: 'HS256', typ: 'JWT' };
-		const payload: JwtPayload = {
-			sub: subject,
-			iat: now,
-			exp: now + expiresIn,
-		};
+
+		// Support both old string-based (backward compat) and new object-based input
+		const payload: JwtPayload =
+			typeof input === 'string'
+				? { sub: input, iat: now, exp: now + expiresIn }
+				: {
+						sub: input.userId,
+						address: input.address,
+						email: input.email,
+						iat: now,
+						exp: now + expiresIn,
+					};
 
 		const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
 		const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');

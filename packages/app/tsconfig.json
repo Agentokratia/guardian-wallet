@@ -13,7 +13,8 @@
 		"isolatedModules": true,
 		"jsx": "react-jsx",
 		"paths": {
-			"@/*": ["./src/*"]
+			"@/*": ["./src/*"],
+			"@agentokratia/guardian-mpc-wasm": ["../mpc-wasm/pkg-web/guardian_mpc_wasm"]
 		}
 	},
 	"include": ["src", "vite-env.d.ts"],

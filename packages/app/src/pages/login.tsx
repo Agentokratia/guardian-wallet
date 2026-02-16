@@ -1,5 +1,7 @@
 import { GuardianLogo } from '@/components/guardian-logo';
+import { OTPInput } from '@/components/otp-input';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Mono } from '@/components/ui/mono';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -7,13 +9,14 @@ import {
 	Check,
 	ChevronDown,
 	ExternalLink,
+	Fingerprint,
 	Github,
 	Loader2,
 	Lock,
+	Mail,
 	MessageSquare,
-	Wallet,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 
 /* ========================================================================== */
@@ -69,13 +72,15 @@ const FAQ_ITEMS = [
 	},
 ];
 
+type AuthStep = 'email' | 'otp' | 'passkey' | 'login';
+
 /* ========================================================================== */
 /*  Sub-components                                                             */
 /* ========================================================================== */
 
-function NavBar({ onConnect, connecting }: { onConnect: () => void; connecting: boolean }) {
+function NavBar({ onGetStarted, loading }: { onGetStarted: () => void; loading: boolean }) {
 	return (
-		<nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 bg-[var(--bg)]/80 backdrop-blur-xl">
+		<nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
 			<div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
 				<div className="flex items-center gap-2.5">
 					<GuardianLogo width={24} height={24} />
@@ -94,21 +99,21 @@ function NavBar({ onConnect, connecting }: { onConnect: () => void; connecting: 
 					</a>
 					<button
 						type="button"
-						onClick={onConnect}
-						disabled={connecting}
+						onClick={onGetStarted}
+						disabled={loading}
 						className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[13px] font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
 					>
-						{connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}
-						{connecting ? 'Connecting...' : 'Launch App'}
+						{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+						{loading ? 'Loading...' : 'Launch App'}
 					</button>
 				</div>
 				<button
 					type="button"
-					onClick={onConnect}
-					disabled={connecting}
+					onClick={onGetStarted}
+					disabled={loading}
 					className="md:hidden inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50"
 				>
-					{connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Launch App'}
+					{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Launch App'}
 				</button>
 			</div>
 		</nav>
@@ -139,13 +144,232 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 }
 
 /* ========================================================================== */
+/*  Auth Form                                                                  */
+/* ========================================================================== */
+
+function AuthForm() {
+	const { register, verifyOTP, completeRegistration, loginChallenge } = useAuth();
+	const [step, setStep] = useState<AuthStep>('email');
+	const [email, setEmail] = useState('');
+	const [otpValue, setOtpValue] = useState('');
+	const [userId, setUserId] = useState('');
+	const [error, setError] = useState<string | null>(null);
+	const [loading, setLoading] = useState(false);
+	const busyRef = useRef(false);
+
+	async function handleEmailSubmit(e: React.FormEvent) {
+		e.preventDefault();
+		if (!email.trim()) return;
+
+		setError(null);
+		setLoading(true);
+		try {
+			// Try login first (existing user with passkeys)
+			await loginChallenge(email);
+			// If loginChallenge succeeds, passkey prompt was shown and auth completed
+		} catch (loginErr: unknown) {
+			const loginMsg = loginErr instanceof Error ? loginErr.message : '';
+			const isNotFound = loginMsg.includes('No account found') || loginMsg.includes('404');
+			const isNotComplete = loginMsg.includes('registration not complete') || loginMsg.includes('No passkeys');
+
+			if (isNotFound || isNotComplete) {
+				// User doesn't exist or hasn't finished registration — start OTP flow
+				try {
+					const result = await register(email);
+					setUserId(result.userId);
+					setStep('otp');
+				} catch (regErr: unknown) {
+					const message = regErr instanceof Error ? regErr.message : 'Failed to send verification code';
+					setError(message);
+				}
+			} else {
+				// Check for ceremony abort (stale AbortController)
+				const code = (loginErr as { code?: string })?.code;
+				if (code === 'ERROR_CEREMONY_ABORTED') {
+					setError('Authentication was interrupted. Please try again.');
+				} else {
+					const message = loginMsg || 'Authentication failed';
+					setError(message);
+				}
+			}
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	async function handleOTPComplete(code: string) {
+		if (busyRef.current) return;
+		busyRef.current = true;
+		setError(null);
+		setLoading(true);
+		try {
+			const result = await verifyOTP(email, code);
+			setUserId(result.userId);
+			setStep('passkey');
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Verification failed';
+			setError(message);
+			setOtpValue('');
+		} finally {
+			setLoading(false);
+			busyRef.current = false;
+		}
+	}
+
+	async function handleCreatePasskey() {
+		if (busyRef.current) return;
+		busyRef.current = true;
+		setError(null);
+		setLoading(true);
+		try {
+			await completeRegistration(userId);
+		} catch (err: unknown) {
+			// Check for WebAuthn ceremony abort — this is a programmatic abort
+			// (stale AbortController), not a user cancellation. Show a retry prompt.
+			const code = (err as { code?: string })?.code;
+			if (code === 'ERROR_CEREMONY_ABORTED') {
+				setError('Passkey creation was interrupted. Please try again.');
+			} else {
+				const message = err instanceof Error ? err.message : 'Passkey creation failed';
+				setError(message);
+			}
+		} finally {
+			setLoading(false);
+			busyRef.current = false;
+		}
+	}
+
+	if (step === 'otp') {
+		return (
+			<div className="w-full max-w-sm mx-auto space-y-4">
+				<div className="text-center">
+					<div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-accent-muted mb-3">
+						<Mail className="h-5 w-5 text-accent" />
+					</div>
+					<h3 className="text-lg font-semibold text-text">Check your email</h3>
+					<p className="mt-1 text-sm text-text-muted">
+						We sent a 6-digit code to <span className="font-medium text-text">{email}</span>
+					</p>
+				</div>
+
+				{error && (
+					<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
+						{error}
+					</div>
+				)}
+
+				<OTPInput
+					value={otpValue}
+					onChange={setOtpValue}
+					onComplete={handleOTPComplete}
+					disabled={loading}
+				/>
+
+				{loading && (
+					<div className="flex items-center justify-center gap-2 text-sm text-text-muted">
+						<Loader2 className="h-4 w-4 animate-spin" />
+						<span>Verifying...</span>
+					</div>
+				)}
+
+				<button
+					type="button"
+					onClick={() => {
+						setStep('email');
+						setOtpValue('');
+						setError(null);
+					}}
+					className="w-full text-center text-sm text-text-muted hover:text-text transition-colors"
+				>
+					Use a different email
+				</button>
+			</div>
+		);
+	}
+
+	if (step === 'passkey') {
+		return (
+			<div className="w-full max-w-sm mx-auto space-y-4 text-center">
+				<div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-accent-muted">
+					<Fingerprint className="h-5 w-5 text-accent" />
+				</div>
+				<h3 className="text-lg font-semibold text-text">Create your passkey</h3>
+				<p className="text-sm text-text-muted">
+					Set up a passkey to secure your account. This will be your login credential.
+				</p>
+				{error && (
+					<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
+						{error}
+					</div>
+				)}
+				<Button
+					onClick={handleCreatePasskey}
+					disabled={loading}
+					size="lg"
+					className="w-full h-12 text-[15px]"
+				>
+					{loading ? (
+						<Loader2 className="h-4 w-4 animate-spin" />
+					) : (
+						<Fingerprint className="h-4 w-4" />
+					)}
+					{loading ? 'Waiting for passkey...' : 'Create Passkey'}
+				</Button>
+			</div>
+		);
+	}
+
+	// Default: email step
+	return (
+		<form onSubmit={handleEmailSubmit} className="w-full max-w-sm mx-auto space-y-4">
+			{error && (
+				<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
+					{error}
+				</div>
+			)}
+
+			<div className="relative">
+				<Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-dim" />
+				<Input
+					type="email"
+					placeholder="you@example.com"
+					value={email}
+					onChange={(e) => setEmail(e.target.value)}
+					disabled={loading}
+					className="pl-10 h-12 bg-surface text-[15px]"
+					autoFocus
+					autoComplete="email"
+				/>
+			</div>
+
+			<Button
+				type="submit"
+				size="lg"
+				disabled={loading || !email.trim()}
+				className="w-full h-12 text-[15px]"
+			>
+				{loading ? (
+					<Loader2 className="h-4 w-4 animate-spin" />
+				) : (
+					<ArrowRight className="h-4 w-4" />
+				)}
+				{loading ? 'Signing in...' : 'Continue with Email'}
+			</Button>
+
+			<p className="text-center text-[12px] text-text-dim">
+				Sign in with a passkey — no wallet or extension needed
+			</p>
+		</form>
+	);
+}
+
+/* ========================================================================== */
 /*  Main page                                                                  */
 /* ========================================================================== */
 
 export function LoginPage() {
-	const { isAuthenticated, loading: authLoading, address, login } = useAuth();
-	const [error, setError] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
+	const { isAuthenticated, loading: authLoading } = useAuth();
+	const [showAuthInHero, setShowAuthInHero] = useState(false);
 
 	if (authLoading) {
 		return (
@@ -159,22 +383,14 @@ export function LoginPage() {
 		return <Navigate to="/signers" replace />;
 	}
 
-	async function handleLogin() {
-		setError(null);
-		setLoading(true);
-		try {
-			await login();
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : 'Wallet authentication failed';
-			setError(message);
-		} finally {
-			setLoading(false);
-		}
+	function scrollToHero() {
+		setShowAuthInHero(true);
+		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	return (
-		<div className="min-h-screen bg-[var(--bg)]">
-			<NavBar onConnect={handleLogin} connecting={loading} />
+		<div className="min-h-screen bg-background">
+			<NavBar onGetStarted={scrollToHero} loading={false} />
 
 			{/* ================================================================ */}
 			{/*  HERO — Emotion first                                            */}
@@ -197,78 +413,68 @@ export function LoginPage() {
 						The private key never exists. Not in memory, not in transit, not ever. Agents transact with full autonomy. The key stays impossible to steal.
 					</p>
 
-					{/* Wallet connect — primary CTA */}
+					{/* Auth form — primary CTA */}
 					<div className="mt-10 flex flex-col items-center gap-4">
-						{error && (
-							<div className="w-full max-w-sm rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
-								{error}
-							</div>
+						{showAuthInHero ? (
+							<AuthForm />
+						) : (
+							<>
+								<div className="flex flex-col sm:flex-row items-center gap-3">
+									<Button size="lg" onClick={scrollToHero} className="min-w-[220px] h-12 text-[15px]">
+										<Mail className="h-4 w-4" />
+										Get Started
+									</Button>
+									<a
+										href="https://github.com/agentokratia"
+										target="_blank"
+										rel="noopener noreferrer"
+										className="inline-flex items-center gap-2 rounded-md border border-border px-6 py-3 text-[15px] font-medium text-text hover:bg-surface transition-colors"
+									>
+										<Github className="h-4 w-4" />
+										Docs
+									</a>
+								</div>
+
+								<div className="mt-6 flex items-center justify-center gap-5 flex-wrap">
+									<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
+										<Check className="h-3 w-3 text-success" />
+										No wallet extension needed
+									</div>
+									<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
+										<Check className="h-3 w-3 text-success" />
+										Passkey security (WebAuthn)
+									</div>
+									<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
+										<Check className="h-3 w-3 text-success" />
+										Open source &amp; self-hosted
+									</div>
+								</div>
+							</>
 						)}
-
-						{address && !isAuthenticated && (
-							<div className="w-full max-w-sm rounded-md border border-accent/30 bg-accent-muted px-4 py-3 text-center">
-								<Mono size="xs" className="text-accent">
-									{address}
-								</Mono>
-							</div>
-						)}
-
-						<div className="flex flex-col sm:flex-row items-center gap-3">
-							<Button size="lg" onClick={handleLogin} disabled={loading} className="min-w-[220px] h-12 text-[15px]">
-								{loading ? (
-									<Loader2 className="h-4 w-4 animate-spin" />
-								) : (
-									<Wallet className="h-4 w-4" />
-								)}
-								{loading ? 'Connecting...' : 'Connect Wallet'}
-							</Button>
-							<a
-								href="https://github.com/agentokratia"
-								target="_blank"
-								rel="noopener noreferrer"
-								className="inline-flex items-center gap-2 rounded-md border border-border px-6 py-3 text-[15px] font-medium text-text hover:bg-surface transition-colors"
-							>
-								<Github className="h-4 w-4" />
-								Docs
-							</a>
-						</div>
-
-						<div className="mt-6 flex items-center justify-center gap-5 flex-wrap">
-							<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
-								<Check className="h-3 w-3 text-success" />
-								Independently audited
-							</div>
-							<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
-								<Check className="h-3 w-3 text-success" />
-								Same security as MetaMask
-							</div>
-							<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
-								<Check className="h-3 w-3 text-success" />
-								Open source &amp; self-hosted
-							</div>
-						</div>
 					</div>
 				</div>
 
 				{/* Scroll indicator */}
-				<div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-					<ChevronDown className="h-5 w-5 text-text-dim/40" />
-				</div>
+				{!showAuthInHero && (
+					<div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+						<ChevronDown className="h-5 w-5 text-text-dim/40" />
+					</div>
+				)}
 			</section>
 
 			{/* ================================================================ */}
 			{/*  THE TENSION — The problem we solve, emotionally                  */}
 			{/* ================================================================ */}
-			<section className="border-t border-[#2a2a2a] bg-[#1a1a1a] px-6 py-28">
+			<section className="border-t border-border bg-surface px-6 py-28">
 				<div className="mx-auto max-w-3xl text-center">
-					<p className="font-serif text-[clamp(1.6rem,4vw,2.4rem)] font-normal leading-[1.25] text-white">
+					<p className="font-serif text-[clamp(1.6rem,4vw,2.4rem)] font-normal leading-[1.25] text-text">
 						Every key is a liability.
 					</p>
-					<p className="mt-4 font-serif text-[clamp(1.6rem,4vw,2.4rem)] font-normal leading-[1.25] text-white/40">
+					<p className="mt-4 font-serif text-[clamp(1.6rem,4vw,2.4rem)] font-normal leading-[1.25] text-text-muted">
 						Guardian is the wallet that eliminates it.
 					</p>
-					<div className="mx-auto mt-8 h-px w-16 bg-white/10" />
-					<p className="mt-8 text-[16px] leading-relaxed text-white/50 max-w-md mx-auto">
+					<div className="mx-auto mt-8 h-px w-16 bg-border" />
+					<p className="mt-8 text-[16px] leading-relaxed text-text-muted max-w-md mx-auto">
 						Guardian splits the private key into three shares. The full key is never constructed — not during creation, not during signing. Agents transact freely. Math enforces the rules.
 					</p>
 				</div>
@@ -300,15 +506,15 @@ export function LoginPage() {
 									</p>
 								</div>
 								<div className="w-full md:w-64 shrink-0">
-									<div className="aspect-square rounded-2xl bg-gradient-to-br from-[#18181B] to-[#27272A] flex items-center justify-center">
+									<div className="aspect-square rounded-2xl border border-border bg-surface flex items-center justify-center">
 										<div className="text-center px-6">
-											<div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/30 mb-3">
+											<div className="text-[11px] font-bold uppercase tracking-[0.2em] text-text-dim mb-3">
 												{i === 0 ? 'Key Security' : i === 1 ? 'Policy Engine' : 'Recovery'}
 											</div>
-											<div className="font-serif text-lg text-white/80">
+											<div className="font-serif text-lg text-text">
 												{i === 0 ? '2-of-3 threshold' : i === 1 ? 'Rules, not hope' : '3 signing paths'}
 											</div>
-											<div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-white/25">
+											<div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-text-dim">
 												<Lock className="h-2.5 w-2.5" />
 												<span>{i === 0 ? 'Distributed key generation' : i === 1 ? 'Enforced on-sign' : 'Never locked out'}</span>
 											</div>
@@ -359,52 +565,52 @@ export function LoginPage() {
 					</div>
 
 					{/* Code block */}
-					<div className="overflow-hidden rounded-xl border border-[#2a2a2a] bg-[#1a1a1a]">
-						<div className="flex items-center gap-2 border-b border-[#2a2a2a] px-4 py-2.5">
+					<div className="overflow-hidden rounded-xl border border-border bg-surface">
+						<div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
 							<div className="flex gap-1.5">
-								<div className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-								<div className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-								<div className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+								<div className="h-2.5 w-2.5 rounded-full bg-danger/60" />
+								<div className="h-2.5 w-2.5 rounded-full bg-warning/60" />
+								<div className="h-2.5 w-2.5 rounded-full bg-success/60" />
 							</div>
-							<span className="ml-2 font-mono text-[11px] text-[#6b6b6b]">agent.ts</span>
+							<span className="ml-2 font-mono text-[11px] text-text-dim">agent.ts</span>
 						</div>
 						<pre className="overflow-x-auto p-5 text-[13px] leading-relaxed font-mono">
 							<code>
-								<span className="text-[#7c7c7c]">{'// An agent gets a wallet. The key never exists.\n'}</span>
-								<span className="text-[#c586c0]">import</span>
-								<span className="text-[#d4d4d4]">{' { ThresholdSigner } '}</span>
-								<span className="text-[#c586c0]">from</span>
-								<span className="text-[#ce9178]">{" '@guardian/signer'"}</span>
-								<span className="text-[#d4d4d4]">;</span>
+								<span className="text-text-dim">{'// An agent gets a wallet. The key never exists.\n'}</span>
+								<span className="text-[#8B5CF6]">import</span>
+								<span className="text-text">{' { ThresholdSigner } '}</span>
+								<span className="text-[#8B5CF6]">from</span>
+								<span className="text-[#B45309]">{" '@guardian/signer'"}</span>
+								<span className="text-text">;</span>
 								{'\n\n'}
-								<span className="text-[#569cd6]">const</span>
-								<span className="text-[#4fc1ff]"> signer</span>
-								<span className="text-[#d4d4d4]">{' = '}</span>
-								<span className="text-[#c586c0]">await</span>
-								<span className="text-[#dcdcaa]"> ThresholdSigner</span>
-								<span className="text-[#d4d4d4]">.</span>
-								<span className="text-[#dcdcaa]">fromEncryptedShare</span>
-								<span className="text-[#d4d4d4]">(</span>
-								<span className="text-[#ce9178]">'./agent.share.enc'</span>
-								<span className="text-[#d4d4d4]">);</span>
+								<span className="text-[#2563EB]">const</span>
+								<span className="text-[#0891B2]"> signer</span>
+								<span className="text-text">{' = '}</span>
+								<span className="text-[#8B5CF6]">await</span>
+								<span className="text-[#B45309]"> ThresholdSigner</span>
+								<span className="text-text">.</span>
+								<span className="text-[#B45309]">fromEncryptedShare</span>
+								<span className="text-text">(</span>
+								<span className="text-[#B45309]">'./agent.share.enc'</span>
+								<span className="text-text">);</span>
 								{'\n'}
-								<span className="text-[#569cd6]">const</span>
-								<span className="text-[#4fc1ff]"> account</span>
-								<span className="text-[#d4d4d4]">{' = signer.'}</span>
-								<span className="text-[#dcdcaa]">toAccount</span>
-								<span className="text-[#d4d4d4]">();</span>
-								<span className="text-[#7c7c7c]">{' // drop-in viem account'}</span>
+								<span className="text-[#2563EB]">const</span>
+								<span className="text-[#0891B2]"> account</span>
+								<span className="text-text">{' = signer.'}</span>
+								<span className="text-[#B45309]">toAccount</span>
+								<span className="text-text">();</span>
+								<span className="text-text-dim">{' // drop-in viem account'}</span>
 								{'\n\n'}
-								<span className="text-[#7c7c7c]">{'// Sign like any wallet. The math does the rest.\n'}</span>
-								<span className="text-[#569cd6]">const</span>
-								<span className="text-[#4fc1ff]"> hash</span>
-								<span className="text-[#d4d4d4]">{' = '}</span>
-								<span className="text-[#c586c0]">await</span>
-								<span className="text-[#d4d4d4]">{' walletClient.'}</span>
-								<span className="text-[#dcdcaa]">sendTransaction</span>
-								<span className="text-[#d4d4d4]">(</span>
-								<span className="text-[#d4d4d4]">{'{ account, to, value }'}</span>
-								<span className="text-[#d4d4d4]">);</span>
+								<span className="text-text-dim">{'// Sign like any wallet. The math does the rest.\n'}</span>
+								<span className="text-[#2563EB]">const</span>
+								<span className="text-[#0891B2]"> hash</span>
+								<span className="text-text">{' = '}</span>
+								<span className="text-[#8B5CF6]">await</span>
+								<span className="text-text">{' walletClient.'}</span>
+								<span className="text-[#B45309]">sendTransaction</span>
+								<span className="text-text">(</span>
+								<span className="text-text">{'{ account, to, value }'}</span>
+								<span className="text-text">);</span>
 							</code>
 						</pre>
 					</div>
@@ -418,38 +624,33 @@ export function LoginPage() {
 			{/* ================================================================ */}
 			{/*  CTA — Emotional close                                           */}
 			{/* ================================================================ */}
-			<section className="border-t border-[#2a2a2a] bg-[#1a1a1a] px-6 py-28">
+			<section className="border-t border-border bg-surface px-6 py-28">
 				<div className="mx-auto max-w-3xl text-center">
-					<h2 className="font-serif text-[clamp(2rem,5vw,3rem)] font-normal leading-[1.1] text-white">
+					<h2 className="font-serif text-[clamp(2rem,5vw,3rem)] font-normal leading-[1.1] text-text">
 						Agents move money.
 						<br />
-						<em className="font-serif text-white/40">Keys don't move at all.</em>
+						<em className="font-serif text-text-muted">Keys don't move at all.</em>
 					</h2>
 					<div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
 						<Button
 							size="lg"
-							onClick={handleLogin}
-							disabled={loading}
-							className="bg-white text-[#1a1a1a] hover:bg-white/90 min-w-[220px] h-12 text-[15px]"
+							onClick={scrollToHero}
+							className="bg-accent text-accent-foreground hover:bg-accent-hover min-w-[220px] h-12 text-[15px]"
 						>
-							{loading ? (
-								<Loader2 className="h-4 w-4 animate-spin" />
-							) : (
-								<ArrowRight className="h-4 w-4" />
-							)}
-							{loading ? 'Connecting...' : 'Get Started'}
+							<ArrowRight className="h-4 w-4" />
+							Get Started
 						</Button>
 						<a
 							href="https://t.me/agentokratia"
 							target="_blank"
 							rel="noopener noreferrer"
-							className="inline-flex items-center gap-2 rounded-md border border-white/20 px-6 py-3 text-[15px] font-medium text-white hover:bg-white/10 transition-colors"
+							className="inline-flex items-center gap-2 rounded-md border border-border px-6 py-3 text-[15px] font-medium text-text hover:bg-surface-hover transition-colors"
 						>
 							<MessageSquare className="h-4 w-4" />
 							Talk to us
 						</a>
 					</div>
-					<p className="mt-6 text-[13px] text-white/30">
+					<p className="mt-6 text-[13px] text-text-dim">
 						Self-hosted. Docker Compose up. Five minutes to first transaction.
 					</p>
 				</div>
@@ -474,22 +675,22 @@ export function LoginPage() {
 			{/* ================================================================ */}
 			{/*  FOOTER                                                          */}
 			{/* ================================================================ */}
-			<footer className="border-t border-[#2a2a2a] bg-[#1a1a1a] px-6 py-12">
+			<footer className="border-t border-border bg-surface px-6 py-12">
 				<div className="mx-auto max-w-5xl">
 					<div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
 						<div>
 							<div className="flex items-center gap-2.5">
-								<GuardianLogo width={24} height={24} className="text-white" />
-								<span className="text-sm font-bold text-white font-serif">Guardian</span>
+								<GuardianLogo width={24} height={24} className="text-text" />
+								<span className="text-sm font-bold text-text font-serif">Guardian</span>
 							</div>
-							<p className="mt-2 text-[13px] text-white/40 max-w-xs">
+							<p className="mt-2 text-[13px] text-text-muted max-w-xs">
 								Agents deserve wallets, not keys.
 							</p>
 						</div>
 
 						<div className="flex gap-16">
 							<div>
-								<div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 mb-3">
+								<div className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-dim mb-3">
 									Resources
 								</div>
 								<div className="space-y-2">
@@ -503,7 +704,7 @@ export function LoginPage() {
 											href={link.href}
 											target="_blank"
 											rel="noopener noreferrer"
-											className="flex items-center gap-1 text-[13px] text-white/50 hover:text-white transition-colors"
+											className="flex items-center gap-1 text-[13px] text-text-muted hover:text-text transition-colors"
 										>
 											{link.label}
 											<ExternalLink className="h-2.5 w-2.5" />
@@ -512,23 +713,23 @@ export function LoginPage() {
 								</div>
 							</div>
 							<div>
-								<div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 mb-3">
+								<div className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-dim mb-3">
 									Networks
 								</div>
 								<div className="space-y-2">
 									{['Ethereum', 'Base', 'Arbitrum', 'Sepolia'].map((net) => (
-										<div key={net} className="text-[13px] text-white/50">{net}</div>
+										<div key={net} className="text-[13px] text-text-muted">{net}</div>
 									))}
 								</div>
 							</div>
 						</div>
 					</div>
 
-					<div className="mt-10 flex items-center justify-between border-t border-white/10 pt-6">
-						<div className="text-[11px] text-white/25">
+					<div className="mt-10 flex items-center justify-between border-t border-border pt-6">
+						<div className="text-[11px] text-text-dim">
 							&copy; {new Date().getFullYear()} Agentokratia
 						</div>
-						<div className="flex items-center gap-1.5 text-[11px] text-white/25">
+						<div className="flex items-center gap-1.5 text-[11px] text-text-dim">
 							<Lock className="h-3 w-3" />
 							2-of-3 threshold signing
 						</div>

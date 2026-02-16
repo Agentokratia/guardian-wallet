@@ -239,10 +239,13 @@ export function AccountSettingsPage() {
 			{/*  SECURITY                                                        */}
 			{/* ================================================================ */}
 			<div>
-				<div className="flex items-center gap-2 mb-3">
+				<div className="flex items-center gap-2 mb-1">
 					<KeyRound className="h-4 w-4 text-text-dim" />
 					<h2 className="text-[15px] font-semibold text-text">Security</h2>
 				</div>
+				<p className="text-[13px] text-text-dim mb-4">
+					Manage the API key used by signer SDKs to authenticate with the server.
+				</p>
 
 				{/* API Key */}
 				<div className="rounded-xl border border-border bg-surface px-5 py-4">
@@ -264,7 +267,7 @@ export function AccountSettingsPage() {
 						gw_live_{'*'.repeat(12)}
 					</code>
 					<p className="text-[11px] text-text-dim mt-2">
-						Used by the signer SDK to authenticate signing requests. Keep this secret.
+						Used by the signer SDK to authenticate signing requests. Regenerating will invalidate all current integrations immediately.
 					</p>
 				</div>
 			</div>
@@ -333,7 +336,10 @@ export function AccountSettingsPage() {
 			{/*  ACCOUNT INFO                                                    */}
 			{/* ================================================================ */}
 			<div>
-				<h2 className="mb-3 text-[15px] font-semibold text-text">Account Info</h2>
+				<h2 className="mb-1 text-[15px] font-semibold text-text">Account Info</h2>
+				<p className="text-[13px] text-text-dim mb-4">
+					On-chain identity and key generation details for this account.
+				</p>
 				<div className="rounded-xl border border-border bg-surface px-5 py-4">
 					<dl className="space-y-3 text-sm">
 						<div className="flex justify-between">

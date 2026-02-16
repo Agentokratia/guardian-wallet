@@ -33,6 +33,7 @@
 		"@nestjs/platform-express": "^10.4.0",
 		"@noble/curves": "^2.0.1",
 		"@supabase/supabase-js": "^2.45.0",
+		"@agentokratia/guardian-auth": "workspace:*",
 		"@agentokratia/guardian-chains": "workspace:*",
 		"@agentokratia/guardian-core": "workspace:*",
 		"@agentokratia/guardian-schemes": "workspace:*",
@@ -46,6 +47,7 @@
 	},
 	"devDependencies": {
 		"@nestjs/testing": "^10.4.22",
+		"@simplewebauthn/types": "^12.0.0",
 		"@types/cookie-parser": "^1.4.7",
 		"@types/express": "^4.17.0",
 		"@types/node": "^20.0.0",

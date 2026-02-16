@@ -1,0 +1,57 @@
+{
+	"name": "@agentokratia/guardian-auth",
+	"version": "0.1.0",
+	"description": "Framework-agnostic WebAuthn + PRF wallet + OTP auth for Guardian threshold wallet",
+	"license": "AGPL-3.0-only",
+	"author": "Agentokratia <hello@agentokratia.com>",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/agentokratia/guardian-wallet.git",
+		"directory": "packages/auth"
+	},
+	"homepage": "https://github.com/agentokratia/guardian-wallet",
+	"bugs": "https://github.com/agentokratia/guardian-wallet/issues",
+	"keywords": ["threshold", "wallet", "webauthn", "passkey", "prf", "otp", "auth", "agent"],
+	"type": "module",
+	"exports": {
+		"./browser": {
+			"types": "./dist/browser/index.d.ts",
+			"import": "./dist/browser/index.js"
+		},
+		"./server": {
+			"types": "./dist/server/index.d.ts",
+			"import": "./dist/server/index.js"
+		},
+		"./shared": {
+			"types": "./dist/shared/index.d.ts",
+			"import": "./dist/shared/index.js"
+		}
+	},
+	"files": ["dist"],
+	"engines": { "node": ">=20.0.0" },
+	"publishConfig": { "access": "public" },
+	"scripts": {
+		"build": "tsc",
+		"lint": "biome check src/",
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@noble/curves": "^2.0.1",
+		"@noble/hashes": "^1.7.1",
+		"@simplewebauthn/browser": "^13.0.0",
+		"@simplewebauthn/server": "^13.0.0"
+	},
+	"peerDependencies": {
+		"viem": "^2.0.0"
+	},
+	"peerDependenciesMeta": {
+		"viem": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0"
+	}
+}

@@ -3,8 +3,10 @@ import React, { Suspense, useEffect } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthGuard } from './components/auth-guard';
+import { CommandPalette } from './components/command-palette';
 import { DashboardLayout } from './components/layout/dashboard-layout';
 import { Toaster } from './components/ui/toaster';
+import { TooltipProvider } from './components/ui/tooltip';
 import { useNetworks } from './hooks/use-networks';
 import { useSigners } from './hooks/use-signers';
 import { initChainLookups } from './lib/chains';
@@ -117,8 +119,9 @@ function NetworkInitializer() {
 
 export function App() {
 	return (
-		<>
+		<TooltipProvider delayDuration={300}>
 			<NetworkInitializer />
+			<CommandPalette />
 			<ErrorBoundary>
 			<Suspense fallback={<LazyFallback />}>
 				<Routes>
@@ -138,7 +141,7 @@ export function App() {
 						path="/signers/new"
 						element={
 							<AuthGuard>
-								<div className="min-h-screen bg-background px-8 py-7">
+								<div className="min-h-screen bg-background px-8 py-7 animate-page-enter">
 									<CreateSignerPage />
 								</div>
 							</AuthGuard>
@@ -174,6 +177,6 @@ export function App() {
 			</Suspense>
 			</ErrorBoundary>
 			<Toaster />
-		</>
+		</TooltipProvider>
 	);
 }

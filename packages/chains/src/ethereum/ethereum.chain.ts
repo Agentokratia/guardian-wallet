@@ -20,7 +20,7 @@ export class EthereumChain implements IChain {
 		this.chainId = chainId;
 		this.name = name;
 		this.client = createPublicClient({
-			transport: http(rpcUrl),
+			transport: http(rpcUrl, { timeout: 3_000 }),
 		});
 	}
 

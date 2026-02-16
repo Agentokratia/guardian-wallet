@@ -28,6 +28,11 @@ function makeConfig(): AppConfig {
 		AUXINFO_POOL_TARGET: 5,
 		AUXINFO_POOL_LOW_WATERMARK: 2,
 		AUXINFO_POOL_MAX_GENERATORS: 2,
+		RP_ID: 'localhost',
+		RP_NAME: 'Guardian Wallet',
+		ALLOWED_ORIGINS: ['http://localhost:3000'],
+		EMAIL_PROVIDER: 'console' as const,
+		RESEND_API_KEY: '',
 	};
 }
 

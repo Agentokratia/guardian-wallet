@@ -153,7 +153,7 @@ export async function browserInteractiveSign(
 		const eid = fromBase64(sessionRes.eid);
 		const { clientPartyIndex, partiesAtKeygen } = sessionRes.partyConfig;
 
-		console.log('[sign] Creating browser WASM session:', { clientPartyIndex, partiesAtKeygen });
+		if (import.meta.env.DEV) console.log('[sign] Creating browser WASM session:', { clientPartyIndex, partiesAtKeygen });
 		const createResult = wasm.sign_create_session(
 			keyMaterial.coreShare,
 			keyMaterial.auxInfo,
@@ -164,7 +164,7 @@ export async function browserInteractiveSign(
 		) as WasmCreateSessionResult;
 
 		wasmSessionId = createResult.session_id;
-		console.log('[sign] Browser session created, first msgs:', createResult.messages.length);
+		if (import.meta.env.DEV) console.log('[sign] Browser session created, first msgs:', createResult.messages.length);
 
 		// 3. Process server's first messages
 		const serverFirstMsgs = sessionRes.serverFirstMessages.map(fromBase64);
@@ -172,12 +172,12 @@ export async function browserInteractiveSign(
 			(bytes) => JSON.parse(new TextDecoder().decode(bytes)) as WasmSignMessage,
 		);
 
-		console.log('[sign] Processing server first msgs:', serverFirstParsed.length);
+		if (import.meta.env.DEV) console.log('[sign] Processing server first msgs:', serverFirstParsed.length);
 		const processResult = wasm.sign_process_round(
 			wasmSessionId,
 			serverFirstParsed,
 		) as WasmProcessRoundResult;
-		console.log('[sign] After processing server first msgs: outgoing=', processResult.messages.length, 'complete=', processResult.complete);
+		if (import.meta.env.DEV) console.log('[sign] After processing server first msgs: outgoing=', processResult.messages.length, 'complete=', processResult.complete);
 
 		// Combine browser's first messages + messages from processing server's first
 		let outgoing: WasmSignMessage[] = [
@@ -185,7 +185,7 @@ export async function browserInteractiveSign(
 			...processResult.messages,
 		];
 
-		console.log('[sign] Combined outgoing for round 1:', outgoing.length);
+		if (import.meta.env.DEV) console.log('[sign] Combined outgoing for round 1:', outgoing.length);
 
 		// 4. Exchange rounds until server reports complete (max 20 round-trips)
 		const MAX_ROUNDS = 20;
@@ -202,7 +202,7 @@ export async function browserInteractiveSign(
 				toBase64(new TextEncoder().encode(JSON.stringify(msg))),
 			);
 
-			console.log(`[sign] Round ${roundCount}: sending ${outgoingBase64.length} msgs to server`);
+			if (import.meta.env.DEV) console.log(`[sign] Round ${roundCount}: sending ${outgoingBase64.length} msgs to server`);
 			const roundRes = await api.post<RoundResponse>(
 				`/signers/${signerId}/sign/round`,
 				{
@@ -212,7 +212,7 @@ export async function browserInteractiveSign(
 			);
 
 			serverComplete = roundRes.complete;
-			console.log(`[sign] Round ${roundCount}: server returned ${roundRes.messages.length} msgs, complete=${serverComplete}`);
+			if (import.meta.env.DEV) console.log(`[sign] Round ${roundCount}: server returned ${roundRes.messages.length} msgs, complete=${serverComplete}`);
 
 			// Always process server messages (even on the final round)
 			if (roundRes.messages.length > 0) {
@@ -224,10 +224,10 @@ export async function browserInteractiveSign(
 					serverMsgs,
 				) as WasmProcessRoundResult;
 				outgoing = roundResult.messages;
-				console.log(`[sign] Round ${roundCount}: browser produced ${outgoing.length} msgs, browserComplete=${roundResult.complete}`);
+				if (import.meta.env.DEV) console.log(`[sign] Round ${roundCount}: browser produced ${outgoing.length} msgs, browserComplete=${roundResult.complete}`);
 			} else if (!serverComplete) {
 				// Server returned no messages and is not complete — protocol stalled
-				console.warn(`[sign] Round ${roundCount}: server returned no messages but not complete — retrying with empty`);
+				if (import.meta.env.DEV) console.warn(`[sign] Round ${roundCount}: server returned no messages but not complete — retrying with empty`);
 				outgoing = [];
 			} else {
 				outgoing = [];

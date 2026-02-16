@@ -1,4 +1,3 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useMutation } from '@tanstack/react-query';
 import {
 	ArrowLeft,
@@ -8,13 +7,16 @@ import {
 	Lock,
 	Send,
 	Shield,
-	Wallet,
 	Zap,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { parseEther } from 'viem';
-import { useAccount, useSignMessage } from 'wagmi';
+import { wipePRF } from '@agentokratia/guardian-auth/browser';
+import { useAuth } from '@/hooks/use-auth';
+import { useBalance } from '@/hooks/use-balance';
+import { useNetworks } from '@/hooks/use-networks';
+import { NetworkIcon } from '@/components/network-icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -30,9 +32,9 @@ import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api-client';
 import { browserInteractiveSign } from '@/lib/browser-signer';
 import { getChainId, getExplorerTxUrl } from '@/lib/chains';
-import { formatTokenBalance } from '@/lib/formatters';
+import { formatTokenBalance, formatWei } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
-import { decryptUserShare, getSignMessage } from '@/lib/user-share-store';
+import { decryptUserShare } from '@/lib/user-share-store';
 
 const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
@@ -59,15 +61,16 @@ interface EncryptedShareResponse {
 /* ========================================================================== */
 
 const TOKEN_COLORS: Record<string, string> = {
-	ETH: 'bg-blue-500/15 text-blue-600',
-	USDC: 'bg-green-500/15 text-green-600',
-	USDT: 'bg-emerald-500/15 text-emerald-600',
-	WETH: 'bg-indigo-500/15 text-indigo-600',
-	DAI: 'bg-amber-500/15 text-amber-600',
+	ETH: 'bg-[#627EEA]/12 text-[#627EEA]',
+	USDC: 'bg-[#2775CA]/12 text-[#2775CA]',
+	USDT: 'bg-[#26A17B]/12 text-[#26A17B]',
+	WETH: 'bg-[#627EEA]/12 text-[#627EEA]',
+	DAI: 'bg-[#F5AC37]/12 text-[#F5AC37]',
+	WBTC: 'bg-[#F09242]/12 text-[#F09242]',
 };
 
 function getTokenColor(symbol: string): string {
-	return TOKEN_COLORS[symbol.toUpperCase()] ?? 'bg-stone-200/60 text-stone-600';
+	return TOKEN_COLORS[symbol.toUpperCase()] ?? 'bg-stone-500/10 text-stone-500';
 }
 
 /* ========================================================================== */
@@ -75,9 +78,8 @@ function getTokenColor(symbol: string): string {
 /* ========================================================================== */
 
 const SIGNING_STEPS = [
-	{ key: 'fetch', label: 'Retrieving encrypted share', icon: Lock },
-	{ key: 'wallet', label: 'Requesting wallet signature', icon: Wallet },
-	{ key: 'decrypt', label: 'Decrypting share locally', icon: Shield },
+	{ key: 'decrypt', label: 'Authenticating with passkey', icon: Shield },
+	{ key: 'fetch', label: 'Retrieving & decrypting share', icon: Lock },
 	{ key: 'signing', label: 'Threshold signing in progress', icon: Zap },
 ] as const;
 
@@ -131,14 +133,13 @@ export function SignPage() {
 	const [searchParams] = useSearchParams();
 	const { data: signer, isLoading: signerLoading } = useSigner(id ?? '');
 	const { toast } = useToast();
-	const { isConnected, chain } = useAccount();
-	const { signMessageAsync, isPending: isWalletSigning } = useSignMessage();
-
-	// Get tokens for balance display
-	const { data: tokenData } = useTokenBalances(id ?? '', chain?.id);
+	const { isAuthenticated, refreshPRF } = useAuth();
+	const { data: networks } = useNetworks();
+	const { data: balanceData } = useBalance(id ?? '');
 
 	// Pre-select token from URL params (when clicking Send on a token row)
 	const preselectedToken = searchParams.get('token') ?? 'ETH';
+	const preselectedNetwork = searchParams.get('network');
 
 	// Form state
 	const [toAddress, setToAddress] = useState('');
@@ -146,7 +147,33 @@ export function SignPage() {
 	const [selectedToken, setSelectedToken] = useState(preselectedToken);
 	const [calldata, setCalldata] = useState('');
 	const [showAdvanced, setShowAdvanced] = useState(false);
-	const [network, setNetwork] = useState('base-sepolia');
+	const [network, setNetwork] = useState(preselectedNetwork ?? '');
+
+	// Set initial network once networks load (first enabled)
+	useEffect(() => {
+		if (preselectedNetwork || network || !networks || networks.length === 0) return;
+		const enabled = networks.filter((n) => n.enabled);
+		if (enabled.length > 0) setNetwork(enabled[0].name);
+	}, [networks, preselectedNetwork, network]);
+
+	// Derive chainId from selected network
+	const selectedNetChainId = useMemo(() => {
+		if (!networks) return undefined;
+		return networks.find((n) => n.name === network)?.chainId;
+	}, [networks, network]);
+
+	// Build a map of network name → balance for the dropdown
+	const networkBalanceMap = useMemo(() => {
+		const m = new Map<string, string>();
+		if (!balanceData?.balances) return m;
+		for (const b of balanceData.balances) {
+			m.set(b.network, formatWei(b.balance));
+		}
+		return m;
+	}, [balanceData]);
+
+	// Get tokens for balance display (filtered by selected network)
+	const { data: tokenData } = useTokenBalances(id ?? '', selectedNetChainId);
 	const [simulation, setSimulation] = useState<SimulationResult | null>(null);
 	const [txResult, setTxResult] = useState<SignResult | null>(null);
 	const [signingStep, setSigningStep] = useState<SigningStepKey | null>(null);
@@ -167,7 +194,7 @@ export function SignPage() {
 		value.length > 0 &&
 		!Number.isNaN(Number(value)) &&
 		Number(value) > 0 &&
-		isConnected;
+		isAuthenticated;
 
 	// Token balance for selected token
 	const selectedTokenData = tokenData?.tokens.find(
@@ -201,19 +228,54 @@ export function SignPage() {
 	const signMutation = useMutation({
 		mutationFn: async (): Promise<SignResult> => {
 			if (!id) throw new Error('No signer ID');
+			console.log('[sign] Starting signing flow for signer:', id, 'network:', network);
 
-			setSigningStep('fetch');
-			const encrypted = await api.get<EncryptedShareResponse>(`/signers/${id}/user-share`);
-
-			setSigningStep('wallet');
-			const signature = await signMessageAsync({ message: getSignMessage(id) });
-
+			// Always get fresh PRF via passkey tap — never kept in memory.
 			setSigningStep('decrypt');
-			const userShareBytes = await decryptUserShare(encrypted, signature);
+			console.log('[sign] Step 1: Authenticating with passkey...');
+			let prfOutput: Uint8Array;
+			try {
+				prfOutput = await refreshPRF();
+				console.log('[sign] Step 1 OK: Got PRF, length:', prfOutput.length);
+			} catch (err) {
+				console.error('[sign] Step 1 FAILED:', err);
+				throw new Error(`Passkey authentication failed: ${err instanceof Error ? err.message : String(err)}`);
+			}
+
+			// Log PRF fingerprint for debugging
+			const prfHex = Array.from(prfOutput.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+			console.log('[sign] PRF fingerprint (first 8 bytes):', prfHex);
+
+			let userShareBytes: Uint8Array;
+			// Step 2a: Fetch the encrypted share from server
+			let encrypted: EncryptedShareResponse;
+			try {
+				setSigningStep('fetch');
+				console.log('[sign] Step 2a: Fetching encrypted user share...');
+				encrypted = await api.get<EncryptedShareResponse>(`/signers/${id}/user-share`);
+				console.log('[sign] Step 2a OK: iv:', encrypted.iv?.slice(0, 20), 'salt:', encrypted.salt?.slice(0, 20), 'ct length:', encrypted.ciphertext?.length);
+			} catch (err) {
+				console.error('[sign] Step 2a FAILED: Fetch error:', err);
+				wipePRF(prfOutput);
+				throw new Error(`Failed to fetch user share: ${err instanceof Error ? err.message : String(err)}`);
+			}
+
+			// Step 2b: Decrypt the share with PRF
+			try {
+				console.log('[sign] Step 2b: Decrypting share...');
+				userShareBytes = await decryptUserShare(encrypted, prfOutput);
+				console.log('[sign] Step 2b OK: Share decrypted, length:', userShareBytes.length);
+			} catch (err) {
+				console.error('[sign] Step 2b FAILED: AES-GCM error:', err);
+				wipePRF(prfOutput);
+				throw new Error(`Share decryption failed (AES-GCM): ${err instanceof Error ? err.message : String(err)}`);
+			}
+			wipePRF(prfOutput);
 
 			setSigningStep('signing');
 			const chainId = getChainId(network);
 			const valueWei = value ? parseEther(value).toString() : undefined;
+			console.log('[sign] Step 3: Starting interactive signing — chainId:', chainId, 'to:', toAddress, 'value:', valueWei);
 
 			const result = await browserInteractiveSign(
 				userShareBytes,
@@ -226,6 +288,7 @@ export function SignPage() {
 				},
 			);
 
+			console.log('[sign] Step 3 OK: Signing complete — txHash:', result.txHash);
 			setSigningStep(null);
 			return result;
 		},
@@ -235,6 +298,7 @@ export function SignPage() {
 		},
 		onError: (err: unknown) => {
 			setSigningStep(null);
+			console.error('[sign] Transaction failed:', err);
 			const message = err instanceof Error ? err.message : 'Transaction failed';
 			toast({ title: 'Transaction failed', description: message, variant: 'destructive' });
 		},
@@ -252,7 +316,7 @@ export function SignPage() {
 		return <div className="py-20 text-center text-text-muted">Account not found.</div>;
 	}
 
-	const isSigning = signMutation.isPending || isWalletSigning;
+	const isSigning = signMutation.isPending;
 
 	/* ====================================================================== */
 	/*  SUCCESS STATE                                                          */
@@ -353,9 +417,9 @@ export function SignPage() {
 
 				{/* Signing card */}
 				<div className="rounded-2xl border border-border bg-surface overflow-hidden">
-					<div className="bg-gradient-to-br from-[#18181B] to-[#27272A] px-6 py-5 text-center">
-						<h1 className="text-lg font-bold text-white">Signing Transaction</h1>
-						<p className="text-[13px] text-white/40 mt-1">
+					<div className="border-b border-border bg-surface px-6 py-5 text-center">
+						<h1 className="text-lg font-bold text-text">Signing Transaction</h1>
+						<p className="text-[13px] text-text-muted mt-1">
 							{value} {selectedToken} to {toAddress.slice(0, 8)}...{toAddress.slice(-6)}
 						</p>
 					</div>
@@ -391,27 +455,102 @@ export function SignPage() {
 
 			{/* Send card */}
 			<div className="rounded-2xl border border-border bg-surface overflow-hidden">
-				{/* Dark header */}
-				<div className="bg-gradient-to-br from-[#18181B] to-[#27272A] px-6 py-5">
+				{/* Header */}
+				<div className="border-b border-border bg-surface px-6 py-5">
 					<div className="flex items-center justify-between">
 						<div>
-							<h1 className="text-lg font-bold text-white">Send</h1>
-							<p className="text-[12px] text-white/35 mt-0.5 font-mono">
+							<h1 className="text-lg font-bold text-text">Send</h1>
+							<p className="text-[12px] text-text-dim mt-0.5 font-mono">
 								{signer.ethAddress.slice(0, 10)}...{signer.ethAddress.slice(-6)}
 							</p>
 						</div>
-						{!isConnected ? (
-							<ConnectButton />
-						) : (
-							<div className="flex items-center gap-1.5 text-[11px] text-white/40">
+						{isAuthenticated && (
+							<div className="flex items-center gap-1.5 text-[11px] text-text-dim">
 								<div className="h-1.5 w-1.5 rounded-full bg-success" />
-								Wallet connected
+								Authenticated
 							</div>
 						)}
 					</div>
 				</div>
 
 				<div className="p-5 space-y-5">
+					{/* ── Network (first — determines available assets) ── */}
+					<div>
+						<label htmlFor="send-network" className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
+							Network
+						</label>
+						{(() => {
+							const enabledNetworks = (networks ?? []).filter((n) => n.enabled);
+							const mainnets = enabledNetworks.filter((n) => !n.isTestnet);
+							const testnets = enabledNetworks.filter((n) => n.isTestnet);
+							const sel = enabledNetworks.find((n) => n.name === network);
+							return (
+								<Select value={network} onValueChange={setNetwork}>
+									<SelectTrigger className="h-12">
+										<SelectValue>
+											{sel ? (
+												<span className="flex items-center gap-2.5">
+													<NetworkIcon network={sel.name} size="sm" />
+													<span className="font-medium">{sel.displayName}</span>
+													{sel.isTestnet && (
+														<span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+															testnet
+														</span>
+													)}
+												</span>
+											) : (
+												network
+											)}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{mainnets.length > 0 && (
+											<>
+												<div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-text-dim/50">
+													Mainnets
+												</div>
+												{mainnets.map((n) => (
+													<SelectItem key={n.name} value={n.name} className="py-2.5 pl-3">
+														<span className="flex items-center gap-2.5">
+															<NetworkIcon network={n.name} size="sm" />
+															<span className="flex-1 font-medium">{n.displayName}</span>
+															{networkBalanceMap.has(n.name) && (
+																<span className="text-[11px] text-text-dim font-mono tabular-nums">
+																	{networkBalanceMap.get(n.name)}
+																</span>
+															)}
+														</span>
+													</SelectItem>
+												))}
+											</>
+										)}
+										{testnets.length > 0 && (
+											<>
+												{mainnets.length > 0 && <div className="my-1 h-px bg-border" />}
+												<div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-text-dim/50">
+													Testnets
+												</div>
+												{testnets.map((n) => (
+													<SelectItem key={n.name} value={n.name} className="py-2.5 pl-3">
+														<span className="flex items-center gap-2.5">
+															<NetworkIcon network={n.name} size="sm" />
+															<span className="flex-1 font-medium">{n.displayName}</span>
+															{networkBalanceMap.has(n.name) && (
+																<span className="text-[11px] text-text-dim font-mono tabular-nums">
+																	{networkBalanceMap.get(n.name)}
+																</span>
+															)}
+														</span>
+													</SelectItem>
+												))}
+											</>
+										)}
+									</SelectContent>
+								</Select>
+							);
+						})()}
+					</div>
+
 					{/* ── Asset selector ── */}
 					<div>
 						<label className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
@@ -456,9 +595,11 @@ export function SignPage() {
 							onChange={(e) => setToAddress(e.target.value)}
 							onBlur={() => setAddressTouched(true)}
 						/>
-						{addressError && (
+						{addressError ? (
 							<p className="text-[11px] text-danger mt-1.5">{addressError}</p>
-						)}
+						) : !addressTouched && !toAddress ? (
+							<p className="text-[11px] text-text-dim mt-1.5">The Ethereum address that will receive the funds.</p>
+						) : null}
 					</div>
 
 					{/* ── Amount ── */}
@@ -494,29 +635,11 @@ export function SignPage() {
 								{selectedToken}
 							</div>
 						</div>
-						{amountError && (
+						{amountError ? (
 							<p className="text-[11px] text-danger mt-1.5">{amountError}</p>
-						)}
-					</div>
-
-					{/* ── Network ── */}
-					<div>
-						<label htmlFor="send-network" className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
-							Network
-						</label>
-						<Select value={network} onValueChange={setNetwork}>
-							<SelectTrigger className="h-11">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="mainnet">Ethereum Mainnet</SelectItem>
-								<SelectItem value="sepolia">Sepolia Testnet</SelectItem>
-								<SelectItem value="base">Base</SelectItem>
-								<SelectItem value="base-sepolia">Base Sepolia</SelectItem>
-								<SelectItem value="arbitrum">Arbitrum One</SelectItem>
-								<SelectItem value="arbitrum-sepolia">Arbitrum Sepolia</SelectItem>
-							</SelectContent>
-						</Select>
+						) : !amountTouched && !value ? (
+							<p className="text-[11px] text-text-dim mt-1.5">Gas fees will be deducted separately from this amount.</p>
+						) : null}
 					</div>
 
 					{/* ── Advanced (calldata) ── */}
@@ -592,7 +715,7 @@ export function SignPage() {
 							) : (
 								<Zap className="h-4 w-4" />
 							)}
-							{simulateMutation.isPending ? 'Simulating...' : 'Preview Transaction'}
+							{simulateMutation.isPending ? 'Estimating gas...' : 'Preview Gas Cost'}
 						</Button>
 
 						{/* Send button (primary) */}
@@ -609,9 +732,9 @@ export function SignPage() {
 							{signMutation.isPending ? 'Signing...' : `Send ${selectedToken}`}
 						</Button>
 
-						{!isConnected && (
-							<p className="text-[11px] text-center text-text-dim">
-								Connect your wallet above to enable sending
+						{!isAuthenticated && (
+							<p className="text-[11px] text-center text-warning">
+								Sign in with your passkey to unlock sending. Your key share is encrypted on the server and can only be decrypted by your device.
 							</p>
 						)}
 					</div>

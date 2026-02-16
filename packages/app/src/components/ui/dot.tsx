@@ -9,11 +9,12 @@ const colorMap = {
 
 interface DotProps {
 	color?: keyof typeof colorMap;
+	pulse?: boolean;
 	className?: string;
 }
 
-export function Dot({ color = 'success', className }: DotProps) {
+export function Dot({ color = 'success', pulse, className }: DotProps) {
 	return (
-		<span className={cn('inline-block h-1.5 w-1.5 rounded-full', colorMap[color], className)} />
+		<span className={cn('inline-block h-1.5 w-1.5 rounded-full', colorMap[color], pulse && 'animate-dot-pulse', className)} />
 	);
 }

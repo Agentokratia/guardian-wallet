@@ -14,6 +14,8 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
+		"@agentokratia/guardian-auth": "workspace:*",
+		"@agentokratia/guardian-schemes": "workspace:*",
 		"@radix-ui/react-dialog": "^1.1.15",
 		"@radix-ui/react-scroll-area": "^1.2.10",
 		"@radix-ui/react-select": "^2.2.6",
@@ -22,11 +24,11 @@
 		"@radix-ui/react-switch": "^1.2.6",
 		"@radix-ui/react-tabs": "^1.1.13",
 		"@radix-ui/react-toast": "^1.2.15",
-		"@rainbow-me/rainbowkit": "^2.2.10",
-		"@agentokratia/guardian-schemes": "workspace:*",
+		"@radix-ui/react-tooltip": "^1.2.8",
 		"@tanstack/react-query": "^5.90.20",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"cmdk": "^1.1.1",
 		"lucide-react": "^0.563.0",
 		"qrcode.react": "^4.2.0",
 		"react": "^18.3.1",
@@ -34,8 +36,7 @@
 		"react-router-dom": "^7.13.0",
 		"tailwind-merge": "^3.4.0",
 		"tailwindcss-animate": "^1.0.7",
-		"viem": "^2.21.0",
-		"wagmi": "^2.19.5"
+		"viem": "^2.21.0"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

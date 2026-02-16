@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
+import { FALLBACK_NETWORKS } from '@/lib/network-meta';
 
 export interface Network {
 	id: string;
@@ -16,7 +17,15 @@ export interface Network {
 export function useNetworks() {
 	return useQuery({
 		queryKey: ['networks'],
-		queryFn: () => api.get<Network[]>('/networks'),
+		queryFn: async () => {
+			try {
+				const data = await api.get<Network[]>('/networks');
+				return data && data.length > 0 ? data : FALLBACK_NETWORKS;
+			} catch {
+				return FALLBACK_NETWORKS;
+			}
+		},
 		staleTime: 5 * 60 * 1000,
+		placeholderData: FALLBACK_NETWORKS,
 	});
 }

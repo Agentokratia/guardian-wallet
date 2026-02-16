@@ -3,15 +3,20 @@ import { Link } from 'react-router-dom';
 
 interface QuickActionsProps {
 	signerId: string;
+	network?: string | null;
 	onReceive: () => void;
 }
 
-export function QuickActions({ signerId, onReceive }: QuickActionsProps) {
+export function QuickActions({ signerId, network, onReceive }: QuickActionsProps) {
+	const sendPath = network
+		? `/signers/${signerId}/sign?network=${network}`
+		: `/signers/${signerId}/sign`;
+
 	return (
 		<div className="flex items-center justify-center gap-8">
 			{/* Send — primary */}
 			<Link
-				to={`/signers/${signerId}/sign`}
+				to={sendPath}
 				className="flex flex-col items-center gap-2 group"
 			>
 				<div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#18181B] shadow-sm transition-all group-hover:scale-110 group-active:scale-95">
