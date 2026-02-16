@@ -31,6 +31,14 @@ export class ChallengeStore {
 		return entry.challenge;
 	}
 
+	consume(key: string): string | null {
+		const challenge = this.get(key);
+		if (challenge) {
+			this.store.delete(key);
+		}
+		return challenge;
+	}
+
 	delete(key: string): void {
 		this.store.delete(key);
 	}

@@ -30,7 +30,9 @@ export class EitherAuthGuard implements CanActivate {
 		if (token) {
 			const payload = this.sessionService.validateToken(token);
 			if (payload) {
-				request.sessionUser = payload.sub.toLowerCase();
+				request.sessionUser = payload.address?.toLowerCase() ?? payload.sub.toLowerCase();
+				request.sessionEmail = payload.email;
+				request.sessionUserId = payload.sub;
 				return true;
 			}
 		}

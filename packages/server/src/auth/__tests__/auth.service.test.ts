@@ -1,21 +1,42 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { privateKeyToAccount } from 'viem/accounts';
 import { AuthService } from '../auth.service.js';
 import type { ChallengeStore } from '../challenge-store.js';
 import type { SessionService } from '../session.service.js';
 
-// ---------------------------------------------------------------------------
-// Test wallet (deterministic for reproducibility)
-// ---------------------------------------------------------------------------
-
-const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
-const testAccount = privateKeyToAccount(TEST_PRIVATE_KEY);
-const TEST_ADDRESS = testAccount.address;
-
-function buildSiweMessage(nonce: string, address: string): string {
-	return `Sign in to Guardian\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
-}
+// Mock the guardian-auth server module
+vi.mock('@agentokratia/guardian-auth/server', () => ({
+	generateOTP: vi.fn().mockReturnValue({
+		code: '123456',
+		expiresAt: new Date(Date.now() + 600_000),
+	}),
+	generateRegistrationChallenge: vi.fn().mockResolvedValue({
+		challenge: 'test-challenge',
+		rp: { id: 'localhost', name: 'Guardian Wallet' },
+		user: { id: 'user-123', name: 'test@example.com', displayName: 'test@example.com' },
+	}),
+	verifyRegistration: vi.fn().mockResolvedValue({
+		verified: true,
+		registrationInfo: {
+			credential: {
+				id: 'cred-123',
+				publicKey: new Uint8Array([1, 2, 3]),
+				counter: 0,
+			},
+		},
+	}),
+	generateAuthChallenge: vi.fn().mockResolvedValue({
+		challenge: 'auth-challenge',
+		rpId: 'localhost',
+		allowCredentials: [{ id: 'cred-123' }],
+	}),
+	verifyAuthentication: vi.fn().mockResolvedValue({
+		verified: true,
+		authenticationInfo: {
+			newCounter: 1,
+		},
+	}),
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -35,7 +56,44 @@ function createMocks() {
 		getExpirySeconds: vi.fn().mockReturnValue(86400),
 	};
 
-	return { challengeStore, sessionService };
+	const supabaseService = {
+		client: {
+			from: vi.fn().mockReturnValue({
+				select: vi.fn().mockReturnThis(),
+				insert: vi.fn().mockReturnThis(),
+				update: vi.fn().mockReturnThis(),
+				eq: vi.fn().mockReturnThis(),
+				single: vi.fn().mockResolvedValue({ data: null, error: null }),
+				order: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				gte: vi.fn().mockReturnThis(),
+				maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+			}),
+		},
+	};
+
+	const config = {
+		NODE_ENV: 'test',
+		PORT: 8080,
+		SUPABASE_URL: 'http://localhost:54321',
+		SUPABASE_SERVICE_KEY: 'test-service-key',
+		VAULT_ADDR: 'http://localhost:8200',
+		VAULT_TOKEN: 'test-vault-token',
+		VAULT_KV_MOUNT: 'secret',
+		VAULT_SHARE_PREFIX: 'threshold/shares',
+		JWT_SECRET: 'test-secret-key-min-16-chars',
+		JWT_EXPIRY: '24h',
+		AUXINFO_POOL_TARGET: 5,
+		AUXINFO_POOL_LOW_WATERMARK: 2,
+		AUXINFO_POOL_MAX_GENERATORS: 2,
+		RP_ID: 'localhost',
+		RP_NAME: 'Guardian Wallet',
+		ALLOWED_ORIGINS: ['http://localhost:3000'],
+		EMAIL_PROVIDER: 'console' as const,
+		RESEND_API_KEY: '',
+	};
+
+	return { challengeStore, sessionService, supabaseService, config };
 }
 
 // ---------------------------------------------------------------------------
@@ -53,113 +111,65 @@ describe('AuthService', () => {
 		service = new AuthService(
 			mocks.challengeStore as unknown as ChallengeStore,
 			mocks.sessionService as unknown as SessionService,
+			mocks.supabaseService as never,
+			mocks.config as never,
 		);
 	});
 
 	// -----------------------------------------------------------------------
-	// generateNonce
+	// registerEmail
 	// -----------------------------------------------------------------------
 
-	describe('generateNonce', () => {
-		it('returns a hex string', () => {
-			const nonce = service.generateNonce();
+	describe('registerEmail', () => {
+		it('creates new user and returns userId for new email', async () => {
+			// First query: user lookup returns null (new user)
+			const fromMock = vi.fn();
+			const selectChain = {
+				select: vi.fn().mockReturnThis(),
+				eq: vi.fn().mockReturnThis(),
+				single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+			};
+			const insertChain = {
+				insert: vi.fn().mockReturnThis(),
+				select: vi.fn().mockReturnThis(),
+				single: vi.fn().mockResolvedValue({
+					data: { id: 'new-user-id', email: 'test@example.com' },
+					error: null,
+				}),
+			};
+			const verifyInsertChain = {
+				insert: vi.fn().mockResolvedValue({ error: null }),
+			};
 
-			expect(nonce).toMatch(/^[0-9a-f]{64}$/);
-		});
+			let callCount = 0;
+			fromMock.mockImplementation((table: string) => {
+				if (table === 'users') {
+					callCount++;
+					return callCount === 1 ? selectChain : insertChain;
+				}
+				if (table === 'email_verifications') {
+					return verifyInsertChain;
+				}
+				return selectChain;
+			});
 
-		it('stores nonce in challenge store', () => {
-			const nonce = service.generateNonce();
+			mocks.supabaseService.client.from = fromMock;
 
-			expect(mocks.challengeStore.set).toHaveBeenCalledWith(nonce, nonce);
-		});
-
-		it('returns different nonces on each call', () => {
-			const nonce1 = service.generateNonce();
-			const nonce2 = service.generateNonce();
-
-			expect(nonce1).not.toBe(nonce2);
+			const result = await service.registerEmail('test@example.com');
+			expect(result.userId).toBe('new-user-id');
+			expect(result.isNewUser).toBe(true);
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// verifyWalletSignature
+	// verifyEmailOTP
 	// -----------------------------------------------------------------------
 
-	describe('verifyWalletSignature', () => {
-		it('returns token and address for valid signature', async () => {
-			const nonce = 'a'.repeat(64);
-			const message = buildSiweMessage(nonce, TEST_ADDRESS);
-			const signature = await testAccount.signMessage({ message });
-
-			mocks.challengeStore.get.mockReturnValue(nonce);
-
-			const result = await service.verifyWalletSignature(message, signature);
-
-			expect(result.verified).toBe(true);
-			expect(result.address).toBe(TEST_ADDRESS.toLowerCase());
-			expect(result.token).toBe('jwt-token-abc');
-			expect(mocks.sessionService.createToken).toHaveBeenCalledWith(TEST_ADDRESS.toLowerCase());
-		});
-
-		it('deletes nonce after use', async () => {
-			const nonce = 'b'.repeat(64);
-			const message = buildSiweMessage(nonce, TEST_ADDRESS);
-			const signature = await testAccount.signMessage({ message });
-
-			mocks.challengeStore.get.mockReturnValue(nonce);
-
-			await service.verifyWalletSignature(message, signature);
-
-			expect(mocks.challengeStore.delete).toHaveBeenCalledWith(nonce);
-		});
-
-		it('throws BadRequestException for expired/missing nonce', async () => {
-			const nonce = 'c'.repeat(64);
-			const message = buildSiweMessage(nonce, TEST_ADDRESS);
-			const signature = await testAccount.signMessage({ message });
-
-			mocks.challengeStore.get.mockReturnValue(null);
-
+	describe('verifyEmailOTP', () => {
+		it('throws BadRequestException for invalid code format', async () => {
 			await expect(
-				service.verifyWalletSignature(message, signature),
+				service.verifyEmailOTP('test@example.com', '12345'), // 5 digits instead of 6
 			).rejects.toThrow(BadRequestException);
-			await expect(
-				service.verifyWalletSignature(message, signature),
-			).rejects.toThrow('Nonce expired or not found');
-		});
-
-		it('throws UnauthorizedException for invalid signature', async () => {
-			const nonce = 'd'.repeat(64);
-			const message = buildSiweMessage(nonce, TEST_ADDRESS);
-			// Sign a different message to produce an invalid signature for this message
-			const wrongSignature = await testAccount.signMessage({ message: 'wrong message' });
-
-			mocks.challengeStore.get.mockReturnValue(nonce);
-
-			await expect(
-				service.verifyWalletSignature(message, wrongSignature),
-			).rejects.toThrow(UnauthorizedException);
-			await expect(
-				service.verifyWalletSignature(message, wrongSignature),
-			).rejects.toThrow('Invalid wallet signature');
-		});
-
-		it('throws BadRequestException for message missing nonce', async () => {
-			const message = 'Sign in to Guardian\nAddress: 0x1234\nIssued At: 2024-01-01T00:00:00.000Z';
-			const signature = await testAccount.signMessage({ message });
-
-			await expect(
-				service.verifyWalletSignature(message, signature),
-			).rejects.toThrow('Invalid message format: missing nonce');
-		});
-
-		it('throws BadRequestException for message missing address', async () => {
-			const message = 'Sign in to Guardian\nNonce: abcdef\nIssued At: 2024-01-01T00:00:00.000Z';
-			const signature = await testAccount.signMessage({ message });
-
-			await expect(
-				service.verifyWalletSignature(message, signature),
-			).rejects.toThrow('Invalid message format: missing address');
 		});
 	});
 });

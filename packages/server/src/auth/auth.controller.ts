@@ -16,33 +16,71 @@ export class AuthController {
 		@Inject(SessionService) private readonly sessionService: SessionService,
 	) {}
 
-	@Get('nonce')
-	async getNonce() {
-		const nonce = this.authService.generateNonce();
-		return { nonce };
+	/**
+	 * Start registration: send OTP to email.
+	 */
+	@Post('register')
+	async register(@Body() body: { email: string }) {
+		const result = await this.authService.registerEmail(body.email);
+		return { userId: result.userId, isNewUser: result.isNewUser };
 	}
 
-	@Post('wallet/verify')
-	async walletVerify(
-		@Body() body: { message: string; signature: string },
+	/**
+	 * Verify email OTP → return passkey registration options.
+	 */
+	@Post('verify-email')
+	async verifyEmail(@Body() body: { email: string; code: string }) {
+		const result = await this.authService.verifyEmailOTP(body.email, body.code);
+		return {
+			userId: result.userId,
+			registrationOptions: result.registrationOptions,
+		};
+	}
+
+	/**
+	 * Complete passkey registration → set session cookie.
+	 */
+	@Post('passkey/register')
+	async passkeyRegister(
+		@Body() body: { userId: string; response: unknown; prfDerivedAddress?: string },
 		@Res({ passthrough: true }) res: Response,
 	) {
-		const result = await this.authService.verifyWalletSignature(
-			body.message,
-			body.signature,
+		const result = await this.authService.completePasskeyRegistration(
+			body.userId,
+			body.response as Parameters<AuthService['completePasskeyRegistration']>[1],
+			body.prfDerivedAddress,
 		);
 
-		const maxAge = this.sessionService.getExpirySeconds();
+		this.setSessionCookie(res, result.token);
 
-		res.cookie('session', result.token, {
-			httpOnly: true,
-			sameSite: 'lax',
-			secure: this.config.NODE_ENV === 'production',
-			path: '/',
-			maxAge: maxAge * 1000,
-		});
+		return { email: result.email, address: result.address, userId: result.userId };
+	}
 
-		return { verified: result.verified, address: result.address };
+	/**
+	 * Get authentication challenge for login.
+	 */
+	@Post('passkey/login-challenge')
+	async loginChallenge(@Body() body: { email: string }) {
+		const result = await this.authService.getLoginChallenge(body.email);
+		return { userId: result.userId, authOptions: result.authOptions };
+	}
+
+	/**
+	 * Verify passkey login → set session cookie.
+	 */
+	@Post('passkey/login')
+	async passkeyLogin(
+		@Body() body: { email: string; response: unknown },
+		@Res({ passthrough: true }) res: Response,
+	) {
+		const result = await this.authService.completePasskeyLogin(
+			body.email,
+			body.response as Parameters<AuthService['completePasskeyLogin']>[1],
+		);
+
+		this.setSessionCookie(res, result.token);
+
+		return { email: result.email, address: result.address, userId: result.userId };
 	}
 
 	@Post('logout')
@@ -60,6 +98,21 @@ export class AuthController {
 	@Get('me')
 	@UseGuards(SessionGuard)
 	async me(@Req() req: AuthenticatedRequest) {
-		return { address: req.sessionUser };
+		return {
+			address: req.sessionUser,
+			email: req.sessionEmail,
+			userId: req.sessionUserId,
+		};
+	}
+
+	private setSessionCookie(res: Response, token: string): void {
+		const maxAge = this.sessionService.getExpirySeconds();
+		res.cookie('session', token, {
+			httpOnly: true,
+			sameSite: 'lax',
+			secure: this.config.NODE_ENV === 'production',
+			path: '/',
+			maxAge: maxAge * 1000,
+		});
 	}
 }

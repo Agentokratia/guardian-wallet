@@ -249,7 +249,7 @@ export function AuditPage() {
 				<div className="relative ml-auto">
 					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-dim" />
 					<Input
-						placeholder="Search address, hash..."
+						placeholder="Search by address, tx hash, or account..."
 						className="w-[240px] pl-8 font-mono text-xs"
 						value={search}
 						onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
@@ -303,8 +303,13 @@ export function AuditPage() {
 									</TableRow>
 								) : filteredEntries.length === 0 ? (
 									<TableRow>
-										<TableCell colSpan={8} className="text-center py-12 text-text-muted">
-											No signing requests found.
+										<TableCell colSpan={8} className="text-center py-12">
+											<p className="text-sm font-medium text-text-muted">No signing requests found</p>
+											<p className="text-[12px] text-text-dim mt-1">
+												{search || activeFilterCount > 0
+													? 'Try adjusting your filters or search query.'
+													: 'Transactions will appear here once your accounts start signing.'}
+											</p>
 										</TableCell>
 									</TableRow>
 								) : (

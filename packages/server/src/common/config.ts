@@ -27,6 +27,15 @@ export interface AppConfig {
 	readonly JWT_SECRET: string;
 	readonly JWT_EXPIRY: string;
 
+	// WebAuthn
+	readonly RP_ID: string;
+	readonly RP_NAME: string;
+	readonly ALLOWED_ORIGINS: string[];
+
+	// Email
+	readonly EMAIL_PROVIDER: 'console' | 'resend';
+	readonly RESEND_API_KEY: string;
+
 	// AuxInfo Pool
 	readonly AUXINFO_POOL_TARGET: number;
 	readonly AUXINFO_POOL_LOW_WATERMARK: number;
@@ -85,6 +94,13 @@ export function parseConfig(): AppConfig {
 
 		JWT_SECRET: jwtSecret,
 		JWT_EXPIRY: optionalEnv('JWT_EXPIRY', '24h'),
+
+		RP_ID: optionalEnv('RP_ID', 'localhost'),
+		RP_NAME: optionalEnv('RP_NAME', 'Guardian Wallet'),
+		ALLOWED_ORIGINS: optionalEnv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',').map((s) => s.trim()),
+
+		EMAIL_PROVIDER: (optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend'),
+		RESEND_API_KEY: optionalEnv('RESEND_API_KEY', ''),
 
 		AUXINFO_POOL_TARGET: poolTarget,
 		AUXINFO_POOL_LOW_WATERMARK: poolLowWatermark,

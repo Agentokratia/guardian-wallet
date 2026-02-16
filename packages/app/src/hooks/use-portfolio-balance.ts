@@ -26,6 +26,7 @@ export function usePortfolioBalance(signerIds: string[], chainId?: number) {
 
 	let totalWei = 0n;
 	const balances: Record<string, string> = {};
+	const networkBalances: Record<string, { network: string; chainId: number; balance: string }[]> = {};
 
 	for (let i = 0; i < signerIds.length; i++) {
 		const q = queries[i];
@@ -33,10 +34,11 @@ export function usePortfolioBalance(signerIds: string[], chainId?: number) {
 			const signerTotal = q.data.balances.reduce((sum, b) => sum + BigInt(b.balance), 0n);
 			totalWei += signerTotal;
 			balances[signerIds[i]] = formatWei(signerTotal.toString());
+			networkBalances[signerIds[i]] = q.data.balances;
 		}
 	}
 
 	const totalFormatted = formatWei(totalWei.toString());
 
-	return { totalFormatted, balances, isLoading };
+	return { totalFormatted, balances, networkBalances, isLoading };
 }

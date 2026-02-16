@@ -34,7 +34,7 @@ export function SettingsPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle className="text-base">System Status</CardTitle>
-						<CardDescription>Server and infrastructure connection status</CardDescription>
+						<CardDescription>Real-time health of the services that power signing operations</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-4">
 						{healthLoading ? (
@@ -46,16 +46,22 @@ export function SettingsPage() {
 							<>
 								<div className="flex items-center gap-3">
 									<div className="flex items-center gap-2">
-										<Dot color={vaultConnected ? 'success' : 'danger'} />
-										<span className="text-sm font-medium text-text">
-											Vault: {vaultConnected ? 'Connected' : 'Disconnected'}
-										</span>
+										<Dot color={vaultConnected ? 'success' : 'danger'} pulse={vaultConnected} />
+										<div>
+											<span className="text-sm font-medium text-text">
+												Vault: {vaultConnected ? 'Connected' : 'Disconnected'}
+											</span>
+											<p className="text-[11px] text-text-dim mt-0.5">Stores encrypted key shares</p>
+										</div>
 									</div>
 									<div className="flex items-center gap-2">
-										<Dot color={dbConnected ? 'success' : 'danger'} />
-										<span className="text-sm font-medium text-text">
-											Database: {dbConnected ? 'Connected' : 'Disconnected'}
-										</span>
+										<Dot color={dbConnected ? 'success' : 'danger'} pulse={dbConnected} />
+										<div>
+											<span className="text-sm font-medium text-text">
+												Database: {dbConnected ? 'Connected' : 'Disconnected'}
+											</span>
+											<p className="text-[11px] text-text-dim mt-0.5">Account records and audit log</p>
+										</div>
 									</div>
 								</div>
 								<Separator />
@@ -77,7 +83,7 @@ export function SettingsPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle className="text-base">Supported Networks</CardTitle>
-						<CardDescription>Chains available for signing</CardDescription>
+						<CardDescription>Each account is bound to a specific chain at creation</CardDescription>
 					</CardHeader>
 					<CardContent>
 						{networksLoading ? (
@@ -87,8 +93,8 @@ export function SettingsPage() {
 							</div>
 						) : networks && networks.length > 0 ? (
 							<div className="space-y-3">
-								{networks.map((n) => (
-									<div key={n.id} className="flex items-center justify-between text-sm">
+								{networks.map((n, i) => (
+									<div key={n.id} className="flex items-center justify-between text-sm animate-stagger-in" style={{ '--stagger': i } as React.CSSProperties}>
 										<div className="flex items-center gap-2">
 											<Dot color={n.enabled ? 'success' : 'warning'} />
 											<span className="font-medium text-text">{n.displayName}</span>
@@ -103,7 +109,7 @@ export function SettingsPage() {
 								))}
 							</div>
 						) : (
-							<p className="text-[13px] text-text-muted">No networks configured.</p>
+							<p className="text-[13px] text-text-muted">No networks configured. Check your server's chain registry.</p>
 						)}
 					</CardContent>
 				</Card>

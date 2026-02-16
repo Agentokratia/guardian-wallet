@@ -1,24 +1,24 @@
-import { DKGProgress, type DKGState } from '@/components/dkg-progress';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { downloadFile } from '@/lib/download';
 import { Input } from '@/components/ui/input';
 import { Mono } from '@/components/ui/mono';
-import { Pill } from '@/components/ui/pill';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCreateSigner, useDKGFinalize, useDKGInit } from '@/hooks/use-dkg';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api-client';
-import { encryptUserShare, getSignMessage } from '@/lib/user-share-store';
+import { encryptUserShare } from '@/lib/user-share-store';
 import { cn } from '@/lib/utils';
+import { wipePRF } from '@agentokratia/guardian-auth/browser';
+import { useAuth } from '@/hooks/use-auth';
 import {
 	AlertTriangle,
+	ArrowRight,
 	Bot,
 	Check,
-	ChevronLeft,
-	ChevronRight,
+	CheckCircle2,
+	ChevronDown,
 	Code,
 	Copy,
 	Cpu,
@@ -26,130 +26,57 @@ import {
 	Globe,
 	Key,
 	Loader2,
+	Lock,
 	Shield,
+	Terminal,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAccount, useSignMessage } from 'wagmi';
 
-const TOTAL_STEPS = 4;
+/* -------------------------------------------------------------------------- */
+/*  Types                                                                      */
+/* -------------------------------------------------------------------------- */
 
-const stepLabels = [
-	'Account',
-	'Setup',
-	'Credentials',
-	'Integration',
-] as const;
+type Phase = 'input' | 'creating' | 'done' | 'error';
 
-const signerTypes = [
-	{
-		value: 'ai_agent',
-		label: 'AI Agent',
-		icon: <Bot className="h-5 w-5" />,
-		desc: 'Autonomous on-chain ops',
-	},
-	{
-		value: 'deploy_script',
-		label: 'Deploy Script',
-		icon: <Code className="h-5 w-5" />,
-		desc: 'CI/CD contract deploys',
-	},
-	{
-		value: 'backend_service',
-		label: 'Backend Service',
-		icon: <Globe className="h-5 w-5" />,
-		desc: 'Server-side signing',
-	},
-	{
-		value: 'team_member',
-		label: 'Team Member',
-		icon: <Shield className="h-5 w-5" />,
-		desc: 'Personal dev wallet',
-	},
-	{
-		value: 'trading_bot',
-		label: 'Trading Bot',
-		icon: <Cpu className="h-5 w-5" />,
-		desc: 'Automated DEX trading',
-	},
-	{
-		value: 'custom',
-		label: 'Custom',
-		icon: <Key className="h-5 w-5" />,
-		desc: 'No default policies',
-	},
-] as const;
-
-interface WizardState {
-	name: string;
-	description: string;
-	type: string;
-	// DKG results
-	sessionId: string;
+interface CreationResult {
 	signerId: string;
 	ethAddress: string;
 	apiKey: string;
 	shareData: string;
-	userShareData: string;
-	// Credentials
-	userShareSaved: boolean;
-	encryptedBackup: string;
-	confirmed: boolean;
+	backupStored: boolean;
+	backupPayload: string;
 }
 
-const initialState: WizardState = {
-	name: '',
-	description: '',
-	type: 'ai_agent',
-	sessionId: '',
-	signerId: '',
-	ethAddress: '',
-	apiKey: '',
-	shareData: '',
-	userShareData: '',
-	userShareSaved: false,
-	encryptedBackup: '',
-	confirmed: false,
-};
-
-function ProgressBar({ step }: { step: number }) {
-	return (
-		<div className="mb-8">
-			<div className="flex items-center justify-between mb-2">
-				{stepLabels.map((label, i) => (
-					<div
-						key={label}
-						className={cn(
-							'flex items-center gap-1.5 text-xs font-medium transition-colors',
-							i < step ? 'text-success' : i === step ? 'text-accent' : 'text-text-dim',
-						)}
-					>
-						<div
-							className={cn(
-								'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
-								i < step
-									? 'bg-success text-white'
-									: i === step
-										? 'bg-accent text-white'
-										: 'bg-surface-hover text-text-dim',
-							)}
-						>
-							{i < step ? <Check className="h-3 w-3" /> : i + 1}
-						</div>
-						<span className="hidden sm:inline">{label}</span>
-					</div>
-				))}
-			</div>
-			<div className="h-1 w-full overflow-hidden rounded-full bg-surface-hover">
-				<div
-					className="h-full rounded-full bg-accent transition-all duration-500"
-					style={{ width: `${(step / (TOTAL_STEPS - 1)) * 100}%` }}
-				/>
-			</div>
-		</div>
-	);
+interface CreationProgress {
+	step: number;
+	label: string;
 }
+
+const PROGRESS_STEPS = [
+	'Creating account...',
+	'Generating keys...',
+	'Securing backup...',
+	'Done',
+] as const;
+
+/* -------------------------------------------------------------------------- */
+/*  Account type options                                                       */
+/* -------------------------------------------------------------------------- */
+
+const ACCOUNT_TYPES = [
+	{ value: 'ai_agent', label: 'AI Agent', icon: Bot },
+	{ value: 'deploy_script', label: 'Deploy Script', icon: Code },
+	{ value: 'backend_service', label: 'Backend', icon: Globe },
+	{ value: 'team_member', label: 'Team Member', icon: Shield },
+	{ value: 'trading_bot', label: 'Trading Bot', icon: Cpu },
+	{ value: 'custom', label: 'Custom', icon: Key },
+] as const;
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
 function CopyButton({ text, className }: { text: string; className?: string }) {
 	const [copied, setCopied] = useState(false);
@@ -172,449 +99,596 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
 	);
 }
 
-// Step 1: Name & Chain
-function StepNameChain({
-	state,
-	onChange,
-}: {
-	state: WizardState;
-	onChange: (partial: Partial<WizardState>) => void;
-}) {
-	return (
-		<div className="space-y-6">
-			{/* Name */}
-			<div>
-				<label htmlFor="signer-name" className="mb-1.5 block text-sm font-medium text-text">
-					Account Name
-				</label>
-				<Input
-					id="signer-name"
-					placeholder="e.g., trading-bot-1"
-					value={state.name}
-					onChange={(e) => onChange({ name: e.target.value })}
-					className="bg-surface"
-				/>
-				<Mono size="xs" className="mt-1 text-text-dim">
-					A unique name for this account
-				</Mono>
-			</div>
+/* -------------------------------------------------------------------------- */
+/*  Main component                                                             */
+/* -------------------------------------------------------------------------- */
 
-			{/* Description */}
-			<div>
-				<label htmlFor="signer-description" className="mb-1.5 block text-sm font-medium text-text">
-					Description
-				</label>
-				<Input
-					id="signer-description"
-					placeholder="Optional description"
-					value={state.description}
-					onChange={(e) => onChange({ description: e.target.value })}
-					className="bg-surface"
-				/>
-			</div>
-
-			{/* Signer type */}
-			<div>
-				<label htmlFor="signer-type" className="mb-2 block text-sm font-medium text-text">
-					Account Type
-				</label>
-				<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-					{signerTypes.map((t) => (
-						<button
-							key={t.value}
-							type="button"
-							onClick={() => onChange({ type: t.value })}
-							className={cn(
-								'flex flex-col items-center gap-2 rounded-lg border px-4 py-4 transition-all',
-								state.type === t.value
-									? 'border-accent bg-accent-muted'
-									: 'border-border bg-surface hover:border-border-light hover:bg-surface-hover',
-							)}
-						>
-							<div
-								className={cn(
-									'text-lg',
-									state.type === t.value ? 'text-accent' : 'text-text-muted',
-								)}
-							>
-								{t.icon}
-							</div>
-							<div className="text-center">
-								<div
-									className={cn(
-										'text-sm font-medium',
-										state.type === t.value ? 'text-accent' : 'text-text',
-									)}
-								>
-									{t.label}
-								</div>
-								<Mono size="xs" className="text-text-dim">
-									{t.desc}
-								</Mono>
-							</div>
-						</button>
-					))}
-				</div>
-			</div>
-
-			{/* Key type (chain determines curve) */}
-			<div>
-				<label className="mb-2 block text-sm font-medium text-text">Key Type</label>
-				<div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-					<div className="flex items-center gap-3 rounded-lg border border-accent bg-accent-muted px-4 py-3">
-						<Mono size="xs" className="text-accent font-bold">{'\u27E0'}</Mono>
-						<div>
-							<div className="text-sm font-medium text-accent">ECDSA secp256k1</div>
-							<Mono size="xs" className="text-text-dim">Ethereum, Base, Arbitrum, Polygon...</Mono>
-						</div>
-					</div>
-					<div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 opacity-40">
-						<Mono size="xs" className="text-text-dim font-bold">{'\u20BF'}</Mono>
-						<div>
-							<div className="text-sm font-medium text-text-dim">Schnorr</div>
-							<Mono size="xs" className="text-text-dim">Bitcoin — soon</Mono>
-						</div>
-					</div>
-					<div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 opacity-40">
-						<Mono size="xs" className="text-text-dim font-bold">{'\u25CE'}</Mono>
-						<div>
-							<div className="text-sm font-medium text-text-dim">Ed25519</div>
-							<Mono size="xs" className="text-text-dim">Solana — soon</Mono>
-						</div>
-					</div>
-				</div>
-				<Mono size="xs" className="mt-1.5 text-text-dim">
-					Same key works on any EVM chain. Network is chosen at transaction time.
-				</Mono>
-			</div>
-		</div>
-	);
-}
-
-// Step 2: DKG
-function StepDKG({
-	state,
-	onChange,
-}: {
-	state: WizardState;
-	onChange: (partial: Partial<WizardState>) => void;
-}) {
-	const [dkgState, setDKGState] = useState<DKGState>('ready');
-	const [currentRound, setCurrentRound] = useState(1);
-	const [errorMessage, setErrorMessage] = useState('');
-
-	const { isConnected, address } = useAccount();
-	const { signMessageAsync } = useSignMessage();
+export function CreateSignerPage() {
+	const navigate = useNavigate();
+	const queryClient = useQueryClient();
+	const { toast } = useToast();
+	const { isAuthenticated, address, refreshPRF } = useAuth();
 
 	const createSigner = useCreateSigner();
 	const dkgInit = useDKGInit();
 	const dkgFinalize = useDKGFinalize();
 
-	const startDKG = useCallback(async () => {
-		setDKGState('running');
-		setCurrentRound(1);
+	// Input state
+	const [name, setName] = useState('');
+	const [description, setDescription] = useState('');
+	const [accountType, setAccountType] = useState('ai_agent');
+	const [typeOpen, setTypeOpen] = useState(false);
+
+	// Flow state
+	const [phase, setPhase] = useState<Phase>('input');
+	const [progress, setProgress] = useState<CreationProgress>({ step: 0, label: PROGRESS_STEPS[0] });
+	const [result, setResult] = useState<CreationResult | null>(null);
+	const [errorMessage, setErrorMessage] = useState('');
+	const [secretDownloaded, setSecretDownloaded] = useState(false);
+
+	// Prevent leaving without downloading
+	const needsDownloadRef = useRef(false);
+
+	useEffect(() => {
+		const handler = (e: BeforeUnloadEvent) => {
+			if (needsDownloadRef.current) {
+				e.preventDefault();
+			}
+		};
+		window.addEventListener('beforeunload', handler);
+		return () => window.removeEventListener('beforeunload', handler);
+	}, []);
+
+	/* -------------------------------------------------------------------- */
+	/*  The single create action — does everything atomically                */
+	/* -------------------------------------------------------------------- */
+
+	const handleCreate = useCallback(async () => {
+		if (!name.trim()) return;
+
+		setPhase('creating');
+		setProgress({ step: 0, label: PROGRESS_STEPS[0] });
 		setErrorMessage('');
 
 		try {
-			// Step 1: Create signer record (gets API key)
+			// 1. Create signer record
 			const { signer, apiKey } = await createSigner.mutateAsync({
-				name: state.name,
-				type: state.type,
+				name: name.trim(),
+				type: accountType,
 				scheme: 'cggmp21',
-				description: state.description || undefined,
+				description: description.trim() || undefined,
 			});
 
-			const signerId = signer.id;
-			onChange({ signerId, apiKey });
+			// 2. DKG — generate keys
+			setProgress({ step: 1, label: PROGRESS_STEPS[1] });
+			const initResult = await dkgInit.mutateAsync({ signerId: signer.id });
 
-			// Step 2: Init DKG (creates 3 server-side sessions, round 1)
-			setCurrentRound(2);
-			const initResult = await dkgInit.mutateAsync({ signerId });
-			const sessionId = initResult.sessionId;
-			onChange({ sessionId });
-
-			// Step 3: Finalize DKG (runs rounds 2-5 server-side, returns shares)
-			setCurrentRound(3);
 			const finalResult = await dkgFinalize.mutateAsync({
-				sessionId,
-				signerId,
+				sessionId: initResult.sessionId,
+				signerId: signer.id,
 			});
 
-			onChange({
-				ethAddress: finalResult.ethAddress,
-				shareData: finalResult.signerShare,
-				userShareData: finalResult.userShare,
-			});
+			// 3. Auto-encrypt & store backup
+			setProgress({ step: 2, label: PROGRESS_STEPS[2] });
+			let backupStored = false;
 
-			// Step 4: Automatically encrypt and store user share if wallet is connected
-			if (isConnected && address && finalResult.userShare) {
-				setCurrentRound(4);
-				const signature = await signMessageAsync({ message: getSignMessage(signerId) });
-				const shareBytes = Uint8Array.from(atob(finalResult.userShare), (c) => c.charCodeAt(0));
-				const encrypted = await encryptUserShare(shareBytes, signature);
+			let backupPayloadJson = '';
+			if (finalResult.userShare && isAuthenticated) {
+				let prfOutput: Uint8Array | null = null;
+				try {
+					console.log('[create-signer] Getting PRF for share encryption...');
+					prfOutput = await refreshPRF();
+					console.log('[create-signer] Got PRF, length:', prfOutput.length);
+				} catch (err) {
+					console.warn('[create-signer] refreshPRF failed — backup will be skipped:', err);
+				}
 
-				const payload = {
-					walletAddress: address,
-					iv: encrypted.iv,
-					ciphertext: encrypted.ciphertext,
-					salt: encrypted.salt,
-				};
-				await api.post(`/signers/${signerId}/user-share`, payload);
-				onChange({
-					userShareSaved: true,
-					encryptedBackup: JSON.stringify(payload),
-				});
+				if (prfOutput) {
+					try {
+						const prfHex = Array.from(prfOutput.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+						console.log('[create-signer] PRF fingerprint (first 8 bytes):', prfHex);
+						const shareBytes = Uint8Array.from(atob(finalResult.userShare), (c) => c.charCodeAt(0));
+						const encrypted = await encryptUserShare(shareBytes, prfOutput);
+
+						const payload = {
+							walletAddress: address,
+							iv: encrypted.iv,
+							ciphertext: encrypted.ciphertext,
+							salt: encrypted.salt,
+						};
+						await api.post(`/signers/${signer.id}/user-share`, payload);
+						backupStored = true;
+						backupPayloadJson = JSON.stringify(payload);
+						console.log('[create-signer] User share encrypted and stored successfully');
+					} finally {
+						wipePRF(prfOutput);
+					}
+				}
 			}
 
-			setDKGState('complete');
+			// 4. Done
+			setProgress({ step: 3, label: PROGRESS_STEPS[3] });
+			setResult({
+				signerId: signer.id,
+				ethAddress: finalResult.ethAddress,
+				apiKey,
+				shareData: finalResult.signerShare,
+				backupStored,
+				backupPayload: backupPayloadJson,
+			});
+			needsDownloadRef.current = true;
+			setPhase('done');
 		} catch (err: unknown) {
-			setDKGState('error');
-			const message = err instanceof Error ? err.message : 'Account creation failed';
-			setErrorMessage(message);
+			setPhase('error');
+			setErrorMessage(err instanceof Error ? err.message : 'Account creation failed');
 		}
 	}, [
-		state.name,
-		state.type,
-		state.description,
+		name,
+		description,
+		accountType,
 		createSigner,
 		dkgInit,
 		dkgFinalize,
-		onChange,
-		isConnected,
+		isAuthenticated,
 		address,
-		signMessageAsync,
+		refreshPRF,
 	]);
 
-	return (
-		<div className="space-y-6">
-			<Card className="border-border bg-surface">
-				<CardContent className="p-6">
-					<h3 className="mb-1 text-base font-semibold text-text">Create Account</h3>
-					<p className="text-sm text-text-muted">
-						Your signing key is split into 3 parts so no single device ever holds the full key. This takes a few seconds.
-					</p>
-				</CardContent>
-			</Card>
-
-			<DKGProgress
-				state={dkgState}
-				currentRound={currentRound}
-				ethAddress={state.ethAddress}
-				errorMessage={errorMessage}
-			/>
-
-			{dkgState === 'ready' && (
-				<Button onClick={startDKG} className="w-full">
-					Create Account
-				</Button>
-			)}
-
-			{dkgState === 'error' && (
-				<Button onClick={startDKG} variant="outline" className="w-full">
-					Retry
-				</Button>
-			)}
-		</div>
-	);
-}
-
-// Step 3: Credentials — API Key + API Secret + Backup Key
-function StepCredentials({
-	state,
-	onChange,
-}: {
-	state: WizardState;
-	onChange: (partial: Partial<WizardState>) => void;
-}) {
-	const [savingBackup, setSavingBackup] = useState(false);
-	const { toast } = useToast();
-	const { isConnected, address } = useAccount();
-	const { signMessageAsync, isPending: isSigning } = useSignMessage();
-
-	const handleEncryptAndStore = async () => {
-		if (!state.userShareData || !state.signerId || !isConnected || !address) return;
-		setSavingBackup(true);
-		try {
-			const signature = await signMessageAsync({ message: getSignMessage(state.signerId) });
-			const shareBytes = Uint8Array.from(atob(state.userShareData), (c) => c.charCodeAt(0));
-			const encrypted = await encryptUserShare(shareBytes, signature);
-
-			const payload = {
-				walletAddress: address,
-				iv: encrypted.iv,
-				ciphertext: encrypted.ciphertext,
-				salt: encrypted.salt,
-			};
-			await api.post(`/signers/${state.signerId}/user-share`, payload);
-
-			onChange({
-				userShareSaved: true,
-				encryptedBackup: JSON.stringify(payload),
-			});
-			toast({ title: 'Backup key encrypted and stored' });
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : 'Failed to encrypt backup key';
-			toast({ title: 'Error', description: message, variant: 'destructive' });
-		} finally {
-			setSavingBackup(false);
-		}
+	const handleDownloadSecret = () => {
+		if (!result?.shareData) return;
+		const blob = new Blob([result.shareData], { type: 'text/plain' });
+		downloadFile(blob, `${name || 'signer'}.secret`);
+		setSecretDownloaded(true);
+		needsDownloadRef.current = false;
 	};
 
+	const handleFinish = () => {
+		queryClient.invalidateQueries({ queryKey: ['signers'] });
+		toast({ title: 'Account created', description: `${name} is ready to use.` });
+		navigate(`/signers/${result?.signerId}`);
+	};
+
+	const selectedType = ACCOUNT_TYPES.find((t) => t.value === accountType) ?? ACCOUNT_TYPES[0];
+
+	/* -------------------------------------------------------------------- */
+	/*  Render                                                                */
+	/* -------------------------------------------------------------------- */
+
 	return (
-		<div className="space-y-4">
-			{/* API Key */}
-			<Card className="border-border bg-surface">
-				<CardContent className="p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<Mono size="xs" className="font-semibold text-text">API Key</Mono>
-						<Pill color="warning">Save this -- shown only once</Pill>
-					</div>
-					<div className="flex items-center gap-2 rounded-md border border-border bg-[#1a1a1a] px-3 py-2">
-						<code className="flex-1 font-mono text-xs text-[#e4e4e7] break-all">
-							{state.apiKey || 'gw_live_xxxxxxxxxxxxxxxxxxxxx'}
-						</code>
-						<CopyButton text={state.apiKey} />
-					</div>
-					<Mono size="xs" className="text-text-dim">
-						Use in the <code className="text-[#818cf8]">x-api-key</code> header or <code className="text-[#818cf8]">GW_API_KEY</code> env var.
-					</Mono>
-				</CardContent>
-			</Card>
+		<>
+			<Header title="Create Account" backHref="/signers" backLabel="Back to Accounts" />
 
-			{/* API Secret */}
-			<Card className="border-border bg-surface">
-				<CardContent className="p-4 space-y-3">
-					<div className="flex items-center justify-between">
-						<Mono size="xs" className="font-semibold text-text">API Secret</Mono>
-						<Pill color="warning">Save this -- shown only once</Pill>
-					</div>
-					<Button
-						size="sm"
-						variant="outline"
-						onClick={() => {
-							if (!state.shareData) return;
-							const blob = new Blob([state.shareData], { type: 'text/plain' });
-							downloadFile(blob, `${state.name || 'signer'}.secret`);
-						}}
-						disabled={!state.shareData}
-						className="w-full"
-					>
-						<Download className="h-3.5 w-3.5" />
-						Download Secret File
-					</Button>
-					<Mono size="xs" className="text-text-dim">
-						Save this file securely. You'll need it to configure the CLI or SDK.
-					</Mono>
-				</CardContent>
-			</Card>
-
-			{/* Backup Key */}
-			<Card className="border-border bg-surface">
-				<CardContent className="p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<Mono size="xs" className="font-semibold text-text">Backup Key</Mono>
-						<Pill color="default">Recovery</Pill>
-					</div>
-					<p className="text-sm text-text-muted">
-						Encrypted with your connected wallet. Store in your password manager. Needed for recovery if the server is unavailable.
-					</p>
-
-					{state.userShareSaved ? (
-						<div className="space-y-2">
-							<div className="flex items-center gap-2 rounded-md border border-success/20 bg-success-muted px-3 py-2">
-								<Check className="h-4 w-4 text-success" />
-								<span className="text-sm text-success">Backup key encrypted and stored</span>
-							</div>
-							<Button
-								variant="outline"
-								className="w-full"
-								onClick={() => {
-									if (!state.encryptedBackup) return;
-									const blob = new Blob([state.encryptedBackup], { type: 'application/json' });
-									downloadFile(blob, `${state.name || 'signer'}.guardian-backup.json`);
-								}}
-								disabled={!state.encryptedBackup}
-							>
-								<Download className="h-4 w-4" />
-								Download {state.name || 'signer'}.guardian-backup.json
-							</Button>
-						</div>
-					) : (
-						<Button
-							variant="outline"
-							className="w-full"
-							onClick={handleEncryptAndStore}
-							disabled={!state.userShareData || !isConnected || savingBackup || isSigning}
-						>
-							{savingBackup || isSigning ? (
-								<Loader2 className="h-4 w-4 animate-spin" />
-							) : (
-								<Shield className="h-4 w-4" />
-							)}
-							{isSigning
-								? 'Sign with wallet...'
-								: savingBackup
-									? 'Encrypting...'
-									: 'Encrypt & Download Backup'}
-						</Button>
-					)}
-
-					{!isConnected && (
-						<Mono size="xs" className="text-warning">
-							Wallet not connected. Connect via the login page to encrypt backup.
-						</Mono>
-					)}
-				</CardContent>
-			</Card>
-
-			{/* Confirmation */}
-			<Card className="border-warning/20 bg-warning-muted">
-				<CardContent className="p-4">
-					<div className="flex items-start gap-3">
-						<AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-						<div className="flex-1">
-							<p className="text-sm text-text">
-								I have securely saved my API key and API secret. Both are shown only once
-								and cannot be recovered. The backup key download is recommended in case the
-								server becomes unavailable.
-							</p>
-							<div className="mt-3 flex items-center gap-2">
-								<Switch
-									checked={state.confirmed}
-									onCheckedChange={(checked) => onChange({ confirmed: checked })}
+			<div className={cn(
+				'mx-auto space-y-6',
+				phase === 'done' ? 'max-w-5xl' : 'max-w-lg',
+			)}>
+				{/* -------------------------------------------------------- */}
+				{/*  Phase: Input                                             */}
+				{/* -------------------------------------------------------- */}
+				{phase === 'input' && (
+					<>
+						<div className="space-y-4">
+							{/* Name */}
+							<div>
+								<label htmlFor="signer-name" className="mb-1.5 block text-sm font-medium text-text">
+									Account Name
+								</label>
+								<Input
+									id="signer-name"
+									placeholder="e.g., trading-bot-1"
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									className="bg-surface"
+									autoFocus
 								/>
-								<span className="text-sm font-medium text-text">I confirm</span>
+								<p className="mt-1 text-[11px] text-text-dim">
+									A short identifier for this signer. Use lowercase and hyphens for SDK compatibility.
+								</p>
+							</div>
+
+							{/* Description — optional */}
+							<div>
+								<label htmlFor="signer-desc" className="mb-1.5 block text-sm font-medium text-text">
+									Description <span className="text-text-dim font-normal">optional</span>
+								</label>
+								<Input
+									id="signer-desc"
+									placeholder="What will this account do?"
+									value={description}
+									onChange={(e) => setDescription(e.target.value)}
+									className="bg-surface"
+								/>
+							</div>
+
+							{/* Type — compact dropdown */}
+							<div>
+								<label className="mb-1.5 block text-sm font-medium text-text">
+									Type
+								</label>
+								<div className="relative">
+									<button
+										type="button"
+										onClick={() => setTypeOpen(!typeOpen)}
+										className="flex w-full items-center justify-between rounded-md border border-input bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-hover"
+									>
+										<div className="flex items-center gap-2">
+											<selectedType.icon className="h-4 w-4 text-text-muted" />
+											<span className="text-text">{selectedType.label}</span>
+										</div>
+										<ChevronDown className={cn(
+											'h-3.5 w-3.5 text-text-dim transition-transform',
+											typeOpen && 'rotate-180',
+										)} />
+									</button>
+
+									{typeOpen && (
+										<div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-border bg-surface shadow-lg overflow-hidden">
+											{ACCOUNT_TYPES.map((t) => (
+												<button
+													key={t.value}
+													type="button"
+													onClick={() => { setAccountType(t.value); setTypeOpen(false); }}
+													className={cn(
+														'flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-surface-hover',
+														t.value === accountType && 'bg-accent-muted',
+													)}
+												>
+													<t.icon className="h-4 w-4 text-text-muted" />
+													<span className="text-text">{t.label}</span>
+												</button>
+											))}
+										</div>
+									)}
+								</div>
 							</div>
 						</div>
-					</div>
-				</CardContent>
-			</Card>
+
+						<p className="text-[11px] text-text-dim text-center leading-relaxed">
+							This will generate a 2-of-3 threshold key via distributed key generation (DKG).
+							Your key share will be encrypted and ready to download.
+						</p>
+
+						<Button
+							onClick={handleCreate}
+							disabled={!name.trim() || !isAuthenticated}
+							className="w-full"
+							size="lg"
+						>
+							Create Account
+						</Button>
+
+						{!isAuthenticated && (
+							<p className="text-center text-xs text-warning">
+								You must be logged in to create an account.
+							</p>
+						)}
+					</>
+				)}
+
+				{/* -------------------------------------------------------- */}
+				{/*  Phase: Creating (progress)                               */}
+				{/* -------------------------------------------------------- */}
+				{phase === 'creating' && (
+					<Card className="border-border bg-surface">
+						<CardContent className="p-6 space-y-5">
+							<div className="text-center">
+								<Loader2 className="mx-auto h-8 w-8 animate-spin text-accent" />
+								<p className="mt-3 text-sm font-medium text-text">{progress.label}</p>
+								<p className="mt-1 text-xs text-text-dim">This takes a few seconds</p>
+							</div>
+
+							{/* Step indicators */}
+							<div className="space-y-2.5">
+								{PROGRESS_STEPS.slice(0, -1).map((label, i) => (
+									<div key={label} className="flex items-center gap-2.5">
+										<div className={cn(
+											'flex h-5 w-5 items-center justify-center rounded-full text-[10px]',
+											i < progress.step
+												? 'bg-success text-white'
+												: i === progress.step
+													? 'bg-accent text-white'
+													: 'bg-surface-hover text-text-dim',
+										)}>
+											{i < progress.step ? (
+												<Check className="h-3 w-3" />
+											) : i === progress.step ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												i + 1
+											)}
+										</div>
+										<span className={cn(
+											'text-sm',
+											i < progress.step ? 'text-success' : i === progress.step ? 'text-text' : 'text-text-dim',
+										)}>
+											{label.replace('...', '')}
+										</span>
+									</div>
+								))}
+							</div>
+						</CardContent>
+					</Card>
+				)}
+
+				{/* -------------------------------------------------------- */}
+				{/*  Phase: Error                                             */}
+				{/* -------------------------------------------------------- */}
+				{phase === 'error' && (
+					<>
+						<Card className="border-danger/30 bg-danger-muted">
+							<CardContent className="p-4">
+								<div className="flex items-start gap-3">
+									<AlertTriangle className="h-5 w-5 text-danger shrink-0 mt-0.5" />
+									<div>
+										<p className="text-sm font-medium text-text">Account creation failed</p>
+										<p className="mt-1 text-xs text-text-muted">{errorMessage}</p>
+									</div>
+								</div>
+							</CardContent>
+						</Card>
+						<Button onClick={() => setPhase('input')} variant="outline" className="w-full">
+							Try Again
+						</Button>
+					</>
+				)}
+
+				{/* -------------------------------------------------------- */}
+				{/*  Phase: Done — 2-column credentials + integration          */}
+				{/* -------------------------------------------------------- */}
+				{phase === 'done' && result && (
+					<>
+						{/* Success banner — full width */}
+						<div className="relative overflow-hidden rounded-2xl border border-success/20 bg-success-muted">
+							<div
+								className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_30%,rgba(34,197,94,0.06)_0%,transparent_50%)]"
+								aria-hidden="true"
+							/>
+							<div className="relative flex items-center gap-4 px-6 py-5">
+								<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-success/10">
+									<CheckCircle2 className="h-5 w-5 text-success" />
+								</div>
+								<div className="min-w-0 flex-1">
+									<h2 className="text-base font-bold text-text">
+										{name} is ready
+									</h2>
+									<div className="mt-1 flex items-center gap-2">
+										<code className="font-mono text-[13px] text-success truncate">
+											{result.ethAddress}
+										</code>
+										<CopyButton text={result.ethAddress} />
+									</div>
+								</div>
+								<div className="hidden sm:flex items-center gap-1.5 text-[10px] text-text-dim">
+									<Lock className="h-3 w-3" />
+									<span>2-of-3 threshold key</span>
+								</div>
+							</div>
+						</div>
+
+						{/* 2-column layout */}
+						<div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+							{/* LEFT — Credentials (3 cols) */}
+							<div className="lg:col-span-3 space-y-4">
+								<h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-text-dim">
+									Your credentials
+								</h3>
+
+								{/* API Key */}
+								<Card className="border-border bg-surface">
+									<CardContent className="p-4 space-y-2.5">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<Key className="h-3.5 w-3.5 text-text-dim" />
+												<span className="text-[13px] font-semibold text-text">API Key</span>
+											</div>
+											<span className="text-[10px] font-medium text-warning px-1.5 py-0.5 rounded bg-warning/10">
+												shown only once
+											</span>
+										</div>
+										<div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5">
+											<code className="flex-1 font-mono text-xs text-text break-all select-all">
+												{result.apiKey}
+											</code>
+											<CopyButton text={result.apiKey} />
+										</div>
+										<p className="text-[11px] text-text-dim leading-relaxed">
+											Pass as <code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">x-api-key</code> header
+											or set <code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">GW_API_KEY</code> env var.
+										</p>
+									</CardContent>
+								</Card>
+
+								{/* Secret file download */}
+								<Card className={cn(
+									'border-border bg-surface transition-colors',
+									!secretDownloaded && 'border-warning/40',
+								)}>
+									<CardContent className="p-4 space-y-2.5">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<Shield className="h-3.5 w-3.5 text-text-dim" />
+												<span className="text-[13px] font-semibold text-text">Secret File</span>
+											</div>
+											{secretDownloaded ? (
+												<span className="text-[10px] font-medium text-success px-1.5 py-0.5 rounded bg-success/10 flex items-center gap-1">
+													<Check className="h-3 w-3" /> saved
+												</span>
+											) : (
+												<span className="text-[10px] font-medium text-warning px-1.5 py-0.5 rounded bg-warning/10">
+													required
+												</span>
+											)}
+										</div>
+										<Button
+											variant={secretDownloaded ? 'outline' : 'default'}
+											className="w-full"
+											onClick={handleDownloadSecret}
+										>
+											<Download className="h-3.5 w-3.5" />
+											{secretDownloaded ? 'Download Again' : `Download ${name}.secret`}
+										</Button>
+										<p className="text-[11px] text-text-dim leading-relaxed">
+											{secretDownloaded
+												? 'Store securely. You can re-download it now, but not after leaving this page.'
+												: 'This file contains your signing key share. Download it before continuing.'}
+										</p>
+									</CardContent>
+								</Card>
+
+								{/* Backup key */}
+								<Card className={cn(
+									'border-border bg-surface transition-colors',
+									result.backupStored ? '' : 'border-warning/30',
+								)}>
+									<CardContent className="p-4 space-y-2.5">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<Lock className="h-3.5 w-3.5 text-text-dim" />
+												<span className="text-[13px] font-semibold text-text">Backup Key</span>
+											</div>
+											{result.backupStored ? (
+												<span className="text-[10px] font-medium text-success px-1.5 py-0.5 rounded bg-success/10 flex items-center gap-1">
+													<Check className="h-3 w-3" /> encrypted
+												</span>
+											) : (
+												<span className="text-[10px] font-medium text-warning px-1.5 py-0.5 rounded bg-warning/10">
+													failed
+												</span>
+											)}
+										</div>
+										{result.backupStored ? (
+											<>
+												<p className="text-[11px] text-text-dim leading-relaxed">
+													Encrypted with your passkey and stored server-side. Keep a local copy for recovery.
+												</p>
+												<Button
+													variant="outline"
+													className="w-full"
+													onClick={() => {
+														if (!result.backupPayload) return;
+														const blob = new Blob([result.backupPayload], { type: 'application/json' });
+														downloadFile(blob, `${name || 'signer'}.guardian-backup.json`);
+													}}
+													disabled={!result.backupPayload}
+												>
+													<Download className="h-3.5 w-3.5" />
+													Download backup
+												</Button>
+											</>
+										) : (
+											<div className="flex items-center gap-2">
+												<AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+												<p className="text-[11px] text-warning leading-relaxed">
+													Passkey encryption failed. Dashboard signing won't be available for this account.
+												</p>
+											</div>
+										)}
+									</CardContent>
+								</Card>
+
+								{/* Finish CTA */}
+								<Button
+									onClick={handleFinish}
+									disabled={!secretDownloaded}
+									className="w-full"
+									size="lg"
+								>
+									{secretDownloaded ? (
+										<>
+											Go to Account
+											<ArrowRight className="h-4 w-4" />
+										</>
+									) : (
+										'Download secret file to continue'
+									)}
+								</Button>
+							</div>
+
+							{/* RIGHT — Integration Guide (2 cols) */}
+							<div className="lg:col-span-2">
+								<div className="lg:sticky lg:top-6 space-y-4">
+									<h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-text-dim">
+										Quick start
+									</h3>
+
+									<IntegrationGuide name={name} apiKey={result.apiKey} />
+
+									{/* Next steps */}
+									<div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+										<p className="text-[12px] font-semibold text-text">What's next?</p>
+										<div className="space-y-2.5">
+											<NextStep
+												number={1}
+												done={secretDownloaded}
+												label="Download your secret file"
+											/>
+											<NextStep
+												number={2}
+												done={false}
+												label="Set up your environment variables"
+											/>
+											<NextStep
+												number={3}
+												done={false}
+												label="Send your first transaction"
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</>
+				)}
+			</div>
+		</>
+	);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Next-step checklist item                                                   */
+/* -------------------------------------------------------------------------- */
+
+function NextStep({ number, done, label }: { number: number; done: boolean; label: string }) {
+	return (
+		<div className="flex items-center gap-2.5">
+			<div className={cn(
+				'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+				done
+					? 'bg-success/10 text-success'
+					: 'bg-surface-hover text-text-dim',
+			)}>
+				{done ? <Check className="h-3 w-3" /> : number}
+			</div>
+			<span className={cn(
+				'text-[12px]',
+				done ? 'text-text-muted line-through' : 'text-text',
+			)}>
+				{label}
+			</span>
 		</div>
 	);
 }
 
-// Step 5: Integration
-function StepIntegration({ state }: { state: WizardState }) {
-	const signerName = state.name || 'my-signer';
+/* -------------------------------------------------------------------------- */
+/*  Integration guide — always visible in right column                         */
+/* -------------------------------------------------------------------------- */
 
-	const cliSnippet = `# Install the CLI
-npm install -g @agentokratia/guardian-cli
+function IntegrationGuide({ name, apiKey }: { name: string; apiKey: string }) {
+	const signerName = name || 'my-signer';
 
-# Save the .secret file to ~/.gw/
-mv ~\/Downloads/${signerName}.secret ~/.gw/
+	const cliSnippet = `# 1. Move secret to config directory
+mv ~/Downloads/${signerName}.secret ~/.gw/
 
-# Configure (enter file path when prompted)
-gw init
-
-# Or use env vars
-export GW_API_KEY="${state.apiKey || 'gw_live_...'}"
+# 2. Set environment variables
+export GW_API_KEY="${apiKey || 'gw_live_...'}"
 export GW_API_SECRET_FILE="~/.gw/${signerName}.secret"
 
-# Check status
+# 3. Verify connection
 gw status
 
-# Send a transaction
-gw send 0x... 0.01`;
+# 4. Send your first transaction
+gw send 0x... 0.01 ETH`;
 
 	const sdkSnippet = `import { readFileSync } from 'fs';
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
@@ -623,147 +697,62 @@ import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 const signer = await ThresholdSigner.fromSecret({
   serverUrl: '${window.location.origin}',
   apiKey: process.env.GW_API_KEY,
-  apiSecret: readFileSync(process.env.GW_API_SECRET_FILE, 'utf-8'),
+  apiSecret: readFileSync(
+    process.env.GW_API_SECRET_FILE, 'utf-8'
+  ),
   scheme: new CGGMP24Scheme(),
 });
 
-// Use with viem
+// Drop-in viem account
 const account = signer.toAccount();`;
 
-	const pythonSnippet = `from guardian import Signer
+	const pythonSnippet = `import os
+from guardian import Signer
 from pathlib import Path
 
 signer = Signer(
     server_url="${window.location.origin}",
     api_key=os.environ["GW_API_KEY"],
-    api_secret=Path(os.environ["GW_API_SECRET_FILE"]).read_text(),
+    api_secret=Path(
+        os.environ["GW_API_SECRET_FILE"]
+    ).read_text(),
 )
 
-tx_hash = signer.send_transaction(to="0x...", value=0.01)`;
+tx = signer.send_transaction(
+    to="0x...", value=0.01
+)`;
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h3 className="text-base font-semibold text-text">Integration Guide</h3>
-				<p className="mt-1 text-sm text-text-muted">
-					Your account is ready. Use one of these methods to start signing transactions.
-				</p>
+		<div className="rounded-xl border border-border bg-surface overflow-hidden">
+			<div className="flex items-center gap-2 border-b border-border px-4 py-3">
+				<Terminal className="h-3.5 w-3.5 text-text-dim" />
+				<span className="text-[13px] font-semibold text-text">Integration Guide</span>
 			</div>
 
-			{state.ethAddress && (
-				<div className="rounded-lg border border-success/20 bg-success-muted p-4">
-					<Mono size="xs" className="text-text-dim">
-						Account Address
-					</Mono>
-					<div className="mt-1 font-mono text-sm text-success">{state.ethAddress}</div>
-				</div>
-			)}
-
-			<Tabs defaultValue="cli">
-				<TabsList className="w-full">
-					<TabsTrigger value="cli" className="flex-1">
-						CLI
-					</TabsTrigger>
-					<TabsTrigger value="sdk" className="flex-1">
-						TypeScript SDK
-					</TabsTrigger>
-					<TabsTrigger value="python" className="flex-1">
-						Python SDK
-					</TabsTrigger>
-				</TabsList>
-				<TabsContent value="cli">
-					<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-[#1a1a1a] p-4 font-mono text-xs text-[#a1a1aa] leading-relaxed">
-						{cliSnippet}
-					</pre>
-				</TabsContent>
-				<TabsContent value="sdk">
-					<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-[#1a1a1a] p-4 font-mono text-xs text-[#a1a1aa] leading-relaxed">
-						{sdkSnippet}
-					</pre>
-				</TabsContent>
-				<TabsContent value="python">
-					<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-[#1a1a1a] p-4 font-mono text-xs text-[#a1a1aa] leading-relaxed">
-						{pythonSnippet}
-					</pre>
-				</TabsContent>
-			</Tabs>
+			<div className="px-4 pb-4">
+				<Tabs defaultValue="cli" className="mt-3">
+					<TabsList className="w-full">
+						<TabsTrigger value="cli" className="flex-1 text-[11px]">CLI</TabsTrigger>
+						<TabsTrigger value="sdk" className="flex-1 text-[11px]">TypeScript</TabsTrigger>
+						<TabsTrigger value="python" className="flex-1 text-[11px]">Python</TabsTrigger>
+					</TabsList>
+					<TabsContent value="cli">
+						<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-[11px] text-text-muted leading-relaxed">
+							{cliSnippet}
+						</pre>
+					</TabsContent>
+					<TabsContent value="sdk">
+						<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-[11px] text-text-muted leading-relaxed">
+							{sdkSnippet}
+						</pre>
+					</TabsContent>
+					<TabsContent value="python">
+						<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-[11px] text-text-muted leading-relaxed">
+							{pythonSnippet}
+						</pre>
+					</TabsContent>
+				</Tabs>
+			</div>
 		</div>
-	);
-}
-
-// Main wizard component
-export function CreateSignerPage() {
-	const navigate = useNavigate();
-	const queryClient = useQueryClient();
-	const { toast } = useToast();
-	const [step, setStep] = useState(0);
-	const [state, setState] = useState<WizardState>(initialState);
-
-	const onChange = useCallback((partial: Partial<WizardState>) => {
-		setState((prev) => ({ ...prev, ...partial }));
-	}, []);
-
-	const canProceed = (): boolean => {
-		switch (step) {
-			case 0: // Account
-				return state.name.trim().length > 0;
-			case 1: // Setup (DKG)
-				return state.ethAddress.length > 0;
-			case 2: // Credentials
-				return state.confirmed;
-			case 3: // Integration
-				return true;
-			default:
-				return false;
-		}
-	};
-
-	const handleNext = () => {
-		if (step < TOTAL_STEPS - 1) {
-			setStep(step + 1);
-		} else {
-			// Final step -- invalidate signers cache and navigate to list
-			queryClient.invalidateQueries({ queryKey: ['signers'] });
-			toast({
-				title: 'Account created',
-				description: `${state.name} is ready to use.`,
-			});
-			navigate('/signers');
-		}
-	};
-
-	const handleBack = () => {
-		if (step > 0) setStep(step - 1);
-	};
-
-	return (
-		<>
-			<Header title="Create Account" backHref="/signers" backLabel="Back to Accounts" />
-
-			<ProgressBar step={step} />
-
-			{/* Step content */}
-			<div className="mx-auto max-w-2xl">
-				{step === 0 && <StepNameChain state={state} onChange={onChange} />}
-				{step === 1 && <StepDKG state={state} onChange={onChange} />}
-				{step === 2 && <StepCredentials state={state} onChange={onChange} />}
-				{step === 3 && <StepIntegration state={state} />}
-
-				{/* Navigation */}
-				<div className="mt-8 flex items-center justify-between border-t border-border pt-6">
-					<Button variant="ghost" onClick={handleBack} disabled={step === 0}>
-						<ChevronLeft className="h-4 w-4" />
-						Back
-					</Button>
-					<Mono size="xs" className="text-text-dim">
-						Step {step + 1} of {TOTAL_STEPS}
-					</Mono>
-					<Button onClick={handleNext} disabled={!canProceed()}>
-						{step === TOTAL_STEPS - 1 ? 'Finish' : 'Next'}
-						{step < TOTAL_STEPS - 1 && <ChevronRight className="h-4 w-4" />}
-					</Button>
-				</div>
-			</div>
-		</>
 	);
 }

@@ -428,7 +428,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		} catch (error) {
 			if (signatureHex) {
 				this.logger.error(
-					`Broadcast failed but signature was produced: r=${signatureHex.r} s=${signatureHex.s} v=${signatureHex.v}`,
+					`Broadcast failed but signature was produced (r=${signatureHex.r.slice(0, 10)}... v=${signatureHex.v})`,
 				);
 			}
 			await this.signingRequestRepo.create({

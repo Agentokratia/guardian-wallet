@@ -15,6 +15,7 @@ import { ApiKeyGuard } from '../common/api-key.guard.js';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { base64ToBytes, bytesToBase64, hexToBytes } from '../common/encoding.js';
 import { SessionGuard } from '../common/session.guard.js';
+import { RateLimitGuard } from '../auth/rate-limit.guard.js';
 import { NetworkService } from '../networks/network.service.js';
 import { CompleteSignDto } from './dto/complete-sign.dto.js';
 import { CreateMessageSignSessionDto } from './dto/create-message-sign-session.dto.js';
@@ -23,6 +24,7 @@ import { ProcessSignRoundDto } from './dto/process-sign-round.dto.js';
 import { InteractiveSignService } from './interactive-sign.service.js';
 
 @Controller()
+@UseGuards(RateLimitGuard)
 export class SigningController {
 	constructor(
 		@Inject(InteractiveSignService) private readonly interactiveSign: InteractiveSignService,

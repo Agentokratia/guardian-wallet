@@ -28,11 +28,11 @@ export function ReceiveDialog({ open, onOpenChange, address, accountName }: Rece
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="border-border bg-surface sm:max-w-[380px] p-0 overflow-hidden">
-				{/* Dark header */}
-				<div className="bg-gradient-to-br from-[#18181B] to-[#27272A] px-6 pt-6 pb-5">
+				{/* Header */}
+				<div className="border-b border-border bg-surface px-6 pt-6 pb-5">
 					<DialogHeader className="text-center">
-						<DialogTitle className="text-white text-center text-lg">Receive</DialogTitle>
-						<p className="text-[13px] text-white/40 text-center mt-1">{accountName}</p>
+						<DialogTitle className="text-text text-center text-lg">Receive</DialogTitle>
+						<p className="text-[13px] text-text-muted text-center mt-1">{accountName}</p>
 					</DialogHeader>
 
 					{/* QR Code */}

@@ -20,6 +20,7 @@ import { DKGService } from '../dkg.service.js';
 const mockScheme = {
 	runDkg: vi.fn(),
 	deriveAddress: vi.fn().mockReturnValue('0xDerivedAddress123'),
+	hasPrimesReady: vi.fn().mockResolvedValue(false),
 };
 
 vi.mock('@agentokratia/guardian-schemes', () => ({
@@ -222,7 +223,7 @@ describe('DKGService', () => {
 
 			// runDkg called exactly once with (3, 2)
 			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
-			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, undefined);
 			// Server share stored in Vault (bundled as JSON key material)
 			expect(mocks.vault.storeShare).toHaveBeenCalledTimes(1);
 			expect(mocks.vault.storeShare).toHaveBeenCalledWith(

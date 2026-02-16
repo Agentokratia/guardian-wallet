@@ -34,16 +34,16 @@ describe('RateLimitGuard', () => {
 		expect(result).toBe(true);
 	});
 
-	it('allows up to 10 requests from the same IP', () => {
+	it('allows up to 100 requests from the same IP', () => {
 		const ctx = makeContext('192.168.1.2');
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 100; i++) {
 			expect(guard.canActivate(ctx)).toBe(true);
 		}
 	});
 
-	it('throws 429 on the 11th request from the same IP', () => {
+	it('throws 429 on the 101st request from the same IP', () => {
 		const ctx = makeContext('192.168.1.3');
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 100; i++) {
 			guard.canActivate(ctx);
 		}
 
@@ -61,7 +61,7 @@ describe('RateLimitGuard', () => {
 		const ctx2 = makeContext('10.0.0.2');
 
 		// Exhaust IP 1
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 100; i++) {
 			guard.canActivate(ctx1);
 		}
 
@@ -73,7 +73,7 @@ describe('RateLimitGuard', () => {
 		const ctx = makeContext('10.0.0.3');
 
 		// Exhaust the limit
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 100; i++) {
 			guard.canActivate(ctx);
 		}
 
