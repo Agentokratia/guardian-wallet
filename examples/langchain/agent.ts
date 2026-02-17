@@ -10,7 +10,7 @@
  */
 
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
-import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
+import { type BaseMessageLike, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
 import { http, createPublicClient, formatEther, parseEther } from 'viem';
@@ -90,7 +90,7 @@ const input =
 
 console.log(`\n🤖 Agent input: ${input}\n`);
 
-const messages: unknown[] = [new HumanMessage(input)];
+const messages: BaseMessageLike[] = [new HumanMessage(input)];
 
 for (let step = 0; step < 5; step++) {
 	const response = await model.invoke(messages);
