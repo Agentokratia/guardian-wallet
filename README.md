@@ -2,7 +2,8 @@
 
 **The wallet where the key never exists.**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/SDK-Apache--2.0-green.svg)](LICENSE-APACHE)
+[![License: AGPL-3.0](https://img.shields.io/badge/Server-AGPL--3.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6.svg)](https://www.typescriptlang.org)
 [![MPC](https://img.shields.io/badge/MPC-CGGMP24-8B5CF6.svg)](https://eprint.iacr.org/2021/060)
@@ -560,7 +561,9 @@ The Rust WASM implementation is based on the [LFDT-Lockness/cggmp21](https://git
 
 ## License
 
-[AGPL-3.0](LICENSE) -- Agentokratia
+Guardian Wallet uses a dual-license model. SDK and developer tools (core, mpc-wasm, schemes, chains, signer, cli) are [Apache-2.0](LICENSE-APACHE). Server, dashboard, and auth are [AGPL-3.0](LICENSE). Self-hosting for your own agents is free and encouraged. See [LICENSING.md](LICENSING.md) for details.
+
+Copyright 2025-2026 Aristokrates OÜ
 
 ---
 
