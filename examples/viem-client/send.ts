@@ -11,15 +11,14 @@
  *   npx tsx send.ts [to] [amountInEth]
  */
 
-import { createPublicClient, http, parseEther, formatEther } from 'viem';
-import { baseSepolia } from 'viem/chains';
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
+import { http, createPublicClient, formatEther, parseEther } from 'viem';
+import { baseSepolia } from 'viem/chains';
 
-const signer = await ThresholdSigner.fromFile({
-	sharePath: process.env.SHARE_PATH || './my-agent.share.enc',
-	passphrase: process.env.SHARE_PASSPHRASE!,
+const signer = await ThresholdSigner.fromSecret({
+	apiSecret: process.env.GUARDIAN_API_SECRET as string,
 	serverUrl: process.env.GUARDIAN_SERVER || 'http://localhost:8080',
-	apiKey: process.env.GUARDIAN_API_KEY!,
+	apiKey: process.env.GUARDIAN_API_KEY as string,
 });
 
 const account = signer.toViemAccount();
@@ -33,8 +32,16 @@ const publicClient = createPublicClient({
 const balance = await publicClient.getBalance({ address: account.address });
 console.log(`Balance: ${formatEther(balance)} ETH`);
 
-const to = process.argv[2] || '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
-const value = parseEther(process.argv[3] || '0.001');
+const to = process.argv[2];
+const amount = process.argv[3];
+
+if (!to || !amount) {
+	console.error('Usage: pnpm example:viem <to> <amount>');
+	console.error('  e.g. pnpm example:viem 0xRecipient 0.001');
+	process.exit(1);
+}
+
+const value = parseEther(amount);
 
 console.log(`\nSending ${formatEther(value)} ETH to ${to}...`);
 

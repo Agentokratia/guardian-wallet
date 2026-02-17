@@ -6,7 +6,7 @@
 		"start": "tsx send.ts"
 	},
 	"dependencies": {
-		"@agentokratia/guardian-signer": "^0.1.0",
+		"@agentokratia/guardian-signer": "workspace:*",
 		"viem": "^2.21.0"
 	},
 	"devDependencies": {
