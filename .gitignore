@@ -23,8 +23,14 @@ Thumbs.db
 # Turbo
 .turbo/
 
-# Share files (NEVER commit these)
+# Share files and secrets (NEVER commit these)
 *.share.enc
+*.secret
+
+# Rust / WASM build artifacts
+target/
+pkg/
+pkg-web/
 
 # Vault
 vault-data/
