@@ -111,7 +111,7 @@ export class ThresholdSigner {
 	 */
 	static async fromFile(opts: FromFileOptions): Promise<ThresholdSigner> {
 		const share = await loadShareFromFile(opts.sharePath, opts.passphrase);
-		const scheme = opts.scheme ?? await getDefaultScheme();
+		const scheme = opts.scheme ?? (await getDefaultScheme());
 
 		const httpClient = new HttpClient({
 			baseUrl: opts.serverUrl,
@@ -129,10 +129,13 @@ export class ThresholdSigner {
 	 */
 	static async fromSecret(opts: FromSecretOptions): Promise<ThresholdSigner> {
 		const data = new Uint8Array(Buffer.from(opts.apiSecret, 'base64'));
-		const scheme = opts.scheme ?? await getDefaultScheme();
+		const scheme = opts.scheme ?? (await getDefaultScheme());
 
 		// Initialize WASM if the scheme supports it (needed for signing + key extraction)
-		if ('initWasm' in scheme && typeof (scheme as Record<string, unknown>).initWasm === 'function') {
+		if (
+			'initWasm' in scheme &&
+			typeof (scheme as Record<string, unknown>).initWasm === 'function'
+		) {
 			await (scheme as { initWasm: () => Promise<void> }).initWasm();
 		}
 
@@ -186,10 +189,9 @@ export class ThresholdSigner {
 
 		try {
 			// 1. POST /sign/session with transaction only (no first message)
-			const sessionResponse: CreateSignSessionResponse =
-				await this.httpClient.createSignSession({
-					transaction: tx,
-				});
+			const sessionResponse: CreateSignSessionResponse = await this.httpClient.createSignSession({
+				transaction: tx,
+			});
 
 			const { sessionId } = sessionResponse;
 
@@ -198,16 +200,15 @@ export class ThresholdSigner {
 			const eid = base64ToUint8(sessionResponse.eid);
 			const { clientPartyIndex, partiesAtKeygen } = sessionResponse.partyConfig;
 
-			const { sessionId: schemeSessionId, firstMessages } =
-				await this.scheme.createSignSession(
-					[keyMaterial.coreShare, keyMaterial.auxInfo],
-					messageHash,
-					{ partyIndex: clientPartyIndex, partiesAtKeygen, eid },
-				);
+			const { sessionId: schemeSessionId, firstMessages } = await this.scheme.createSignSession(
+				[keyMaterial.coreShare, keyMaterial.auxInfo],
+				messageHash,
+				{ partyIndex: clientPartyIndex, partiesAtKeygen, eid },
+			);
 
 			// 3. Process server's first messages to get our response
 			const serverFirstMsgs = sessionResponse.serverFirstMessages.map(base64ToUint8);
-			let result = await this.scheme.processSignRound(schemeSessionId, serverFirstMsgs);
+			const result = await this.scheme.processSignRound(schemeSessionId, serverFirstMsgs);
 			let outgoing = [...firstMessages, ...result.outgoingMessages];
 
 			// 4. Exchange rounds until server reports complete (max 20 round-trips as safety guard)
@@ -220,11 +221,10 @@ export class ThresholdSigner {
 				}
 				const outgoingBase64 = outgoing.map(uint8ToBase64);
 
-				const roundResponse: ProcessSignRoundResponse =
-					await this.httpClient.processSignRound({
-						sessionId,
-						messages: outgoingBase64,
-					});
+				const roundResponse: ProcessSignRoundResponse = await this.httpClient.processSignRound({
+					sessionId,
+					messages: outgoingBase64,
+				});
 
 				serverComplete = roundResponse.complete;
 
@@ -239,8 +239,9 @@ export class ThresholdSigner {
 			}
 
 			// 5. POST /sign/complete — server extracts signature, broadcasts, returns txHash
-			const completeResponse: CompleteSignResponse =
-				await this.httpClient.completeSign({ sessionId });
+			const completeResponse: CompleteSignResponse = await this.httpClient.completeSign({
+				sessionId,
+			});
 
 			const { r, s, v } = completeResponse.signature;
 			return {
@@ -276,8 +277,17 @@ export class ThresholdSigner {
 			let hashHex: `0x${string}`;
 			if (typeof message === 'string') {
 				hashHex = viemModule.hashMessage(message);
-			} else if (typeof message === 'object' && message !== null && 'domain' in (message as Record<string, unknown>)) {
-				const typed = message as { domain: Record<string, unknown>; types: Record<string, unknown>; primaryType: string; message: Record<string, unknown> };
+			} else if (
+				typeof message === 'object' &&
+				message !== null &&
+				'domain' in (message as Record<string, unknown>)
+			) {
+				const typed = message as {
+					domain: Record<string, unknown>;
+					types: Record<string, unknown>;
+					primaryType: string;
+					message: Record<string, unknown>;
+				};
 				hashHex = viemModule.hashTypedData(typed as Parameters<typeof viemModule.hashTypedData>[0]);
 			} else {
 				hashHex = viemModule.hashMessage(JSON.stringify(message));
@@ -298,16 +308,15 @@ export class ThresholdSigner {
 			const eid = base64ToUint8(sessionResponse.eid);
 			const { clientPartyIndex, partiesAtKeygen } = sessionResponse.partyConfig;
 
-			const { sessionId: schemeSessionId, firstMessages } =
-				await this.scheme.createSignSession(
-					[keyMaterial.coreShare, keyMaterial.auxInfo],
-					messageHash,
-					{ partyIndex: clientPartyIndex, partiesAtKeygen, eid },
-				);
+			const { sessionId: schemeSessionId, firstMessages } = await this.scheme.createSignSession(
+				[keyMaterial.coreShare, keyMaterial.auxInfo],
+				messageHash,
+				{ partyIndex: clientPartyIndex, partiesAtKeygen, eid },
+			);
 
 			// 3. Process server's first messages to get our response
 			const serverFirstMsgs = sessionResponse.serverFirstMessages.map(base64ToUint8);
-			let result = await this.scheme.processSignRound(schemeSessionId, serverFirstMsgs);
+			const result = await this.scheme.processSignRound(schemeSessionId, serverFirstMsgs);
 			let outgoing = [...firstMessages, ...result.outgoingMessages];
 
 			// 4. Exchange rounds until server reports complete (max 20 round-trips as safety guard)
@@ -320,11 +329,10 @@ export class ThresholdSigner {
 				}
 				const outgoingBase64 = outgoing.map(uint8ToBase64);
 
-				const roundResponse: ProcessSignRoundResponse =
-					await this.httpClient.processSignRound({
-						sessionId,
-						messages: outgoingBase64,
-					});
+				const roundResponse: ProcessSignRoundResponse = await this.httpClient.processSignRound({
+					sessionId,
+					messages: outgoingBase64,
+				});
 
 				serverComplete = roundResponse.complete;
 

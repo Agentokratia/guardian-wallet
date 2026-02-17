@@ -91,16 +91,15 @@ export function TokenRow({ token, signerId, onRemove, className }: TokenRowProps
 			</div>
 			<div className="flex items-center gap-2 shrink-0 pl-3">
 				<div className="text-right">
-					<span className={cn(
-						'text-sm font-semibold tabular-nums font-mono',
-						isZero ? 'text-text-dim' : 'text-text',
-					)}>
+					<span
+						className={cn(
+							'text-sm font-semibold tabular-nums font-mono',
+							isZero ? 'text-text-dim' : 'text-text',
+						)}
+					>
 						{formatted}
 					</span>
-					<span className={cn(
-						'ml-1 text-xs',
-						isZero ? 'text-text-dim/60' : 'text-text-muted',
-					)}>
+					<span className={cn('ml-1 text-xs', isZero ? 'text-text-dim/60' : 'text-text-muted')}>
 						{token.symbol}
 					</span>
 				</div>

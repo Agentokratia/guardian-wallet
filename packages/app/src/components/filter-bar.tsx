@@ -24,16 +24,9 @@ export function FilterBar({ children, activeFilterCount }: FilterBarProps) {
 						{activeFilterCount}
 					</span>
 				)}
-				<ChevronDown
-					className={cn(
-						'h-3.5 w-3.5 transition-transform',
-						expanded && 'rotate-180',
-					)}
-				/>
+				<ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
 			</button>
-			{expanded && (
-				<div className="mt-3 flex flex-wrap items-center gap-3">{children}</div>
-			)}
+			{expanded && <div className="mt-3 flex flex-wrap items-center gap-3">{children}</div>}
 		</div>
 	);
 }

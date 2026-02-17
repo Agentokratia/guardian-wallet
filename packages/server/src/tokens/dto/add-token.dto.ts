@@ -1,4 +1,12 @@
-import { IsEthereumAddress, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+	IsEthereumAddress,
+	IsInt,
+	IsNotEmpty,
+	IsOptional,
+	IsString,
+	Max,
+	Min,
+} from 'class-validator';
 
 export class AddTokenDto {
 	@IsInt()

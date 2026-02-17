@@ -50,7 +50,11 @@ interface SerializedShare {
  *
  * @returns A {@link ShareFile} metadata descriptor of the written file.
  */
-export async function saveShareToFile(share: Share, path: string, passphrase: string): Promise<ShareFile> {
+export async function saveShareToFile(
+	share: Share,
+	path: string,
+	passphrase: string,
+): Promise<ShareFile> {
 	// 1. Serialize the Share as JSON (binary fields base64-encoded)
 	const serialized: SerializedShare = {
 		participantIndex: share.participantIndex,
@@ -207,7 +211,7 @@ function tryLoadRawBase64Share(fileBuffer: Buffer): Share | null {
 		if (data.length < 32) return null;
 
 		// Try to parse as JSON key material { coreShare, auxInfo }
-		let publicKey = new Uint8Array(0);
+		const publicKey = new Uint8Array(0);
 		try {
 			const json = JSON.parse(data.toString('utf-8')) as { coreShare?: string; auxInfo?: string };
 			if (!json.coreShare || !json.auxInfo) return null;

@@ -10,7 +10,6 @@
  * THE FULL PRIVATE KEY NEVER EXISTS — signing is a distributed computation.
  */
 
-import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type {
 	AuxInfoRoundResult,
 	DKGRoundResult,
@@ -18,6 +17,7 @@ import type {
 } from '@agentokratia/guardian-core';
 import type { CurveName } from '@agentokratia/guardian-core';
 import type { SchemeName } from '@agentokratia/guardian-core';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { getAddress, keccak256, toHex } from 'viem';
 
 // Node.js-only imports — lazily loaded so the browser can use signing methods
@@ -233,7 +233,7 @@ class NativeSignProcess {
 		});
 
 		// Write init line to stdin
-		child.stdin!.write(initPayload + '\n');
+		child.stdin?.write(`${initPayload}\n`);
 
 		// Read first response
 		const responseLine = await nativeProcess.readLine();
@@ -250,7 +250,7 @@ class NativeSignProcess {
 		complete: boolean;
 	}> {
 		// Write incoming messages to stdin
-		this.process.stdin!.write(JSON.stringify(incoming) + '\n');
+		this.process.stdin?.write(`${JSON.stringify(incoming)}\n`);
 
 		// Read response
 		const line = await this.readLine();
@@ -322,7 +322,13 @@ export class CGGMP24Scheme implements IThresholdScheme {
 						resolve(thisDir, '..', '..', '..', '..', 'mpc-wasm'),
 						resolve(thisDir, '..', '..', '..', '..', 'packages', 'mpc-wasm'),
 					]) {
-						const binPath = join(candidate, 'native-gen', 'target', 'release', 'guardian-gen-primes');
+						const binPath = join(
+							candidate,
+							'native-gen',
+							'target',
+							'release',
+							'guardian-gen-primes',
+						);
 						if (existsSyncFn(binPath)) {
 							this._nativeBinPath = binPath;
 							found = true;
@@ -369,11 +375,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 	 * 1. **Pool AuxInfo** → keygen only → **~1s** (Phase A pre-computed by AuxInfo pool)
 	 * 2. **Cold start** → full DKG → **~180s** (everything computed inline)
 	 */
-	async runDkg(
-		n: number = 3,
-		threshold: number = 2,
-		options?: { cachedAuxInfo?: string },
-	): Promise<DkgResult> {
+	async runDkg(n = 3, threshold = 2, options?: { cachedAuxInfo?: string }): Promise<DkgResult> {
 		const execFileFn = await getExecFile();
 		const nativeBinary = await this.resolveNativeBinaryPath();
 		if (!nativeBinary) {
@@ -388,19 +390,19 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		if (options?.cachedAuxInfo) {
 			console.log('[DKG] Using pool AuxInfo — keygen only (~1s)');
 			return this.runNativeDkg(
-				execFileFn, nativeBinary,
-				'dkg-with-aux', n, threshold, eidHex,
+				execFileFn,
+				nativeBinary,
+				'dkg-with-aux',
+				n,
+				threshold,
+				eidHex,
 				options.cachedAuxInfo,
 			);
 		}
 
 		// Cold start — full DKG (~180s)
 		console.log('[DKG] No pool AuxInfo — cold start (generating primes + aux_info inline)');
-		return this.runNativeDkg(
-			execFileFn, nativeBinary,
-			'dkg', n, threshold, eidHex,
-			null,
-		);
+		return this.runNativeDkg(execFileFn, nativeBinary, 'dkg', n, threshold, eidHex, null);
 	}
 
 	/** Resolve path to the native DKG binary. */
@@ -493,19 +495,11 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		_round: number,
 		_incoming: Uint8Array[],
 	): Promise<AuxInfoRoundResult> {
-		throw new Error(
-			'auxInfoGen rounds are not used — call runDkg() for single-call DKG',
-		);
+		throw new Error('auxInfoGen rounds are not used — call runDkg() for single-call DKG');
 	}
 
-	async dkg(
-		_sessionId: string,
-		_round: number,
-		_incoming: Uint8Array[],
-	): Promise<DKGRoundResult> {
-		throw new Error(
-			'dkg rounds are not used — call runDkg() for single-call DKG',
-		);
+	async dkg(_sessionId: string, _round: number, _incoming: Uint8Array[]): Promise<DKGRoundResult> {
+		throw new Error('dkg rounds are not used — call runDkg() for single-call DKG');
 	}
 
 	// ---- Address derivation ----
@@ -520,9 +514,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		} else if (publicKey.length === 65) {
 			uncompressedNoPrefix = publicKey.slice(1);
 		} else {
-			throw new Error(
-				`Invalid public key length: ${String(publicKey.length)}. Expected 33 or 65.`,
-			);
+			throw new Error(`Invalid public key length: ${String(publicKey.length)}. Expected 33 or 65.`);
 		}
 
 		const hash = keccak256(toHex(uncompressedNoPrefix));
@@ -561,14 +553,10 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		this.cleanupExpiredSessions();
 
 		if (keyMaterialBytes.length < 2) {
-			throw new Error(
-				`Need [coreShare, auxInfo] — got ${String(keyMaterialBytes.length)} items`,
-			);
+			throw new Error(`Need [coreShare, auxInfo] — got ${String(keyMaterialBytes.length)} items`);
 		}
 		if (messageHash.length !== 32) {
-			throw new Error(
-				`messageHash must be 32 bytes, got ${String(messageHash.length)}`,
-			);
+			throw new Error(`messageHash must be 32 bytes, got ${String(messageHash.length)}`);
 		}
 
 		const coreShare = keyMaterialBytes[0]!;
@@ -582,9 +570,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		let publicKey = new Uint8Array(33);
 		if (wasmModule) {
 			try {
-				publicKey = new Uint8Array(
-					wasmModule.extract_public_key(coreShare),
-				);
+				publicKey = new Uint8Array(wasmModule.extract_public_key(coreShare));
 			} catch {
 				// Will fail for recovery ID if not available
 			}
@@ -593,17 +579,16 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		// Try native GMP path (Node.js only — ~10x faster than WASM)
 		// Skip native when forceWasm is set (cross-backend protocol messages
 		// are incompatible between rug/GMP and num-bigint backends).
-		if (!options?.forceWasm && await this.nativeBinaryAvailable()) {
-			const { nativeProcess, firstMessages: nativeMsgs } =
-				await NativeSignProcess.create(
-					this._nativeBinPath!,
-					coreShare,
-					auxInfo,
-					messageHash,
-					partyIndex,
-					partiesAtKeygen,
-					eid,
-				);
+		if (!options?.forceWasm && (await this.nativeBinaryAvailable())) {
+			const { nativeProcess, firstMessages: nativeMsgs } = await NativeSignProcess.create(
+				this._nativeBinPath!,
+				coreShare,
+				auxInfo,
+				messageHash,
+				partyIndex,
+				partiesAtKeygen,
+				eid,
+			);
 
 			const sessionId = crypto.randomUUID();
 			this.signSessions.set(sessionId, {
@@ -615,9 +600,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 			});
 
 			// Serialize native messages to Uint8Array[] for the caller
-			const firstMessages = nativeMsgs.map((msg) =>
-				new TextEncoder().encode(JSON.stringify(msg)),
-			);
+			const firstMessages = nativeMsgs.map((msg) => new TextEncoder().encode(JSON.stringify(msg)));
 
 			return { sessionId, firstMessages };
 		}
@@ -729,19 +712,12 @@ export class CGGMP24Scheme implements IThresholdScheme {
 			throw new Error(`No sign session found for id: ${sessionId}`);
 		}
 		if (!state.complete || !state.signature) {
-			throw new Error(
-				'Sign session not yet complete. Run all rounds first.',
-			);
+			throw new Error('Sign session not yet complete. Run all rounds first.');
 		}
 
 		try {
 			const { r, s } = state.signature;
-			const v = this.computeRecoveryId(
-				r,
-				s,
-				state.messageHash,
-				state.publicKey,
-			);
+			const v = this.computeRecoveryId(r, s, state.messageHash, state.publicKey);
 
 			return { r, s, v };
 		} finally {
@@ -761,9 +737,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 
 	// ---- Presignature support (stubs — to be implemented) ----
 
-	createPresignSession(
-		_keyMaterialBytes: Uint8Array[],
-	): {
+	createPresignSession(_keyMaterialBytes: Uint8Array[]): {
 		sessionId: string;
 		firstMessages: Uint8Array[];
 	} {
@@ -787,10 +761,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		throw new Error('Presignature support not yet implemented');
 	}
 
-	issuePartialSignature(
-		_presignature: Uint8Array,
-		_messageHash: Uint8Array,
-	): Uint8Array {
+	issuePartialSignature(_presignature: Uint8Array, _messageHash: Uint8Array): Uint8Array {
 		throw new Error('Presignature support not yet implemented');
 	}
 
@@ -825,9 +796,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 
 		for (const recoveryBit of [0, 1] as const) {
 			try {
-				const sig = new secp256k1.Signature(rBig, sBig).addRecoveryBit(
-					recoveryBit,
-				);
+				const sig = new secp256k1.Signature(rBig, sBig).addRecoveryBit(recoveryBit);
 				const recovered = sig.recoverPublicKey(messageHash);
 				const recoveredHex = toHex(recovered.toBytes(true));
 				if (recoveredHex === expectedHex) {

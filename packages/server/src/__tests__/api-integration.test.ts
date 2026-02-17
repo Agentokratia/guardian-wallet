@@ -17,13 +17,19 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { HttpException, NotFoundException } from '@nestjs/common';
 import type { IChain, IShareStore, Signer } from '@agentokratia/guardian-core';
-import { ChainName, NetworkName, SchemeName, SignerStatus, SignerType } from '@agentokratia/guardian-core';
+import {
+	ChainName,
+	NetworkName,
+	SchemeName,
+	SignerStatus,
+	SignerType,
+} from '@agentokratia/guardian-core';
+import { HttpException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import type { AuxInfoPoolService } from '../dkg/aux-info-pool.service.js';
 import { DKGService } from '../dkg/dkg.service.js';
-import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { SignerController } from '../signers/signer.controller.js';
 import type { SignerRepository } from '../signers/signer.repository.js';
 import type { SignerService } from '../signers/signer.service.js';
@@ -84,14 +90,37 @@ const mockChainRegistry = {
 
 const mockNetworkService = {
 	listEnabled: vi.fn().mockResolvedValue([
-		{ name: 'sepolia', displayName: 'Sepolia Testnet', chainId: 11155111, rpcUrl: 'https://rpc.sepolia.org', explorerUrl: 'https://sepolia.etherscan.io', nativeCurrency: 'ETH', isTestnet: true, enabled: true },
+		{
+			name: 'sepolia',
+			displayName: 'Sepolia Testnet',
+			chainId: 11155111,
+			rpcUrl: 'https://rpc.sepolia.org',
+			explorerUrl: 'https://sepolia.etherscan.io',
+			nativeCurrency: 'ETH',
+			isTestnet: true,
+			enabled: true,
+		},
 	]),
-	getByName: vi.fn().mockResolvedValue(
-		{ name: 'sepolia', displayName: 'Sepolia Testnet', chainId: 11155111, rpcUrl: 'https://rpc.sepolia.org', explorerUrl: 'https://sepolia.etherscan.io', nativeCurrency: 'ETH', isTestnet: true, enabled: true },
-	),
-	getByChainId: vi.fn().mockResolvedValue(
-		{ name: 'sepolia', displayName: 'Sepolia Testnet', chainId: 11155111, rpcUrl: 'https://rpc.sepolia.org', explorerUrl: 'https://sepolia.etherscan.io', nativeCurrency: 'ETH', isTestnet: true, enabled: true },
-	),
+	getByName: vi.fn().mockResolvedValue({
+		name: 'sepolia',
+		displayName: 'Sepolia Testnet',
+		chainId: 11155111,
+		rpcUrl: 'https://rpc.sepolia.org',
+		explorerUrl: 'https://sepolia.etherscan.io',
+		nativeCurrency: 'ETH',
+		isTestnet: true,
+		enabled: true,
+	}),
+	getByChainId: vi.fn().mockResolvedValue({
+		name: 'sepolia',
+		displayName: 'Sepolia Testnet',
+		chainId: 11155111,
+		rpcUrl: 'https://rpc.sepolia.org',
+		explorerUrl: 'https://sepolia.etherscan.io',
+		nativeCurrency: 'ETH',
+		isTestnet: true,
+		enabled: true,
+	}),
 };
 
 // ---------------------------------------------------------------------------
@@ -103,7 +132,7 @@ const CANNED_SIGNER = {
 	name: 'Test Agent',
 	description: undefined,
 	type: 'autonomous',
-	ethAddress: '0x' + 'ab'.repeat(20),
+	ethAddress: `0x${'ab'.repeat(20)}`,
 	chain: 'ethereum',
 	scheme: 'cggmp24',
 	network: 'sepolia',
@@ -162,13 +191,16 @@ describe('Guardian API Integration Tests', () => {
 
 	describe('Signer CRUD', () => {
 		it('creates a new signer with API key', async () => {
-			const result = await controller.create({
-				name: 'Test Agent',
-				type: 'autonomous' as never,
-				chain: 'ethereum' as never,
-				scheme: 'cggmp24' as never,
-				network: 'sepolia' as never,
-			}, defaultReq);
+			const result = await controller.create(
+				{
+					name: 'Test Agent',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			expect(result.signer.status).toBe('active');
 			expect(result.apiKey).toMatch(/^gw_live_/);
@@ -238,11 +270,15 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('returns gas estimate for simulation', async () => {
-			const result = await controller.simulate('signer-test-1', {
-				to: '0x' + 'ab'.repeat(20),
-				value: '0.1',
-				network: 'sepolia',
-			}, defaultReq);
+			const result = await controller.simulate(
+				'signer-test-1',
+				{
+					to: `0x${'ab'.repeat(20)}`,
+					value: '0.1',
+					network: 'sepolia',
+				},
+				defaultReq,
+			);
 			expect(result.success).toBe(true);
 			expect(result.estimatedGas).toBe('21000');
 		});
@@ -261,7 +297,16 @@ describe('Guardian API Integration Tests', () => {
 		};
 
 		it('stores encrypted user share blob in Vault', async () => {
-			const { signer } = await controller.create({ name: 'Share', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Share',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			const result = await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 			expect(result.success).toBe(true);
@@ -271,7 +316,16 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('retrieves encrypted user share blob from Vault', async () => {
-			const { signer } = await controller.create({ name: 'Retrieve', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Retrieve',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 			const retrieved = await controller.getUserShare(signer.id, defaultReq);
@@ -283,7 +337,16 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('roundtrip: stored bytes are JSON-encoded ciphertext, NOT raw share', async () => {
-			const { signer } = await controller.create({ name: 'Roundtrip', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Roundtrip',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 
@@ -299,7 +362,16 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('overwrites existing encrypted share', async () => {
-			const { signer } = await controller.create({ name: 'Overwrite', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Overwrite',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 
@@ -317,7 +389,16 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('returns 404 when no encrypted share exists', async () => {
-			const { signer } = await controller.create({ name: 'NoShare', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'NoShare',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			try {
 				await controller.getUserShare(signer.id, defaultReq);
@@ -338,11 +419,22 @@ describe('Guardian API Integration Tests', () => {
 
 		it('throws when signer does not exist (get)', async () => {
 			signerService.get.mockRejectedValueOnce(new NotFoundException('Signer not found'));
-			await expect(controller.getUserShare(randomUUID(), defaultReq)).rejects.toThrow('Signer not found');
+			await expect(controller.getUserShare(randomUUID(), defaultReq)).rejects.toThrow(
+				'Signer not found',
+			);
 		});
 
 		it('server never holds raw user share — only encrypted blob', async () => {
-			const { signer } = await controller.create({ name: 'Security', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Security',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			// Store encrypted blob
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
@@ -393,15 +485,28 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('Vault paths are correctly separated: server share vs encrypted user share', async () => {
-			const { signer } = await controller.create({ name: 'Paths', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create(
+				{
+					name: 'Paths',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			// Store user encrypted share
-			await controller.storeUserShare(signer.id, {
-				walletAddress: '0xabc',
-				iv: 'aXY=',
-				ciphertext: 'Y3Q=',
-				salt: 'c2FsdA==',
-			}, defaultReq);
+			await controller.storeUserShare(
+				signer.id,
+				{
+					walletAddress: '0xabc',
+					iv: 'aXY=',
+					ciphertext: 'Y3Q=',
+					salt: 'c2FsdA==',
+				},
+				defaultReq,
+			);
 
 			// User encrypted share at user-encrypted/{id}
 			expect(vault.has(`user-encrypted/${signer.id}`)).toBe(true);
@@ -441,8 +546,12 @@ describe('Guardian API Integration Tests', () => {
 			const mockAuxInfoPool = {
 				take: vi.fn().mockResolvedValue(null),
 				getStatus: vi.fn().mockReturnValue({
-					size: 0, target: 5, lowWatermark: 2,
-					activeGenerators: 0, maxGenerators: 2, healthy: true,
+					size: 0,
+					target: 5,
+					lowWatermark: 2,
+					activeGenerators: 0,
+					maxGenerators: 2,
+					healthy: true,
 				}),
 			};
 			const dkgService = new DKGService(
@@ -531,10 +640,14 @@ describe('Guardian API Integration Tests', () => {
 			console.log('  ┌─── DKG E2E FLOW (CGGMP24 single-call WASM) ──────');
 			console.log(`  │ Signer ID    : ${signerId}`);
 			console.log(`  │ ETH Address  : ${finalResult.ethAddress}`);
-			console.log(`  │ Signer Share : ${finalResult.signerShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`);
-			console.log(`  │ User Share   : ${finalResult.userShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`);
+			console.log(
+				`  │ Signer Share : ${finalResult.signerShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`,
+			);
+			console.log(
+				`  │ User Share   : ${finalResult.userShare.slice(0, 16)}... (base64 JSON {coreShare, auxInfo})`,
+			);
 			console.log(`  │ Server Share : stored in Vault at "${signerId}"`);
-			console.log(`  │ DKG          : single WASM call (aux_info_gen + keygen)`);
+			console.log('  │ DKG          : single WASM call (aux_info_gen + keygen)');
 			console.log('  │');
 			console.log('  │ VERIFIED:');
 			console.log('  │   ✓ Signer record created before DKG');
@@ -555,13 +668,16 @@ describe('Guardian API Integration Tests', () => {
 	describe('Full Guardian Flow', () => {
 		it('end-to-end: create signer → store encrypted share → retrieve → verify', async () => {
 			// Step 1: Create signer
-			const { signer, apiKey } = await controller.create({
-				name: 'E2E Agent',
-				type: 'autonomous' as never,
-				chain: 'ethereum' as never,
-				scheme: 'cggmp24' as never,
-				network: 'sepolia' as never,
-			}, defaultReq);
+			const { signer, apiKey } = await controller.create(
+				{
+					name: 'E2E Agent',
+					type: 'autonomous' as never,
+					chain: 'ethereum' as never,
+					scheme: 'cggmp24' as never,
+					network: 'sepolia' as never,
+				},
+				defaultReq,
+			);
 
 			expect(signer.id).toBeDefined();
 			expect(apiKey).toMatch(/^gw_live_/);
@@ -571,11 +687,15 @@ describe('Guardian API Integration Tests', () => {
 			expect(balance.balances[0]!.balance).toBe('1000000000000000000');
 
 			// Step 3: Simulate transaction
-			const sim = await controller.simulate(signer.id, {
-				to: '0x' + '11'.repeat(20),
-				value: '0.05',
-				network: 'sepolia',
-			}, defaultReq);
+			const sim = await controller.simulate(
+				signer.id,
+				{
+					to: `0x${'11'.repeat(20)}`,
+					value: '0.05',
+					network: 'sepolia',
+				},
+				defaultReq,
+			);
 			expect(sim.success).toBe(true);
 
 			// Step 4: Store encrypted user share (from browser after DKG)
@@ -600,12 +720,20 @@ describe('Guardian API Integration Tests', () => {
 
 			// Step 7: Lifecycle — pause, resume
 			await controller.pause(signer.id, defaultReq);
-			signerService.get.mockResolvedValueOnce({ ...CANNED_SIGNER, id: signer.id, status: 'paused' });
+			signerService.get.mockResolvedValueOnce({
+				...CANNED_SIGNER,
+				id: signer.id,
+				status: 'paused',
+			});
 			const paused = await controller.get(signer.id, defaultReq);
 			expect(paused.status).toBe('paused');
 
 			await controller.resume(signer.id, defaultReq);
-			signerService.get.mockResolvedValueOnce({ ...CANNED_SIGNER, id: signer.id, status: 'active' });
+			signerService.get.mockResolvedValueOnce({
+				...CANNED_SIGNER,
+				id: signer.id,
+				status: 'active',
+			});
 			const active = await controller.get(signer.id, defaultReq);
 			expect(active.status).toBe('active');
 

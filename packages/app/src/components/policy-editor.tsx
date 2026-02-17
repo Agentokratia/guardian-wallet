@@ -27,7 +27,8 @@ const CRITERIA_TYPES: {
 		type: 'evmAddress',
 		label: 'EVM Address',
 		description: 'Match destination address',
-		schema: '{ "type": "evmAddress", "operator": "in"|"not_in", "addresses": ["0x..."], "allowDeploy"?: bool }',
+		schema:
+			'{ "type": "evmAddress", "operator": "in"|"not_in", "addresses": ["0x..."], "allowDeploy"?: bool }',
 	},
 	{
 		type: 'evmNetwork',
@@ -175,12 +176,7 @@ interface PolicyDocEditorProps {
 	className?: string;
 }
 
-export function PolicyJsonEditor({
-	rules,
-	onSave,
-	saving,
-	className,
-}: PolicyDocEditorProps) {
+export function PolicyJsonEditor({ rules, onSave, saving, className }: PolicyDocEditorProps) {
 	const initialJson = useMemo(() => JSON.stringify({ rules }, null, 2), [rules]);
 	const [json, setJson] = useState(initialJson);
 	const [error, setError] = useState<string | null>(null);
@@ -223,7 +219,9 @@ export function PolicyJsonEditor({
 					<div className="flex items-center justify-between">
 						<div>
 							<div className="text-sm font-semibold text-text">Quick Start Templates</div>
-							<Mono size="xs" className="text-text-dim">Ordered rules — first match wins, default deny</Mono>
+							<Mono size="xs" className="text-text-dim">
+								Ordered rules — first match wins, default deny
+							</Mono>
 						</div>
 						<button
 							type="button"
@@ -242,7 +240,9 @@ export function PolicyJsonEditor({
 								className="flex flex-col items-start gap-1 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-all hover:border-accent hover:bg-accent-muted"
 							>
 								<span className="text-sm font-medium text-text">{preset.label}</span>
-								<Mono size="xs" className="text-text-dim">{preset.description}</Mono>
+								<Mono size="xs" className="text-text-dim">
+									{preset.description}
+								</Mono>
 							</button>
 						))}
 					</div>
@@ -262,9 +262,7 @@ export function PolicyJsonEditor({
 						error ? 'border-danger' : 'border-border',
 					)}
 				/>
-				{error && (
-					<div className="mt-1 text-xs text-danger font-mono">{error}</div>
-				)}
+				{error && <div className="mt-1 text-xs text-danger font-mono">{error}</div>}
 			</div>
 
 			<div className="flex items-center justify-between">
@@ -282,11 +280,7 @@ export function PolicyJsonEditor({
 						</button>
 					)}
 				</div>
-				<Button
-					onClick={handleSave}
-					disabled={!isDirty || saving}
-					size="sm"
-				>
+				<Button onClick={handleSave} disabled={!isDirty || saving} size="sm">
 					{saving ? (
 						<>
 							<Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -319,7 +313,8 @@ export function PolicyJsonEditor({
 				<div className="rounded-lg border border-border bg-surface p-4 font-mono text-xs leading-relaxed text-text-muted space-y-3">
 					<div className="text-text font-semibold">Available criteria types:</div>
 					<div className="text-text-dim text-[11px]">
-						Rules are evaluated top-down. First rule where ALL criteria match wins. No match = default deny.
+						Rules are evaluated top-down. First rule where ALL criteria match wins. No match =
+						default deny.
 					</div>
 					<div className="border-t border-border" />
 					{CRITERIA_TYPES.map((ct) => (
@@ -337,7 +332,8 @@ export function PolicyJsonEditor({
 					<div className="border-t border-border pt-2 text-text-dim">
 						Wei reference: 1 ETH = 1000000000000000000 (10^18 wei)
 						<br />
-						{weiToEth('100000000000000000')} = 0.1 ETH &middot; {weiToEth('1000000000000000000')} = 1 ETH
+						{weiToEth('100000000000000000')} = 0.1 ETH &middot; {weiToEth('1000000000000000000')} =
+						1 ETH
 					</div>
 				</div>
 			)}

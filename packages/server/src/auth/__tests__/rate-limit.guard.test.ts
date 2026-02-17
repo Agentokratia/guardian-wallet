@@ -79,7 +79,9 @@ describe('RateLimitGuard', () => {
 
 		// Simulate time passing beyond the 60s window
 		// Access internal state to force window expiry
-		const requests = (guard as unknown as { requests: Map<string, { count: number; windowStart: number }> }).requests;
+		const requests = (
+			guard as unknown as { requests: Map<string, { count: number; windowStart: number }> }
+		).requests;
 		const entry = requests.get('10.0.0.3');
 		if (entry) {
 			entry.windowStart = Date.now() - 61_000; // 61 seconds ago

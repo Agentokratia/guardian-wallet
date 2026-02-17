@@ -23,8 +23,9 @@ async function bootstrap() {
 		}),
 	);
 
-	const origins = process.env.ALLOWED_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean)
-		|| ['http://localhost:3000'];
+	const origins = process.env.ALLOWED_ORIGINS?.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean) || ['http://localhost:3000'];
 	app.enableCors({
 		origin: origins,
 		credentials: true,

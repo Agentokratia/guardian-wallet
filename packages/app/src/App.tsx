@@ -41,7 +41,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 			return (
 				<div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background text-text">
 					<h1 className="text-xl font-bold">Something went wrong.</h1>
-					<p className="text-sm text-text-muted">An unexpected error occurred. Please refresh the page.</p>
+					<p className="text-sm text-text-muted">
+						An unexpected error occurred. Please refresh the page.
+					</p>
 					<button
 						type="button"
 						onClick={() => window.location.reload()}
@@ -56,15 +58,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 	}
 }
 
-const SignPage = React.lazy(() =>
-	import('./pages/sign').then((m) => ({ default: m.SignPage })),
-);
+const SignPage = React.lazy(() => import('./pages/sign').then((m) => ({ default: m.SignPage })));
 const CreateSignerPage = React.lazy(() =>
 	import('./pages/create-signer').then((m) => ({ default: m.CreateSignerPage })),
 );
-const AuditPage = React.lazy(() =>
-	import('./pages/audit').then((m) => ({ default: m.AuditPage })),
-);
+const AuditPage = React.lazy(() => import('./pages/audit').then((m) => ({ default: m.AuditPage })));
 const SignerDetailPage = React.lazy(() =>
 	import('./pages/signer-detail').then((m) => ({ default: m.SignerDetailPage })),
 );
@@ -123,58 +121,58 @@ export function App() {
 			<NetworkInitializer />
 			<CommandPalette />
 			<ErrorBoundary>
-			<Suspense fallback={<LazyFallback />}>
-				<Routes>
-					{/* Public routes (no sidebar) */}
-					<Route path="/login" element={<LoginPage />} />
+				<Suspense fallback={<LazyFallback />}>
+					<Routes>
+						{/* Public routes (no sidebar) */}
+						<Route path="/login" element={<LoginPage />} />
 
-					{/* Protected routes without sidebar */}
-					<Route
-						path="/setup"
-						element={
-							<AuthGuard>
-								<SetupPage />
-							</AuthGuard>
-						}
-					/>
-					<Route
-						path="/signers/new"
-						element={
-							<AuthGuard>
-								<div className="min-h-screen bg-background px-8 py-7 animate-page-enter">
-									<CreateSignerPage />
-								</div>
-							</AuthGuard>
-						}
-					/>
+						{/* Protected routes without sidebar */}
+						<Route
+							path="/setup"
+							element={
+								<AuthGuard>
+									<SetupPage />
+								</AuthGuard>
+							}
+						/>
+						<Route
+							path="/signers/new"
+							element={
+								<AuthGuard>
+									<div className="min-h-screen bg-background px-8 py-7 animate-page-enter">
+										<CreateSignerPage />
+									</div>
+								</AuthGuard>
+							}
+						/>
 
-					{/* Protected dashboard routes (with sidebar) */}
-					<Route
-						element={
-							<AuthGuard>
-								<DashboardLayout />
-							</AuthGuard>
-						}
-					>
-						<Route path="/signers" element={<SignersPage />} />
-						<Route path="/signers/:id" element={<SignerDetailPage />} />
-						<Route path="/signers/:id/settings" element={<AccountSettingsPage />} />
-						<Route path="/signers/:id/sign" element={<SignPage />} />
-						<Route path="/audit" element={<AuditPage />} />
-						<Route path="/settings" element={<SettingsPage />} />
-					</Route>
+						{/* Protected dashboard routes (with sidebar) */}
+						<Route
+							element={
+								<AuthGuard>
+									<DashboardLayout />
+								</AuthGuard>
+							}
+						>
+							<Route path="/signers" element={<SignersPage />} />
+							<Route path="/signers/:id" element={<SignerDetailPage />} />
+							<Route path="/signers/:id/settings" element={<AccountSettingsPage />} />
+							<Route path="/signers/:id/sign" element={<SignPage />} />
+							<Route path="/audit" element={<AuditPage />} />
+							<Route path="/settings" element={<SettingsPage />} />
+						</Route>
 
-					{/* Catch-all: redirect based on signer count */}
-					<Route
-						path="*"
-						element={
-							<AuthGuard>
-								<SignerRedirect />
-							</AuthGuard>
-						}
-					/>
-				</Routes>
-			</Suspense>
+						{/* Catch-all: redirect based on signer count */}
+						<Route
+							path="*"
+							element={
+								<AuthGuard>
+									<SignerRedirect />
+								</AuthGuard>
+							}
+						/>
+					</Routes>
+				</Suspense>
 			</ErrorBoundary>
 			<Toaster />
 		</TooltipProvider>

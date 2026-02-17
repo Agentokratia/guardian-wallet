@@ -1,17 +1,36 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpException, HttpStatus, Inject, Logger, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { IShareStore } from '@agentokratia/guardian-core';
+import {
+	BadRequestException,
+	Body,
+	Controller,
+	Delete,
+	ForbiddenException,
+	Get,
+	HttpException,
+	HttpStatus,
+	Inject,
+	Logger,
+	NotFoundException,
+	Param,
+	Patch,
+	Post,
+	Query,
+	Req,
+	UseGuards,
+} from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
-import { NetworkService } from '../networks/network.service.js';
-import { hexToBytes } from '../common/encoding.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
+import { hexToBytes } from '../common/encoding.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
-import { AddTokenDto } from '../tokens/dto/add-token.dto.js';
+import type { Network } from '../networks/network.repository.js';
+import { NetworkService } from '../networks/network.service.js';
+import type { AddTokenDto } from '../tokens/dto/add-token.dto.js';
 import { TokenService } from '../tokens/token.service.js';
-import { CreateSignerDto } from './dto/create-signer.dto.js';
-import { SimulateDto } from './dto/simulate.dto.js';
-import { StoreUserShareDto } from './dto/store-user-share.dto.js';
-import { UpdateSignerDto } from './dto/update-signer.dto.js';
+import type { CreateSignerDto } from './dto/create-signer.dto.js';
+import type { SimulateDto } from './dto/simulate.dto.js';
+import type { StoreUserShareDto } from './dto/store-user-share.dto.js';
+import type { UpdateSignerDto } from './dto/update-signer.dto.js';
 import { SignerService } from './signer.service.js';
 import { signerToPublic } from './signer.types.js';
 
@@ -82,7 +101,11 @@ export class SignerController {
 	}
 
 	@Patch(':id')
-	async update(@Param('id') id: string, @Body() body: UpdateSignerDto, @Req() req: AuthenticatedRequest) {
+	async update(
+		@Param('id') id: string,
+		@Body() body: UpdateSignerDto,
+		@Req() req: AuthenticatedRequest,
+	) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.update(id, body));
 	}
@@ -128,7 +151,7 @@ export class SignerController {
 			return cached.data;
 		}
 
-		let networks;
+		let networks: Network[];
 		if (chainIdFilter) {
 			networks = [await this.networkService.getByChainId(Number(chainIdFilter))];
 		} else if (networkFilter) {
@@ -139,15 +162,13 @@ export class SignerController {
 
 		// Race all networks — return whatever responds within 3s, drop the rest
 		const RPC_TIMEOUT = 3_000;
-		const timeout = (ms: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+		const timeout = (ms: number) =>
+			new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
 
 		const results = await Promise.allSettled(
 			networks.map(async (n) => {
 				const chain = await this.chainRegistry.getChain(n.chainId);
-				const wei = await Promise.race([
-					chain.getBalance(signer.ethAddress),
-					timeout(RPC_TIMEOUT),
-				]);
+				const wei = await Promise.race([chain.getBalance(signer.ethAddress), timeout(RPC_TIMEOUT)]);
 				return { network: n.name, chainId: n.chainId, balance: wei.toString() };
 			}),
 		);
@@ -166,7 +187,11 @@ export class SignerController {
 	}
 
 	@Post(':id/simulate')
-	async simulate(@Param('id') id: string, @Body() body: SimulateDto, @Req() req: AuthenticatedRequest) {
+	async simulate(
+		@Param('id') id: string,
+		@Body() body: SimulateDto,
+		@Req() req: AuthenticatedRequest,
+	) {
 		await this.getOwnedSigner(id, req);
 		try {
 			const chain = await this.chainRegistry.getChainByName(body.network);
@@ -197,7 +222,11 @@ export class SignerController {
 	}
 
 	@Post(':id/user-share')
-	async storeUserShare(@Param('id') id: string, @Body() body: StoreUserShareDto, @Req() req: AuthenticatedRequest) {
+	async storeUserShare(
+		@Param('id') id: string,
+		@Body() body: StoreUserShareDto,
+		@Req() req: AuthenticatedRequest,
+	) {
 		await this.getOwnedSigner(id, req);
 		const json = JSON.stringify(body);
 		const bytes = new TextEncoder().encode(json);
@@ -212,13 +241,17 @@ export class SignerController {
 			const bytes = await this.shareStore.getShare(`user-encrypted/${id}`);
 			const json = new TextDecoder().decode(bytes);
 			const blob = JSON.parse(json);
-			this.logger.log(`getUserShare: sessionUser=${req.sessionUser}, blob.walletAddress=${blob.walletAddress}, iv=${blob.iv?.slice(0, 20)}, salt=${blob.salt?.slice(0, 20)}, ct_len=${blob.ciphertext?.length}`);
+			this.logger.log(
+				`getUserShare: sessionUser=${req.sessionUser}, blob.walletAddress=${blob.walletAddress}, iv=${blob.iv?.slice(0, 20)}, salt=${blob.salt?.slice(0, 20)}, ct_len=${blob.ciphertext?.length}`,
+			);
 			if (
 				req.sessionUser &&
 				blob.walletAddress &&
 				req.sessionUser.toLowerCase() !== blob.walletAddress.toLowerCase()
 			) {
-				this.logger.warn(`getUserShare: walletAddress MISMATCH — session=${req.sessionUser} vs stored=${blob.walletAddress}`);
+				this.logger.warn(
+					`getUserShare: walletAddress MISMATCH — session=${req.sessionUser} vs stored=${blob.walletAddress}`,
+				);
 				throw new ForbiddenException('Wallet address mismatch');
 			}
 			return blob;

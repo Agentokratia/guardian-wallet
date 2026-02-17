@@ -1,9 +1,4 @@
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Check, Copy, Shield } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';

@@ -11,14 +11,10 @@ const { mockApiPost, mockWasm } = vi.hoisted(() => {
 		default: vi.fn(),
 		sign_create_session: vi.fn(() => ({
 			session_id: 'wasm-session-1',
-			messages: [
-				{ sender: 2, is_broadcast: true, recipient: null, payload: 'msg1' },
-			],
+			messages: [{ sender: 2, is_broadcast: true, recipient: null, payload: 'msg1' }],
 		})),
 		sign_process_round: vi.fn(() => ({
-			messages: [
-				{ sender: 2, is_broadcast: false, recipient: 1, payload: 'msg2' },
-			],
+			messages: [{ sender: 2, is_broadcast: false, recipient: 1, payload: 'msg2' }],
 			complete: false,
 		})),
 		sign_destroy_session: vi.fn(),
@@ -80,7 +76,12 @@ function toBase64(bytes: number[]): string {
 }
 
 /** Helper: encode a WasmSignMessage as base64 JSON (matches server response) */
-function encodeWasmMsg(msg: { sender: number; is_broadcast: boolean; recipient: number | null; payload: string }): string {
+function encodeWasmMsg(msg: {
+	sender: number;
+	is_broadcast: boolean;
+	recipient: number | null;
+	payload: string;
+}): string {
 	return btoa(JSON.stringify(msg));
 }
 
@@ -124,9 +125,7 @@ describe('browserInteractiveSign', () => {
 		// Reset WASM mock return values
 		mockWasm.sign_create_session.mockReturnValue({
 			session_id: 'wasm-session-1',
-			messages: [
-				{ sender: 2, is_broadcast: true, recipient: null, payload: 'client-first' },
-			],
+			messages: [{ sender: 2, is_broadcast: true, recipient: null, payload: 'client-first' }],
 		});
 		mockWasm.sign_process_round.mockReturnValue({
 			messages: [],
@@ -214,9 +213,9 @@ describe('browserInteractiveSign', () => {
 
 		const shareBytes = makeKeyMaterialBytes();
 
-		await expect(
-			browserInteractiveSign(shareBytes, signerId, transaction),
-		).rejects.toThrow('Network error');
+		await expect(browserInteractiveSign(shareBytes, signerId, transaction)).rejects.toThrow(
+			'Network error',
+		);
 
 		expect(shareBytes.every((b) => b === 0)).toBe(true);
 	});

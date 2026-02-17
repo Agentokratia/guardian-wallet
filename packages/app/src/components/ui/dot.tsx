@@ -15,6 +15,13 @@ interface DotProps {
 
 export function Dot({ color = 'success', pulse, className }: DotProps) {
 	return (
-		<span className={cn('inline-block h-1.5 w-1.5 rounded-full', colorMap[color], pulse && 'animate-dot-pulse', className)} />
+		<span
+			className={cn(
+				'inline-block h-1.5 w-1.5 rounded-full',
+				colorMap[color],
+				pulse && 'animate-dot-pulse',
+				className,
+			)}
+		/>
 	);
 }

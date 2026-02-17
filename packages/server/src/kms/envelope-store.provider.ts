@@ -1,10 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import type { EncryptedEnvelope, IKmsProvider, IShareStore } from '@agentokratia/guardian-core';
 import { Logger } from '@nestjs/common';
-import type {
-	EncryptedEnvelope,
-	IKmsProvider,
-	IShareStore,
-} from '@agentokratia/guardian-core';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const ALGORITHM = 'aes-256-gcm';
@@ -27,10 +23,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 			const cipher = createCipheriv(ALGORITHM, plaintextKey, iv);
 			cipher.setAAD(Buffer.from(path, 'utf-8'));
 
-			const encrypted = Buffer.concat([
-				cipher.update(share),
-				cipher.final(),
-			]);
+			const encrypted = Buffer.concat([cipher.update(share), cipher.final()]);
 			const authTag = cipher.getAuthTag();
 
 			const envelope: EncryptedEnvelope = {
@@ -46,10 +39,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 
 			const { error } = await this.supabase
 				.from(TABLE)
-				.upsert(
-					{ path, envelope, updated_at: new Date().toISOString() },
-					{ onConflict: 'path' },
-				);
+				.upsert({ path, envelope, updated_at: new Date().toISOString() }, { onConflict: 'path' });
 
 			if (error) {
 				throw new Error(`Failed to store encrypted share: ${error.message}`);
@@ -74,14 +64,9 @@ export class EnvelopeStoreProvider implements IShareStore {
 		}
 
 		const envelope = data.envelope as EncryptedEnvelope;
-		const encryptedKey = new Uint8Array(
-			Buffer.from(envelope.encryptedDek, 'base64'),
-		);
+		const encryptedKey = new Uint8Array(Buffer.from(envelope.encryptedDek, 'base64'));
 
-		const plaintextKey = await this.kms.decryptDataKey(
-			encryptedKey,
-			envelope.keyId,
-		);
+		const plaintextKey = await this.kms.decryptDataKey(encryptedKey, envelope.keyId);
 
 		try {
 			const iv = Buffer.from(envelope.iv, 'base64');
@@ -92,10 +77,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 			decipher.setAAD(Buffer.from(path, 'utf-8'));
 			decipher.setAuthTag(authTag);
 
-			const decrypted = Buffer.concat([
-				decipher.update(ciphertext),
-				decipher.final(),
-			]);
+			const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 
 			this.logger.log(`Retrieved encrypted share at ${path} [kms=${this.kms.name}]`);
 			return new Uint8Array(decrypted);
@@ -106,10 +88,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 	}
 
 	async deleteShare(path: string): Promise<void> {
-		const { error } = await this.supabase
-			.from(TABLE)
-			.delete()
-			.eq('path', path);
+		const { error } = await this.supabase.from(TABLE).delete().eq('path', path);
 
 		if (error) {
 			throw new Error(`Failed to delete share at path: ${path}`);
@@ -120,10 +99,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 
 	async healthCheck(): Promise<boolean> {
 		try {
-			const [kmsOk, dbOk] = await Promise.all([
-				this.kms.healthCheck(),
-				this.checkDb(),
-			]);
+			const [kmsOk, dbOk] = await Promise.all([this.kms.healthCheck(), this.checkDb()]);
 			return kmsOk && dbOk;
 		} catch {
 			return false;
@@ -132,10 +108,7 @@ export class EnvelopeStoreProvider implements IShareStore {
 
 	private async checkDb(): Promise<boolean> {
 		try {
-			const { error } = await this.supabase
-				.from(TABLE)
-				.select('path')
-				.limit(1);
+			const { error } = await this.supabase.from(TABLE).select('path').limit(1);
 			return !error;
 		} catch {
 			return false;

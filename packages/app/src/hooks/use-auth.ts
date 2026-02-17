@@ -7,7 +7,10 @@ import {
 	wipeKey,
 	wipePRF,
 } from '@agentokratia/guardian-auth/browser';
-import type { WebAuthnAuthResult, WebAuthnRegistrationResult } from '@agentokratia/guardian-auth/shared';
+import type {
+	WebAuthnAuthResult,
+	WebAuthnRegistrationResult,
+} from '@agentokratia/guardian-auth/shared';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 interface AuthState {
@@ -23,7 +26,10 @@ interface AuthContextValue extends AuthState {
 	/** Step 1: Send OTP to email */
 	register: (email: string) => Promise<{ userId: string; isNewUser: boolean }>;
 	/** Step 2: Verify OTP → get registration options */
-	verifyOTP: (email: string, code: string) => Promise<{ userId: string; registrationOptions: unknown }>;
+	verifyOTP: (
+		email: string,
+		code: string,
+	) => Promise<{ userId: string; registrationOptions: unknown }>;
 	/** Step 3: Register passkey → derive wallet → authenticate */
 	completeRegistration: (userId: string) => Promise<void>;
 	/** Login Step 1: Get login challenge */
@@ -49,7 +55,9 @@ export const AuthContext = createContext<AuthContextValue>({
 	loginChallenge: async () => {},
 	logout: async () => {},
 	checkSession: async () => {},
-	refreshPRF: async () => { throw new Error('AuthContext not initialized'); },
+	refreshPRF: async () => {
+		throw new Error('AuthContext not initialized');
+	},
 });
 
 // Cached RP_ID — in production this comes from the server/env, for now use window.location.hostname
@@ -81,7 +89,9 @@ export function useAuthState(): AuthContextValue {
 
 	const checkSession = useCallback(async () => {
 		try {
-			const result = await api.get<{ address?: string; email?: string; userId?: string }>('/auth/me');
+			const result = await api.get<{ address?: string; email?: string; userId?: string }>(
+				'/auth/me',
+			);
 			setState((prev) => ({
 				...prev,
 				isAuthenticated: true,
@@ -91,7 +101,14 @@ export function useAuthState(): AuthContextValue {
 				userId: result.userId,
 			}));
 		} catch {
-			setState((prev) => ({ ...prev, isAuthenticated: false, loading: false, address: undefined, email: undefined, userId: undefined }));
+			setState((prev) => ({
+				...prev,
+				isAuthenticated: false,
+				loading: false,
+				address: undefined,
+				email: undefined,
+				userId: undefined,
+			}));
 		}
 	}, []);
 
@@ -116,7 +133,9 @@ export function useAuthState(): AuthContextValue {
 	}, []);
 
 	const register = useCallback(async (email: string) => {
-		const result = await api.post<{ userId: string; isNewUser: boolean }>('/auth/register', { email });
+		const result = await api.post<{ userId: string; isNewUser: boolean }>('/auth/register', {
+			email,
+		});
 		return result;
 	}, []);
 
@@ -137,7 +156,9 @@ export function useAuthState(): AuthContextValue {
 		// Register passkey with PRF using the server-generated options directly
 		let regResult: WebAuthnRegistrationResult;
 		try {
-			regResult = await registerPasskeyWithPRF(options as Parameters<typeof registerPasskeyWithPRF>[0]);
+			regResult = await registerPasskeyWithPRF(
+				options as Parameters<typeof registerPasskeyWithPRF>[0],
+			);
 		} catch (err) {
 			registrationOptionsRef.current = null;
 			throw err;
@@ -189,15 +210,11 @@ export function useAuthState(): AuthContextValue {
 
 		// Step 2: Authenticate with passkey + PRF
 		let authResult: WebAuthnAuthResult;
-		try {
-			authResult = await authenticateWithPRF({
-				rpId: opts.rpId,
-				challenge: opts.challenge,
-				allowCredentialIds: opts.allowCredentials?.map((c) => c.id) ?? [],
-			});
-		} catch (err) {
-			throw err;
-		}
+		authResult = await authenticateWithPRF({
+			rpId: opts.rpId,
+			challenge: opts.challenge,
+			allowCredentialIds: opts.allowCredentials?.map((c) => c.id) ?? [],
+		});
 
 		// Wipe PRF immediately — never stored in memory
 		if (authResult.prfOutput) {
@@ -242,7 +259,10 @@ export function useAuthState(): AuthContextValue {
 				{ email },
 			);
 			authOptions = res.authOptions;
-			console.log('[refreshPRF] Got challenge, authOptions keys:', Object.keys(authOptions as Record<string, unknown>));
+			console.log(
+				'[refreshPRF] Got challenge, authOptions keys:',
+				Object.keys(authOptions as Record<string, unknown>),
+			);
 		} catch (err) {
 			console.error('[refreshPRF] login-challenge failed:', err);
 			throw err;
@@ -254,7 +274,12 @@ export function useAuthState(): AuthContextValue {
 			allowCredentials?: { id: string }[];
 		};
 
-		console.log('[refreshPRF] Triggering passkey dialog — rpId:', opts.rpId, 'allowCredentials:', opts.allowCredentials?.length ?? 0);
+		console.log(
+			'[refreshPRF] Triggering passkey dialog — rpId:',
+			opts.rpId,
+			'allowCredentials:',
+			opts.allowCredentials?.length ?? 0,
+		);
 		// Trigger passkey dialog
 		let authResult: WebAuthnAuthResult;
 		try {
@@ -263,7 +288,12 @@ export function useAuthState(): AuthContextValue {
 				challenge: opts.challenge,
 				allowCredentialIds: opts.allowCredentials?.map((c) => c.id) ?? [],
 			});
-			console.log('[refreshPRF] Passkey dialog completed — hasPRF:', !!authResult.prfOutput, 'credentialId:', authResult.credentialId?.slice(0, 10));
+			console.log(
+				'[refreshPRF] Passkey dialog completed — hasPRF:',
+				!!authResult.prfOutput,
+				'credentialId:',
+				authResult.credentialId?.slice(0, 10),
+			);
 		} catch (err) {
 			console.error('[refreshPRF] authenticateWithPRF failed:', err);
 			throw err;

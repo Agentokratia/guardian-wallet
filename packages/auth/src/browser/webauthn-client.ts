@@ -1,5 +1,9 @@
 import { sha256 } from '@noble/hashes/sha256';
-import { startAuthentication, startRegistration, WebAuthnAbortService } from '@simplewebauthn/browser';
+import {
+	WebAuthnAbortService,
+	startAuthentication,
+	startRegistration,
+} from '@simplewebauthn/browser';
 import type {
 	PublicKeyCredentialCreationOptionsJSON,
 	PublicKeyCredentialRequestOptionsJSON,
@@ -79,7 +83,7 @@ export async function registerPasskeyWithPRF(
 			...options,
 			extensions: {
 				...(options.extensions ?? {}),
-				...(prfExtension()),
+				...prfExtension(),
 			} as PublicKeyCredentialCreationOptionsJSON['extensions'],
 		};
 	} else {

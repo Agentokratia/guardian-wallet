@@ -414,7 +414,10 @@ describe('evaluateMonthlyLimit', () => {
 		expect(
 			evaluateMonthlyLimit(
 				{ type: 'monthlyLimit', maxWei: '5000000000000000000' },
-				makeContext({ rollingMonthlySpendWei: 1000000000000000000n, valueWei: 100000000000000000n }),
+				makeContext({
+					rollingMonthlySpendWei: 1000000000000000000n,
+					valueWei: 100000000000000000n,
+				}),
 			),
 		).toBe(true);
 	});
@@ -423,7 +426,10 @@ describe('evaluateMonthlyLimit', () => {
 		expect(
 			evaluateMonthlyLimit(
 				{ type: 'monthlyLimit', maxWei: '1000000000000000000' },
-				makeContext({ rollingMonthlySpendWei: 1000000000000000000n, valueWei: 100000000000000000n }),
+				makeContext({
+					rollingMonthlySpendWei: 1000000000000000000n,
+					valueWei: 100000000000000000n,
+				}),
 			),
 		).toBe(false);
 	});
@@ -442,20 +448,12 @@ describe('evaluateCriterion (dispatcher)', () => {
 	});
 
 	it('returns false for unknown type', () => {
-		expect(
-			evaluateCriterion(
-				{ type: 'unknownType' } as never,
-				makeContext(),
-			),
-		).toBe(false);
+		expect(evaluateCriterion({ type: 'unknownType' } as never, makeContext())).toBe(false);
 	});
 
 	it('returns false on evaluation error (fail-closed)', () => {
 		expect(
-			evaluateCriterion(
-				{ type: 'ethValue', operator: '<=', value: 'not-a-number' },
-				makeContext(),
-			),
+			evaluateCriterion({ type: 'ethValue', operator: '<=', value: 'not-a-number' }, makeContext()),
 		).toBe(false);
 	});
 });

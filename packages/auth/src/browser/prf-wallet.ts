@@ -35,7 +35,10 @@ export function deriveEOAFromPRF(prfOutput: Uint8Array): PRFWalletResult {
  * Uses HKDF-SHA256 with a different salt/info than wallet derivation.
  * Optional per-encryption salt is concatenated with the fixed salt for domain separation.
  */
-export async function deriveEncryptionKeyFromPRF(prfOutput: Uint8Array, perEncryptionSalt?: Uint8Array): Promise<CryptoKey> {
+export async function deriveEncryptionKeyFromPRF(
+	prfOutput: Uint8Array,
+	perEncryptionSalt?: Uint8Array,
+): Promise<CryptoKey> {
 	let salt: Uint8Array;
 	if (perEncryptionSalt) {
 		salt = new Uint8Array(ENCRYPTION_SALT.length + perEncryptionSalt.length);

@@ -24,7 +24,10 @@ const DEFAULT_RPC_URLS: Record<string, string> = {
 export function getRpcUrl(network: string): string {
 	if (process.env.RPC_URL) return process.env.RPC_URL;
 	const url = DEFAULT_RPC_URLS[network];
-	if (!url) throw new Error(`Unknown network: ${network}. Known: ${Object.keys(DEFAULT_RPC_URLS).join(', ')}`);
+	if (!url)
+		throw new Error(
+			`Unknown network: ${network}. Known: ${Object.keys(DEFAULT_RPC_URLS).join(', ')}`,
+		);
 	return url;
 }
 

@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { IShareStore } from '@agentokratia/guardian-core';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import NodeVault from 'node-vault';
 import { APP_CONFIG, type AppConfig } from './config.js';
 

@@ -1,3 +1,5 @@
+import type { TransactionRequest } from '@agentokratia/guardian-core';
+import { SigningPath } from '@agentokratia/guardian-core';
 import {
 	BadRequestException,
 	Body,
@@ -9,18 +11,16 @@ import {
 	Req,
 	UseGuards,
 } from '@nestjs/common';
-import type { TransactionRequest } from '@agentokratia/guardian-core';
-import { SigningPath } from '@agentokratia/guardian-core';
+import { RateLimitGuard } from '../auth/rate-limit.guard.js';
 import { ApiKeyGuard } from '../common/api-key.guard.js';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { base64ToBytes, bytesToBase64, hexToBytes } from '../common/encoding.js';
 import { SessionGuard } from '../common/session.guard.js';
-import { RateLimitGuard } from '../auth/rate-limit.guard.js';
 import { NetworkService } from '../networks/network.service.js';
-import { CompleteSignDto } from './dto/complete-sign.dto.js';
-import { CreateMessageSignSessionDto } from './dto/create-message-sign-session.dto.js';
-import { CreateSignSessionDto } from './dto/create-sign-session.dto.js';
-import { ProcessSignRoundDto } from './dto/process-sign-round.dto.js';
+import type { CompleteSignDto } from './dto/complete-sign.dto.js';
+import type { CreateMessageSignSessionDto } from './dto/create-message-sign-session.dto.js';
+import type { CreateSignSessionDto } from './dto/create-sign-session.dto.js';
+import type { ProcessSignRoundDto } from './dto/process-sign-round.dto.js';
 import { InteractiveSignService } from './interactive-sign.service.js';
 
 @Controller()
@@ -45,7 +45,9 @@ export class SigningController {
 		requireSessionUser(req);
 		const result = await this.interactiveSign.createSession({
 			signerId,
-			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
+			signerFirstMessage: body.signerFirstMessage
+				? base64ToBytes(body.signerFirstMessage)
+				: undefined,
 			transaction: await this.toTransactionRequest(body.transaction),
 			signingPath: SigningPath.USER_SERVER,
 			callerIp: req.ip,
@@ -107,7 +109,9 @@ export class SigningController {
 		const signerId = requireSignerId(req);
 		const result = await this.interactiveSign.createSession({
 			signerId,
-			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
+			signerFirstMessage: body.signerFirstMessage
+				? base64ToBytes(body.signerFirstMessage)
+				: undefined,
 			transaction: await this.toTransactionRequest(body.transaction),
 			callerIp: req.ip,
 		});
@@ -156,7 +160,9 @@ export class SigningController {
 		const signerId = requireSignerId(req);
 		const result = await this.interactiveSign.createMessageSession({
 			signerId,
-			signerFirstMessage: body.signerFirstMessage ? base64ToBytes(body.signerFirstMessage) : undefined,
+			signerFirstMessage: body.signerFirstMessage
+				? base64ToBytes(body.signerFirstMessage)
+				: undefined,
 			messageHash: base64ToBytes(body.messageHash),
 			callerIp: req.ip,
 		});
@@ -189,7 +195,9 @@ export class SigningController {
 		throw new BadRequestException('Either chainId or network is required in transaction');
 	}
 
-	private async toTransactionRequest(tx: CreateSignSessionDto['transaction']): Promise<TransactionRequest> {
+	private async toTransactionRequest(
+		tx: CreateSignSessionDto['transaction'],
+	): Promise<TransactionRequest> {
 		const chainId = await this.resolveChainId(tx);
 		return {
 			to: tx.to,
@@ -199,9 +207,7 @@ export class SigningController {
 			gasLimit: tx.gasLimit ? BigInt(tx.gasLimit) : undefined,
 			gasPrice: tx.gasPrice ? BigInt(tx.gasPrice) : undefined,
 			maxFeePerGas: tx.maxFeePerGas ? BigInt(tx.maxFeePerGas) : undefined,
-			maxPriorityFeePerGas: tx.maxPriorityFeePerGas
-				? BigInt(tx.maxPriorityFeePerGas)
-				: undefined,
+			maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas) : undefined,
 			nonce: tx.nonce,
 		};
 	}

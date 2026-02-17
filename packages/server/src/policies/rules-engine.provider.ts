@@ -7,25 +7,22 @@
  * No match → default deny.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
 import {
 	type IRulesEngine,
 	type PolicyContext,
 	type PolicyDocument,
 	type PolicyResult,
-	type PolicyViolation,
 	PolicyType,
+	type PolicyViolation,
 } from '@agentokratia/guardian-core';
+import { Injectable, Logger } from '@nestjs/common';
 import { evaluateCriterion } from './criteria-evaluators.js';
 
 @Injectable()
 export class RulesEngineProvider implements IRulesEngine {
 	private readonly logger = new Logger(RulesEngineProvider.name);
 
-	async evaluate(
-		document: PolicyDocument | null,
-		context: PolicyContext,
-	): Promise<PolicyResult> {
+	async evaluate(document: PolicyDocument | null, context: PolicyContext): Promise<PolicyResult> {
 		const start = performance.now();
 
 		// No document or no rules → default deny

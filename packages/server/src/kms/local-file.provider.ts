@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { Logger } from '@nestjs/common';
 import type { IKmsProvider } from '@agentokratia/guardian-core';
+import { Logger } from '@nestjs/common';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
@@ -28,7 +28,7 @@ export class LocalFileKmsProvider implements IKmsProvider {
 		}
 		this.masterKey = buf;
 
-		if (process.env['NODE_ENV'] === 'production') {
+		if (process.env.NODE_ENV === 'production') {
 			this.logger.warn(
 				'LocalFileKmsProvider is intended for dev/simple deployments. ' +
 					'Consider a cloud KMS (AWS, GCP, Azure) for production.',

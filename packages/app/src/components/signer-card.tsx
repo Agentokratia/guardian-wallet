@@ -16,7 +16,13 @@ interface SignerCardProps {
 	lastAction?: string;
 }
 
-export function SignerCard({ signer, policyCount = 0, balance, tokenSummary, lastAction }: SignerCardProps) {
+export function SignerCard({
+	signer,
+	policyCount = 0,
+	balance,
+	tokenSummary,
+	lastAction,
+}: SignerCardProps) {
 	const icon = getTypeIcon(signer.type, 'h-4 w-4');
 	const status = statusConfig[signer.status];
 
@@ -44,7 +50,9 @@ export function SignerCard({ signer, policyCount = 0, balance, tokenSummary, las
 						</div>
 						<div className="flex items-center gap-1.5">
 							<Dot color={status.dot} className="h-1.5 w-1.5" />
-							<Mono size="xs" className="text-text-dim">{status.label}</Mono>
+							<Mono size="xs" className="text-text-dim">
+								{status.label}
+							</Mono>
 						</div>
 					</div>
 

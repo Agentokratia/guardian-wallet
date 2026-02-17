@@ -1,17 +1,18 @@
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { downloadFile } from '@/lib/download';
 import { Input } from '@/components/ui/input';
 import { Mono } from '@/components/ui/mono';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/hooks/use-auth';
 import { useCreateSigner, useDKGFinalize, useDKGInit } from '@/hooks/use-dkg';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api-client';
+import { downloadFile } from '@/lib/download';
 import { encryptUserShare } from '@/lib/user-share-store';
 import { cn } from '@/lib/utils';
 import { wipePRF } from '@agentokratia/guardian-auth/browser';
-import { useAuth } from '@/hooks/use-auth';
+import { useQueryClient } from '@tanstack/react-query';
 import {
 	AlertTriangle,
 	ArrowRight,
@@ -30,7 +31,6 @@ import {
 	Shield,
 	Terminal,
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -185,7 +185,9 @@ export function CreateSignerPage() {
 
 				if (prfOutput) {
 					try {
-						const prfHex = Array.from(prfOutput.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+						const prfHex = Array.from(prfOutput.slice(0, 8))
+							.map((b) => b.toString(16).padStart(2, '0'))
+							.join('');
 						console.log('[create-signer] PRF fingerprint (first 8 bytes):', prfHex);
 						const shareBytes = Uint8Array.from(atob(finalResult.userShare), (c) => c.charCodeAt(0));
 						const encrypted = await encryptUserShare(shareBytes, prfOutput);
@@ -258,10 +260,7 @@ export function CreateSignerPage() {
 		<>
 			<Header title="Create Account" backHref="/signers" backLabel="Back to Accounts" />
 
-			<div className={cn(
-				'mx-auto space-y-6',
-				phase === 'done' ? 'max-w-5xl' : 'max-w-lg',
-			)}>
+			<div className={cn('mx-auto space-y-6', phase === 'done' ? 'max-w-5xl' : 'max-w-lg')}>
 				{/* -------------------------------------------------------- */}
 				{/*  Phase: Input                                             */}
 				{/* -------------------------------------------------------- */}
@@ -282,7 +281,8 @@ export function CreateSignerPage() {
 									autoFocus
 								/>
 								<p className="mt-1 text-[11px] text-text-dim">
-									A short identifier for this signer. Use lowercase and hyphens for SDK compatibility.
+									A short identifier for this signer. Use lowercase and hyphens for SDK
+									compatibility.
 								</p>
 							</div>
 
@@ -302,9 +302,7 @@ export function CreateSignerPage() {
 
 							{/* Type — compact dropdown */}
 							<div>
-								<label className="mb-1.5 block text-sm font-medium text-text">
-									Type
-								</label>
+								<label className="mb-1.5 block text-sm font-medium text-text">Type</label>
 								<div className="relative">
 									<button
 										type="button"
@@ -315,10 +313,12 @@ export function CreateSignerPage() {
 											<selectedType.icon className="h-4 w-4 text-text-muted" />
 											<span className="text-text">{selectedType.label}</span>
 										</div>
-										<ChevronDown className={cn(
-											'h-3.5 w-3.5 text-text-dim transition-transform',
-											typeOpen && 'rotate-180',
-										)} />
+										<ChevronDown
+											className={cn(
+												'h-3.5 w-3.5 text-text-dim transition-transform',
+												typeOpen && 'rotate-180',
+											)}
+										/>
 									</button>
 
 									{typeOpen && (
@@ -327,7 +327,10 @@ export function CreateSignerPage() {
 												<button
 													key={t.value}
 													type="button"
-													onClick={() => { setAccountType(t.value); setTypeOpen(false); }}
+													onClick={() => {
+														setAccountType(t.value);
+														setTypeOpen(false);
+													}}
 													className={cn(
 														'flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-surface-hover',
 														t.value === accountType && 'bg-accent-muted',
@@ -344,8 +347,8 @@ export function CreateSignerPage() {
 						</div>
 
 						<p className="text-[11px] text-text-dim text-center leading-relaxed">
-							This will generate a 2-of-3 threshold key via distributed key generation (DKG).
-							Your key share will be encrypted and ready to download.
+							This will generate a 2-of-3 threshold key via distributed key generation (DKG). Your
+							key share will be encrypted and ready to download.
 						</p>
 
 						<Button
@@ -381,14 +384,16 @@ export function CreateSignerPage() {
 							<div className="space-y-2.5">
 								{PROGRESS_STEPS.slice(0, -1).map((label, i) => (
 									<div key={label} className="flex items-center gap-2.5">
-										<div className={cn(
-											'flex h-5 w-5 items-center justify-center rounded-full text-[10px]',
-											i < progress.step
-												? 'bg-success text-white'
-												: i === progress.step
-													? 'bg-accent text-white'
-													: 'bg-surface-hover text-text-dim',
-										)}>
+										<div
+											className={cn(
+												'flex h-5 w-5 items-center justify-center rounded-full text-[10px]',
+												i < progress.step
+													? 'bg-success text-white'
+													: i === progress.step
+														? 'bg-accent text-white'
+														: 'bg-surface-hover text-text-dim',
+											)}
+										>
 											{i < progress.step ? (
 												<Check className="h-3 w-3" />
 											) : i === progress.step ? (
@@ -397,10 +402,16 @@ export function CreateSignerPage() {
 												i + 1
 											)}
 										</div>
-										<span className={cn(
-											'text-sm',
-											i < progress.step ? 'text-success' : i === progress.step ? 'text-text' : 'text-text-dim',
-										)}>
+										<span
+											className={cn(
+												'text-sm',
+												i < progress.step
+													? 'text-success'
+													: i === progress.step
+														? 'text-text'
+														: 'text-text-dim',
+											)}
+										>
 											{label.replace('...', '')}
 										</span>
 									</div>
@@ -448,9 +459,7 @@ export function CreateSignerPage() {
 									<CheckCircle2 className="h-5 w-5 text-success" />
 								</div>
 								<div className="min-w-0 flex-1">
-									<h2 className="text-base font-bold text-text">
-										{name} is ready
-									</h2>
+									<h2 className="text-base font-bold text-text">{name} is ready</h2>
 									<div className="mt-1 flex items-center gap-2">
 										<code className="font-mono text-[13px] text-success truncate">
 											{result.ethAddress}
@@ -467,7 +476,6 @@ export function CreateSignerPage() {
 
 						{/* 2-column layout */}
 						<div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
 							{/* LEFT — Credentials (3 cols) */}
 							<div className="lg:col-span-3 space-y-4">
 								<h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-text-dim">
@@ -493,17 +501,26 @@ export function CreateSignerPage() {
 											<CopyButton text={result.apiKey} />
 										</div>
 										<p className="text-[11px] text-text-dim leading-relaxed">
-											Pass as <code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">x-api-key</code> header
-											or set <code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">GW_API_KEY</code> env var.
+											Pass as{' '}
+											<code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">
+												x-api-key
+											</code>{' '}
+											header or set{' '}
+											<code className="rounded bg-surface-hover px-1 py-0.5 text-accent font-medium">
+												GW_API_KEY
+											</code>{' '}
+											env var.
 										</p>
 									</CardContent>
 								</Card>
 
 								{/* Secret file download */}
-								<Card className={cn(
-									'border-border bg-surface transition-colors',
-									!secretDownloaded && 'border-warning/40',
-								)}>
+								<Card
+									className={cn(
+										'border-border bg-surface transition-colors',
+										!secretDownloaded && 'border-warning/40',
+									)}
+								>
 									<CardContent className="p-4 space-y-2.5">
 										<div className="flex items-center justify-between">
 											<div className="flex items-center gap-2">
@@ -537,10 +554,12 @@ export function CreateSignerPage() {
 								</Card>
 
 								{/* Backup key */}
-								<Card className={cn(
-									'border-border bg-surface transition-colors',
-									result.backupStored ? '' : 'border-warning/30',
-								)}>
+								<Card
+									className={cn(
+										'border-border bg-surface transition-colors',
+										result.backupStored ? '' : 'border-warning/30',
+									)}
+								>
 									<CardContent className="p-4 space-y-2.5">
 										<div className="flex items-center justify-between">
 											<div className="flex items-center gap-2">
@@ -560,14 +579,17 @@ export function CreateSignerPage() {
 										{result.backupStored ? (
 											<>
 												<p className="text-[11px] text-text-dim leading-relaxed">
-													Encrypted with your passkey and stored server-side. Keep a local copy for recovery.
+													Encrypted with your passkey and stored server-side. Keep a local copy for
+													recovery.
 												</p>
 												<Button
 													variant="outline"
 													className="w-full"
 													onClick={() => {
 														if (!result.backupPayload) return;
-														const blob = new Blob([result.backupPayload], { type: 'application/json' });
+														const blob = new Blob([result.backupPayload], {
+															type: 'application/json',
+														});
 														downloadFile(blob, `${name || 'signer'}.guardian-backup.json`);
 													}}
 													disabled={!result.backupPayload}
@@ -580,7 +602,8 @@ export function CreateSignerPage() {
 											<div className="flex items-center gap-2">
 												<AlertTriangle className="h-4 w-4 text-warning shrink-0" />
 												<p className="text-[11px] text-warning leading-relaxed">
-													Passkey encryption failed. Dashboard signing won't be available for this account.
+													Passkey encryption failed. Dashboard signing won't be available for this
+													account.
 												</p>
 											</div>
 										)}
@@ -623,16 +646,8 @@ export function CreateSignerPage() {
 												done={secretDownloaded}
 												label="Download your secret file"
 											/>
-											<NextStep
-												number={2}
-												done={false}
-												label="Set up your environment variables"
-											/>
-											<NextStep
-												number={3}
-												done={false}
-												label="Send your first transaction"
-											/>
+											<NextStep number={2} done={false} label="Set up your environment variables" />
+											<NextStep number={3} done={false} label="Send your first transaction" />
 										</div>
 									</div>
 								</div>
@@ -652,18 +667,15 @@ export function CreateSignerPage() {
 function NextStep({ number, done, label }: { number: number; done: boolean; label: string }) {
 	return (
 		<div className="flex items-center gap-2.5">
-			<div className={cn(
-				'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-				done
-					? 'bg-success/10 text-success'
-					: 'bg-surface-hover text-text-dim',
-			)}>
+			<div
+				className={cn(
+					'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+					done ? 'bg-success/10 text-success' : 'bg-surface-hover text-text-dim',
+				)}
+			>
 				{done ? <Check className="h-3 w-3" /> : number}
 			</div>
-			<span className={cn(
-				'text-[12px]',
-				done ? 'text-text-muted line-through' : 'text-text',
-			)}>
+			<span className={cn('text-[12px]', done ? 'text-text-muted line-through' : 'text-text')}>
 				{label}
 			</span>
 		</div>
@@ -732,9 +744,15 @@ tx = signer.send_transaction(
 			<div className="px-4 pb-4">
 				<Tabs defaultValue="cli" className="mt-3">
 					<TabsList className="w-full">
-						<TabsTrigger value="cli" className="flex-1 text-[11px]">CLI</TabsTrigger>
-						<TabsTrigger value="sdk" className="flex-1 text-[11px]">TypeScript</TabsTrigger>
-						<TabsTrigger value="python" className="flex-1 text-[11px]">Python</TabsTrigger>
+						<TabsTrigger value="cli" className="flex-1 text-[11px]">
+							CLI
+						</TabsTrigger>
+						<TabsTrigger value="sdk" className="flex-1 text-[11px]">
+							TypeScript
+						</TabsTrigger>
+						<TabsTrigger value="python" className="flex-1 text-[11px]">
+							Python
+						</TabsTrigger>
 					</TabsList>
 					<TabsContent value="cli">
 						<pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-background p-3 font-mono text-[11px] text-text-muted leading-relaxed">

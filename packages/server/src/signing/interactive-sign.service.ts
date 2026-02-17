@@ -1,12 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import {
-	ForbiddenException,
-	Inject,
-	Injectable,
-	Logger,
-	NotFoundException,
-	OnModuleDestroy,
-} from '@nestjs/common';
 import type {
 	IChain,
 	IPolicyEngine,
@@ -15,10 +7,19 @@ import type {
 	IThresholdScheme,
 	KeyMaterial,
 	PolicyContext,
+	PolicyResult,
 	TransactionRequest,
 } from '@agentokratia/guardian-core';
 import { RequestStatus, RequestType, SigningPath } from '@agentokratia/guardian-core';
 import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
+import {
+	ForbiddenException,
+	Inject,
+	Injectable,
+	Logger,
+	NotFoundException,
+	type OnModuleDestroy,
+} from '@nestjs/common';
 import { hexToBytes, keccak256, toHex } from 'viem';
 import { SigningRequestRepository } from '../audit/signing-request.repository.js';
 import { ChainRegistryService } from '../common/chain.module.js';
@@ -73,7 +74,11 @@ export interface CreateSessionOutput {
 	readonly serverFirstMessages: Uint8Array[];
 	readonly messageHash: Uint8Array;
 	readonly eid: Uint8Array;
-	readonly partyConfig: { serverPartyIndex: number; clientPartyIndex: number; partiesAtKeygen: number[] };
+	readonly partyConfig: {
+		serverPartyIndex: number;
+		clientPartyIndex: number;
+		partiesAtKeygen: number[];
+	};
 	readonly roundsRemaining: number;
 }
 
@@ -206,7 +211,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 
 		// Step 4: Evaluate policies
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
-		let policyResult;
+		let policyResult: PolicyResult;
 
 		if (policyDoc) {
 			policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
@@ -225,20 +230,22 @@ export class InteractiveSignService implements OnModuleDestroy {
 
 		// Step 5: If blocked, log and throw
 		if (!policyResult.allowed) {
-			await this.signingRequestRepo.create({
-				signerId: signer.id,
-				ownerAddress: signer.ownerAddress,
-				requestType: RequestType.SIGN_TX,
-				signingPath,
-				status: RequestStatus.BLOCKED,
-				toAddress: decoded.to,
-				valueWei: populatedTx.value?.toString(),
-				chainId: populatedTx.chainId,
-				decodedAction: decoded.functionName,
-				policyViolations: policyResult.violations as unknown as Record<string, unknown>[],
-				policiesEvaluated: policyResult.evaluatedCount,
-				evaluationTimeMs: policyResult.evaluationTimeMs,
-			}).catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
+			await this.signingRequestRepo
+				.create({
+					signerId: signer.id,
+					ownerAddress: signer.ownerAddress,
+					requestType: RequestType.SIGN_TX,
+					signingPath,
+					status: RequestStatus.BLOCKED,
+					toAddress: decoded.to,
+					valueWei: populatedTx.value?.toString(),
+					chainId: populatedTx.chainId,
+					decodedAction: decoded.functionName,
+					policyViolations: policyResult.violations as unknown as Record<string, unknown>[],
+					policiesEvaluated: policyResult.evaluatedCount,
+					evaluationTimeMs: policyResult.evaluationTimeMs,
+				})
+				.catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
 
 			throw new ForbiddenException({
 				message: 'Transaction blocked by policy',
@@ -266,9 +273,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			let expectedPublicKey: Uint8Array = new Uint8Array(33);
 			if (this.scheme.extractPublicKey) {
 				try {
-					expectedPublicKey = this.scheme.extractPublicKey(
-						new Uint8Array(keyMaterial.coreShare),
-					);
+					expectedPublicKey = this.scheme.extractPublicKey(new Uint8Array(keyMaterial.coreShare));
 				} catch {
 					// Non-fatal — recovery ID computation will fail gracefully
 				}
@@ -279,12 +284,11 @@ export class InteractiveSignService implements OnModuleDestroy {
 			// use the same num-bigint backend. Native GMP (rug) protocol messages
 			// are incompatible with browser WASM (num-bigint).
 			const forceWasm = signingPath === SigningPath.USER_SERVER;
-			const { sessionId: schemeSessionId, firstMessages } =
-				await this.scheme.createSignSession(
-					[keyMaterial.coreShare, keyMaterial.auxInfo],
-					messageHash,
-					{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
-				);
+			const { sessionId: schemeSessionId, firstMessages } = await this.scheme.createSignSession(
+				[keyMaterial.coreShare, keyMaterial.auxInfo],
+				messageHash,
+				{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
+			);
 
 			// Wipe parsed key material (the raw bytes are kept for session state)
 			wipeBuffer(keyMaterial.coreShare);
@@ -360,11 +364,10 @@ export class InteractiveSignService implements OnModuleDestroy {
 		// Drive the scheme's state machine with incoming messages
 		let result: { outgoingMessages: Uint8Array[]; complete: boolean };
 		try {
-			result = await this.scheme.processSignRound(
-				state.schemeSessionId,
-				input.incomingMessages,
+			result = await this.scheme.processSignRound(state.schemeSessionId, input.incomingMessages);
+			this.logger.debug(
+				`processRound: session=${input.sessionId.slice(0, 8)} round=${state.round + 1} msgs=${input.incomingMessages.length} → outgoing=${result.outgoingMessages.length} complete=${result.complete}`,
 			);
-			this.logger.debug(`processRound: session=${input.sessionId.slice(0, 8)} round=${state.round + 1} msgs=${input.incomingMessages.length} → outgoing=${result.outgoingMessages.length} complete=${result.complete}`);
 		} catch (err) {
 			this.logger.error(`processSignRound WASM error (round ${state.round + 1}): ${String(err)}`);
 			this.destroySession(input.sessionId);
@@ -387,7 +390,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 			throw new ForbiddenException('Session does not belong to this signer');
 		}
 		if (state.type !== 'tx') {
-			throw new ForbiddenException('Session is not a transaction session. Use /sign-message/complete instead.');
+			throw new ForbiddenException(
+				'Session is not a transaction session. Use /sign-message/complete instead.',
+			);
 		}
 
 		const signer = await this.signerRepo.findById(state.signerId);
@@ -489,7 +494,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		};
 
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
-		let policyResult;
+		let policyResult: PolicyResult;
 
 		if (policyDoc) {
 			policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
@@ -507,16 +512,18 @@ export class InteractiveSignService implements OnModuleDestroy {
 		}
 
 		if (!policyResult.allowed) {
-			await this.signingRequestRepo.create({
-				signerId: signer.id,
-				ownerAddress: signer.ownerAddress,
-				requestType: RequestType.SIGN_MESSAGE,
-				signingPath,
-				status: RequestStatus.BLOCKED,
-				policyViolations: policyResult.violations as unknown as Record<string, unknown>[],
-				policiesEvaluated: policyResult.evaluatedCount,
-				evaluationTimeMs: policyResult.evaluationTimeMs,
-			}).catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
+			await this.signingRequestRepo
+				.create({
+					signerId: signer.id,
+					ownerAddress: signer.ownerAddress,
+					requestType: RequestType.SIGN_MESSAGE,
+					signingPath,
+					status: RequestStatus.BLOCKED,
+					policyViolations: policyResult.violations as unknown as Record<string, unknown>[],
+					policiesEvaluated: policyResult.evaluatedCount,
+					evaluationTimeMs: policyResult.evaluationTimeMs,
+				})
+				.catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
 
 			throw new ForbiddenException({
 				message: 'Message signing blocked by policy',
@@ -539,9 +546,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			let expectedPublicKey: Uint8Array = new Uint8Array(33);
 			if (this.scheme.extractPublicKey) {
 				try {
-					expectedPublicKey = this.scheme.extractPublicKey(
-						new Uint8Array(keyMaterial.coreShare),
-					);
+					expectedPublicKey = this.scheme.extractPublicKey(new Uint8Array(keyMaterial.coreShare));
 				} catch {
 					// Non-fatal
 				}
@@ -550,12 +555,11 @@ export class InteractiveSignService implements OnModuleDestroy {
 			// CGGMP24: messageHash required upfront
 			// Force WASM for User+Server path (browser uses WASM num-bigint backend)
 			const forceWasm = signingPath === SigningPath.USER_SERVER;
-			const { sessionId: schemeSessionId, firstMessages } =
-				await this.scheme.createSignSession(
-					[keyMaterial.coreShare, keyMaterial.auxInfo],
-					input.messageHash,
-					{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
-				);
+			const { sessionId: schemeSessionId, firstMessages } = await this.scheme.createSignSession(
+				[keyMaterial.coreShare, keyMaterial.auxInfo],
+				input.messageHash,
+				{ partyIndex: serverPartyIndex, partiesAtKeygen, eid, forceWasm },
+			);
 
 			wipeBuffer(keyMaterial.coreShare);
 			wipeBuffer(keyMaterial.auxInfo);
@@ -565,10 +569,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 			let allServerMessages = [...firstMessages];
 			let round = 0;
 			if (input.signerFirstMessage) {
-				const signerResult = await this.scheme.processSignRound(
-					schemeSessionId,
-					[input.signerFirstMessage],
-				);
+				const signerResult = await this.scheme.processSignRound(schemeSessionId, [
+					input.signerFirstMessage,
+				]);
 				allServerMessages = [...allServerMessages, ...signerResult.outgoingMessages];
 				round = 1;
 			}
@@ -690,7 +693,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		chain: IChain,
 	): Promise<TransactionRequest> {
 		const chainId = tx.chainId || chain.chainId;
-		const nonce = tx.nonce ?? await chain.getNonce(signerAddress);
+		const nonce = tx.nonce ?? (await chain.getNonce(signerAddress));
 
 		let gasLimit = tx.gasLimit;
 		if (!gasLimit) {

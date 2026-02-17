@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import {
 	Inject,
 	Injectable,
@@ -9,7 +10,6 @@ import {
 	type OnModuleDestroy,
 	type OnModuleInit,
 } from '@nestjs/common';
-import type { IShareStore } from '@agentokratia/guardian-core';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
 
@@ -296,7 +296,10 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 			version: 1,
 			entries: this.pool.map((e) => ({ id: e.id, createdAt: e.createdAt })),
 		};
-		await this.shareStore.storeShare(MANIFEST_KEY, new TextEncoder().encode(JSON.stringify(manifest)));
+		await this.shareStore.storeShare(
+			MANIFEST_KEY,
+			new TextEncoder().encode(JSON.stringify(manifest)),
+		);
 	}
 
 	private async persistEntry(entry: PoolEntry): Promise<void> {

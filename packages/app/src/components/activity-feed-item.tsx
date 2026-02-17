@@ -53,9 +53,7 @@ export function ActivityFeedItem({ entry, signerName, showSigner = false }: Acti
 	const color = statusColor[entry.status as keyof typeof statusColor] ?? ('default' as const);
 	const isBlocked = entry.status === 'blocked' || entry.status === 'failed';
 	const explorerUrl =
-		entry.txHash && entry.chainId
-			? getExplorerTxUrlByChainId(entry.chainId, entry.txHash)
-			: null;
+		entry.txHash && entry.chainId ? getExplorerTxUrlByChainId(entry.chainId, entry.txHash) : null;
 
 	return (
 		<div
@@ -67,9 +65,7 @@ export function ActivityFeedItem({ entry, signerName, showSigner = false }: Acti
 			<ActionIcon entry={entry} />
 			<div className="flex-1 min-w-0">
 				<div className="flex items-center gap-2">
-					<span className="text-sm font-medium text-text truncate">
-						{actionLabel(entry)}
-					</span>
+					<span className="text-sm font-medium text-text truncate">{actionLabel(entry)}</span>
 					{showSigner && signerName && (
 						<span className="text-[11px] text-text-dim truncate rounded-full bg-surface-hover px-2 py-0.5">
 							{signerName}

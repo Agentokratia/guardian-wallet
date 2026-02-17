@@ -1,3 +1,26 @@
+import { NetworkIcon } from '@/components/network-icon';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select';
+import { useAuth } from '@/hooks/use-auth';
+import { useBalance } from '@/hooks/use-balance';
+import { useNetworks } from '@/hooks/use-networks';
+import { useSigner } from '@/hooks/use-signer';
+import { useToast } from '@/hooks/use-toast';
+import { useTokenBalances } from '@/hooks/use-token-balances';
+import { api } from '@/lib/api-client';
+import { browserInteractiveSign } from '@/lib/browser-signer';
+import { getChainId, getExplorerTxUrl } from '@/lib/chains';
+import { formatTokenBalance, formatWei } from '@/lib/formatters';
+import { decryptUserShare } from '@/lib/user-share-store';
+import { cn } from '@/lib/utils';
+import { wipePRF } from '@agentokratia/guardian-auth/browser';
 import { useMutation } from '@tanstack/react-query';
 import {
 	ArrowLeft,
@@ -12,29 +35,6 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { parseEther } from 'viem';
-import { wipePRF } from '@agentokratia/guardian-auth/browser';
-import { useAuth } from '@/hooks/use-auth';
-import { useBalance } from '@/hooks/use-balance';
-import { useNetworks } from '@/hooks/use-networks';
-import { NetworkIcon } from '@/components/network-icon';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
-import { useSigner } from '@/hooks/use-signer';
-import { useTokenBalances } from '@/hooks/use-token-balances';
-import { useToast } from '@/hooks/use-toast';
-import { api } from '@/lib/api-client';
-import { browserInteractiveSign } from '@/lib/browser-signer';
-import { getChainId, getExplorerTxUrl } from '@/lib/chains';
-import { formatTokenBalance, formatWei } from '@/lib/formatters';
-import { cn } from '@/lib/utils';
-import { decryptUserShare } from '@/lib/user-share-store';
 
 const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
@@ -109,7 +109,13 @@ function SigningProgress({ currentStep }: { currentStep: SigningStepKey }) {
 							) : isComplete ? (
 								<div className="flex h-4 w-4 items-center justify-center rounded-full bg-success text-white">
 									<svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none">
-										<path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+										<path
+											d="M2 5L4 7L8 3"
+											stroke="currentColor"
+											strokeWidth="1.5"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
 									</svg>
 								</div>
 							) : (
@@ -182,12 +188,14 @@ export function SignPage() {
 	const [addressTouched, setAddressTouched] = useState(false);
 	const [amountTouched, setAmountTouched] = useState(false);
 
-	const addressError = addressTouched && toAddress && !ETH_ADDRESS_REGEX.test(toAddress)
-		? 'Enter a valid Ethereum address'
-		: null;
-	const amountError = amountTouched && value && (Number.isNaN(Number(value)) || Number(value) <= 0)
-		? 'Enter a valid amount'
-		: null;
+	const addressError =
+		addressTouched && toAddress && !ETH_ADDRESS_REGEX.test(toAddress)
+			? 'Enter a valid Ethereum address'
+			: null;
+	const amountError =
+		amountTouched && value && (Number.isNaN(Number(value)) || Number(value) <= 0)
+			? 'Enter a valid amount'
+			: null;
 
 	const isFormValid =
 		ETH_ADDRESS_REGEX.test(toAddress) &&
@@ -239,11 +247,15 @@ export function SignPage() {
 				console.log('[sign] Step 1 OK: Got PRF, length:', prfOutput.length);
 			} catch (err) {
 				console.error('[sign] Step 1 FAILED:', err);
-				throw new Error(`Passkey authentication failed: ${err instanceof Error ? err.message : String(err)}`);
+				throw new Error(
+					`Passkey authentication failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 
 			// Log PRF fingerprint for debugging
-			const prfHex = Array.from(prfOutput.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('');
+			const prfHex = Array.from(prfOutput.slice(0, 8))
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join('');
 			console.log('[sign] PRF fingerprint (first 8 bytes):', prfHex);
 
 			let userShareBytes: Uint8Array;
@@ -253,11 +265,20 @@ export function SignPage() {
 				setSigningStep('fetch');
 				console.log('[sign] Step 2a: Fetching encrypted user share...');
 				encrypted = await api.get<EncryptedShareResponse>(`/signers/${id}/user-share`);
-				console.log('[sign] Step 2a OK: iv:', encrypted.iv?.slice(0, 20), 'salt:', encrypted.salt?.slice(0, 20), 'ct length:', encrypted.ciphertext?.length);
+				console.log(
+					'[sign] Step 2a OK: iv:',
+					encrypted.iv?.slice(0, 20),
+					'salt:',
+					encrypted.salt?.slice(0, 20),
+					'ct length:',
+					encrypted.ciphertext?.length,
+				);
 			} catch (err) {
 				console.error('[sign] Step 2a FAILED: Fetch error:', err);
 				wipePRF(prfOutput);
-				throw new Error(`Failed to fetch user share: ${err instanceof Error ? err.message : String(err)}`);
+				throw new Error(
+					`Failed to fetch user share: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 
 			// Step 2b: Decrypt the share with PRF
@@ -268,25 +289,30 @@ export function SignPage() {
 			} catch (err) {
 				console.error('[sign] Step 2b FAILED: AES-GCM error:', err);
 				wipePRF(prfOutput);
-				throw new Error(`Share decryption failed (AES-GCM): ${err instanceof Error ? err.message : String(err)}`);
+				throw new Error(
+					`Share decryption failed (AES-GCM): ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 			wipePRF(prfOutput);
 
 			setSigningStep('signing');
 			const chainId = getChainId(network);
 			const valueWei = value ? parseEther(value).toString() : undefined;
-			console.log('[sign] Step 3: Starting interactive signing — chainId:', chainId, 'to:', toAddress, 'value:', valueWei);
-
-			const result = await browserInteractiveSign(
-				userShareBytes,
-				id,
-				{
-					to: toAddress,
-					value: valueWei,
-					data: calldata || undefined,
-					chainId,
-				},
+			console.log(
+				'[sign] Step 3: Starting interactive signing — chainId:',
+				chainId,
+				'to:',
+				toAddress,
+				'value:',
+				valueWei,
 			);
+
+			const result = await browserInteractiveSign(userShareBytes, id, {
+				to: toAddress,
+				value: valueWei,
+				data: calldata || undefined,
+				chainId,
+			});
 
 			console.log('[sign] Step 3 OK: Signing complete — txHash:', result.txHash);
 			setSigningStep(null);
@@ -329,7 +355,13 @@ export function SignPage() {
 					<div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/10 mb-5">
 						<div className="flex h-10 w-10 items-center justify-center rounded-full bg-success text-white">
 							<svg className="h-5 w-5" viewBox="0 0 20 20" fill="none">
-								<path d="M5 10L9 14L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+								<path
+									d="M5 10L9 14L15 6"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
 							</svg>
 						</div>
 					</div>
@@ -344,7 +376,9 @@ export function SignPage() {
 						<div className="space-y-3">
 							<div className="flex items-center justify-between text-sm">
 								<span className="text-text-dim">Amount</span>
-								<span className="font-semibold text-text">{value} {selectedToken}</span>
+								<span className="font-semibold text-text">
+									{value} {selectedToken}
+								</span>
 							</div>
 							<div className="flex items-center justify-between text-sm">
 								<span className="text-text-dim">To</span>
@@ -430,7 +464,8 @@ export function SignPage() {
 						<div className="mt-5 rounded-lg bg-accent/[0.04] border border-accent/10 px-4 py-3">
 							<p className="text-[12px] text-text-dim leading-relaxed">
 								<Shield className="h-3 w-3 inline mr-1.5 text-accent" />
-								Your private key is never reconstructed. Two shares sign independently using threshold cryptography.
+								Your private key is never reconstructed. Two shares sign independently using
+								threshold cryptography.
 							</p>
 						</div>
 					</div>
@@ -476,7 +511,10 @@ export function SignPage() {
 				<div className="p-5 space-y-5">
 					{/* ── Network (first — determines available assets) ── */}
 					<div>
-						<label htmlFor="send-network" className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
+						<label
+							htmlFor="send-network"
+							className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block"
+						>
 							Network
 						</label>
 						{(() => {
@@ -563,10 +601,12 @@ export function SignPage() {
 								// For now, ETH only. Token selector could expand later.
 							}}
 						>
-							<div className={cn(
-								'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
-								getTokenColor(selectedToken),
-							)}>
+							<div
+								className={cn(
+									'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+									getTokenColor(selectedToken),
+								)}
+							>
 								{selectedToken.slice(0, 2)}
 							</div>
 							<div className="flex-1 min-w-0">
@@ -581,7 +621,10 @@ export function SignPage() {
 
 					{/* ── Recipient ── */}
 					<div>
-						<label htmlFor="send-to" className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
+						<label
+							htmlFor="send-to"
+							className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block"
+						>
 							Recipient
 						</label>
 						<Input
@@ -598,14 +641,19 @@ export function SignPage() {
 						{addressError ? (
 							<p className="text-[11px] text-danger mt-1.5">{addressError}</p>
 						) : !addressTouched && !toAddress ? (
-							<p className="text-[11px] text-text-dim mt-1.5">The Ethereum address that will receive the funds.</p>
+							<p className="text-[11px] text-text-dim mt-1.5">
+								The Ethereum address that will receive the funds.
+							</p>
 						) : null}
 					</div>
 
 					{/* ── Amount ── */}
 					<div>
 						<div className="flex items-center justify-between mb-2">
-							<label htmlFor="send-amount" className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+							<label
+								htmlFor="send-amount"
+								className="text-[11px] font-medium uppercase tracking-wider text-text-dim"
+							>
 								Amount
 							</label>
 							<button
@@ -638,7 +686,9 @@ export function SignPage() {
 						{amountError ? (
 							<p className="text-[11px] text-danger mt-1.5">{amountError}</p>
 						) : !amountTouched && !value ? (
-							<p className="text-[11px] text-text-dim mt-1.5">Gas fees will be deducted separately from this amount.</p>
+							<p className="text-[11px] text-text-dim mt-1.5">
+								Gas fees will be deducted separately from this amount.
+							</p>
 						) : null}
 					</div>
 
@@ -649,12 +699,17 @@ export function SignPage() {
 							onClick={() => setShowAdvanced(!showAdvanced)}
 							className="text-[11px] font-medium text-text-dim hover:text-text transition-colors flex items-center gap-1"
 						>
-							<ChevronDown className={cn('h-3 w-3 transition-transform', showAdvanced && 'rotate-180')} />
+							<ChevronDown
+								className={cn('h-3 w-3 transition-transform', showAdvanced && 'rotate-180')}
+							/>
 							Advanced options
 						</button>
 						{showAdvanced && (
 							<div className="mt-3">
-								<label htmlFor="send-calldata" className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block">
+								<label
+									htmlFor="send-calldata"
+									className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block"
+								>
 									Calldata
 								</label>
 								<Input
@@ -664,7 +719,9 @@ export function SignPage() {
 									value={calldata}
 									onChange={(e) => setCalldata(e.target.value)}
 								/>
-								<p className="text-[10px] text-text-dim mt-1">Raw hex data for contract interactions</p>
+								<p className="text-[10px] text-text-dim mt-1">
+									Raw hex data for contract interactions
+								</p>
 							</div>
 						)}
 					</div>
@@ -686,12 +743,12 @@ export function SignPage() {
 							</div>
 							<div className="flex items-center justify-between text-sm">
 								<span className="text-text-dim">Status</span>
-								<span className={cn(
-									'text-xs font-semibold px-2 py-0.5 rounded-full',
-									simulation.success
-										? 'bg-success/10 text-success'
-										: 'bg-danger/10 text-danger',
-								)}>
+								<span
+									className={cn(
+										'text-xs font-semibold px-2 py-0.5 rounded-full',
+										simulation.success ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
+									)}
+								>
 									{simulation.success ? 'Likely success' : 'May revert'}
 								</span>
 							</div>
@@ -734,7 +791,8 @@ export function SignPage() {
 
 						{!isAuthenticated && (
 							<p className="text-[11px] text-center text-warning">
-								Sign in with your passkey to unlock sending. Your key share is encrypted on the server and can only be decrypted by your device.
+								Sign in with your passkey to unlock sending. Your key share is encrypted on the
+								server and can only be decrypted by your device.
 							</p>
 						)}
 					</div>

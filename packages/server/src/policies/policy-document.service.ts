@@ -1,5 +1,5 @@
-import { Inject, Injectable, BadRequestException } from '@nestjs/common';
 import type { Criterion, PolicyRule } from '@agentokratia/guardian-core';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PolicyDocumentRepository } from './policy-document.repository.js';
 import type { PolicyDocumentEntity } from './policy-document.types.js';
 
@@ -21,9 +21,7 @@ const VALID_ACTIONS = new Set(['accept', 'reject']);
 
 @Injectable()
 export class PolicyDocumentService {
-	constructor(
-		@Inject(PolicyDocumentRepository) private readonly repo: PolicyDocumentRepository,
-	) {}
+	constructor(@Inject(PolicyDocumentRepository) private readonly repo: PolicyDocumentRepository) {}
 
 	async get(signerId: string): Promise<PolicyDocumentEntity | null> {
 		return this.repo.findBySigner(signerId);
@@ -138,7 +136,9 @@ export class PolicyDocumentService {
 
 	private validateWei(value: string, prefix: string): void {
 		if (typeof value !== 'string' || !/^\d+$/.test(value)) {
-			throw new BadRequestException(`${prefix}: wei value must be a non-negative integer string, got "${value}"`);
+			throw new BadRequestException(
+				`${prefix}: wei value must be a non-negative integer string, got "${value}"`,
+			);
 		}
 	}
 }

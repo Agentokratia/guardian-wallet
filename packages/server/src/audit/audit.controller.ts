@@ -1,5 +1,5 @@
-import { Controller, Get, Inject, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { RequestStatus } from '@agentokratia/guardian-core';
+import { Controller, Get, Inject, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
@@ -23,7 +23,9 @@ function escapeCsvField(value: string): string {
 @Controller()
 @UseGuards(EitherAuthGuard)
 export class AuditController {
-	constructor(@Inject(SigningRequestRepository) private readonly signingRequestRepo: SigningRequestRepository) {}
+	constructor(
+		@Inject(SigningRequestRepository) private readonly signingRequestRepo: SigningRequestRepository,
+	) {}
 
 	@Get('audit-log')
 	async list(

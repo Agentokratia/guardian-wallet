@@ -27,21 +27,13 @@ export interface IThresholdScheme {
 	 * Phase A of the CGGMP24 two-phase DKG — generates Paillier key pairs
 	 * and ring-Pedersen parameters needed for signing.
 	 */
-	auxInfoGen(
-		sessionId: string,
-		round: number,
-		incoming: Uint8Array[],
-	): Promise<AuxInfoRoundResult>;
+	auxInfoGen(sessionId: string, round: number, incoming: Uint8Array[]): Promise<AuxInfoRoundResult>;
 
 	/**
 	 * Run one round of the key generation ceremony.
 	 * Phase B of the CGGMP24 two-phase DKG — generates CoreKeyShares.
 	 */
-	dkg(
-		sessionId: string,
-		round: number,
-		incoming: Uint8Array[],
-	): Promise<DKGRoundResult>;
+	dkg(sessionId: string, round: number, incoming: Uint8Array[]): Promise<DKGRoundResult>;
 
 	/** Derive an Ethereum address from a compressed or uncompressed public key. */
 	deriveAddress(publicKey: Uint8Array): string;
@@ -107,9 +99,7 @@ export interface IThresholdScheme {
 	 * Create a presignature session — produces a reusable presignature
 	 * that enables instant non-interactive signing later.
 	 */
-	createPresignSession(
-		keyMaterialBytes: Uint8Array[],
-	): {
+	createPresignSession(keyMaterialBytes: Uint8Array[]): {
 		sessionId: string;
 		firstMessages: Uint8Array[];
 	};
@@ -132,10 +122,7 @@ export interface IThresholdScheme {
 	/**
 	 * Issue a partial signature from a presignature (non-interactive, instant).
 	 */
-	issuePartialSignature(
-		presignature: Uint8Array,
-		messageHash: Uint8Array,
-	): Uint8Array;
+	issuePartialSignature(presignature: Uint8Array, messageHash: Uint8Array): Uint8Array;
 
 	/**
 	 * Combine partial signatures into a full ECDSA signature.

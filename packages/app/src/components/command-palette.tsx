@@ -1,14 +1,7 @@
 import { useSigners } from '@/hooks/use-signers';
 import { getTypeIcon } from '@/lib/signer-constants';
 import { Command } from 'cmdk';
-import {
-	Activity,
-	Plus,
-	Search,
-	Send,
-	Settings,
-	Shield,
-} from 'lucide-react';
+import { Activity, Plus, Search, Send, Settings, Shield } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -64,21 +57,53 @@ export function CommandPalette() {
 						</Command.Empty>
 
 						{/* Pages */}
-						<Command.Group heading="Pages" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim">
-							<CommandItem onSelect={() => go('/signers')} icon={<Shield className="h-4 w-4" />} label="Dashboard" shortcut="D" />
-							<CommandItem onSelect={() => go('/audit')} icon={<Activity className="h-4 w-4" />} label="Activity" shortcut="A" />
-							<CommandItem onSelect={() => go('/settings')} icon={<Settings className="h-4 w-4" />} label="Settings" shortcut="S" />
+						<Command.Group
+							heading="Pages"
+							className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim"
+						>
+							<CommandItem
+								onSelect={() => go('/signers')}
+								icon={<Shield className="h-4 w-4" />}
+								label="Dashboard"
+								shortcut="D"
+							/>
+							<CommandItem
+								onSelect={() => go('/audit')}
+								icon={<Activity className="h-4 w-4" />}
+								label="Activity"
+								shortcut="A"
+							/>
+							<CommandItem
+								onSelect={() => go('/settings')}
+								icon={<Settings className="h-4 w-4" />}
+								label="Settings"
+								shortcut="S"
+							/>
 						</Command.Group>
 
 						{/* Actions */}
-						<Command.Group heading="Actions" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim">
-							<CommandItem onSelect={() => go('/signers/new')} icon={<Plus className="h-4 w-4" />} label="Create new account" />
-							<CommandItem onSelect={() => go('/sign')} icon={<Send className="h-4 w-4" />} label="Send transaction" />
+						<Command.Group
+							heading="Actions"
+							className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim"
+						>
+							<CommandItem
+								onSelect={() => go('/signers/new')}
+								icon={<Plus className="h-4 w-4" />}
+								label="Create new account"
+							/>
+							<CommandItem
+								onSelect={() => go('/sign')}
+								icon={<Send className="h-4 w-4" />}
+								label="Send transaction"
+							/>
 						</Command.Group>
 
 						{/* Accounts */}
 						{signers && signers.length > 0 && (
-							<Command.Group heading="Accounts" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim">
+							<Command.Group
+								heading="Accounts"
+								className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-text-dim"
+							>
 								{signers.map((signer) => (
 									<CommandItem
 										key={signer.id}
@@ -117,11 +142,7 @@ function CommandItem({
 		>
 			<span className="shrink-0 text-text-dim">{icon}</span>
 			<span className="flex-1 truncate">{label}</span>
-			{meta && (
-				<span className="shrink-0 font-mono text-[11px] text-text-dim">
-					{meta}
-				</span>
-			)}
+			{meta && <span className="shrink-0 font-mono text-[11px] text-text-dim">{meta}</span>}
 			{shortcut && <kbd>{shortcut}</kbd>}
 		</Command.Item>
 	);

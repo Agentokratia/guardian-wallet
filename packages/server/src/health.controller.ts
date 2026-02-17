@@ -1,9 +1,9 @@
-import { Controller, Get, Inject, Res } from '@nestjs/common';
 import type { IShareStore } from '@agentokratia/guardian-core';
+import { Controller, Get, Inject, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { SupabaseService } from './common/supabase.service.js';
 import { APP_CONFIG, type AppConfig } from './common/config.js';
 import { SHARE_STORE } from './common/share-store.module.js';
+import { SupabaseService } from './common/supabase.service.js';
 import { AuxInfoPoolService } from './dkg/aux-info-pool.service.js';
 
 @Controller('health')

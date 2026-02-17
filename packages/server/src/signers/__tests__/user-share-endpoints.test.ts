@@ -1,5 +1,5 @@
-import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import type { IChain, IShareStore } from '@agentokratia/guardian-core';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRequest } from '../../common/authenticated-request.js';
 import { SignerController } from '../signer.controller.js';
@@ -34,8 +34,16 @@ function createMocks() {
 	};
 
 	const chainRegistry = {
-		getChain: vi.fn().mockResolvedValue({ chainId: 11155111, name: 'sepolia', getBalance: vi.fn().mockResolvedValue(0n) }),
-		getChainByName: vi.fn().mockResolvedValue({ chainId: 11155111, name: 'sepolia', getBalance: vi.fn().mockResolvedValue(0n) }),
+		getChain: vi.fn().mockResolvedValue({
+			chainId: 11155111,
+			name: 'sepolia',
+			getBalance: vi.fn().mockResolvedValue(0n),
+		}),
+		getChainByName: vi.fn().mockResolvedValue({
+			chainId: 11155111,
+			name: 'sepolia',
+			getBalance: vi.fn().mockResolvedValue(0n),
+		}),
 		invalidateCache: vi.fn(),
 	};
 
@@ -75,12 +83,16 @@ describe('SignerController — user share endpoints', () => {
 
 	describe('storeUserShare', () => {
 		it('verifies signer exists before storing', async () => {
-			await controller.storeUserShare('signer-1', {
-				walletAddress: '0xwallet',
-				iv: 'aXY=',
-				ciphertext: 'Y2lwaGVy',
-				salt: 'c2FsdA==',
-			}, defaultReq);
+			await controller.storeUserShare(
+				'signer-1',
+				{
+					walletAddress: '0xwallet',
+					iv: 'aXY=',
+					ciphertext: 'Y2lwaGVy',
+					salt: 'c2FsdA==',
+				},
+				defaultReq,
+			);
 
 			expect(mocks.signerService.get).toHaveBeenCalledWith('signer-1');
 		});
@@ -108,12 +120,16 @@ describe('SignerController — user share endpoints', () => {
 		});
 
 		it('returns success on store', async () => {
-			const result = await controller.storeUserShare('signer-1', {
-				walletAddress: '0xwallet',
-				iv: 'aXY=',
-				ciphertext: 'Y2lwaGVy',
-				salt: 'c2FsdA==',
-			}, defaultReq);
+			const result = await controller.storeUserShare(
+				'signer-1',
+				{
+					walletAddress: '0xwallet',
+					iv: 'aXY=',
+					ciphertext: 'Y2lwaGVy',
+					salt: 'c2FsdA==',
+				},
+				defaultReq,
+			);
 
 			expect(result).toEqual({ success: true });
 		});
@@ -124,12 +140,16 @@ describe('SignerController — user share endpoints', () => {
 			);
 
 			await expect(
-				controller.storeUserShare('nonexistent', {
-					walletAddress: '0xwallet',
-					iv: 'aXY=',
-					ciphertext: 'Y2lwaGVy',
-					salt: 'c2FsdA==',
-				}, defaultReq),
+				controller.storeUserShare(
+					'nonexistent',
+					{
+						walletAddress: '0xwallet',
+						iv: 'aXY=',
+						ciphertext: 'Y2lwaGVy',
+						salt: 'c2FsdA==',
+					},
+					defaultReq,
+				),
 			).rejects.toThrow('Signer not found');
 		});
 	});
@@ -166,9 +186,7 @@ describe('SignerController — user share endpoints', () => {
 
 			const result = await controller.getUserShare('signer-1', defaultReq);
 
-			expect(mocks.shareStore.getShare).toHaveBeenCalledWith(
-				'user-encrypted/signer-1',
-			);
+			expect(mocks.shareStore.getShare).toHaveBeenCalledWith('user-encrypted/signer-1');
 			expect(result).toEqual(dto);
 		});
 
@@ -182,12 +200,8 @@ describe('SignerController — user share endpoints', () => {
 				expect.fail('Should have thrown');
 			} catch (error) {
 				expect(error).toBeInstanceOf(HttpException);
-				expect((error as HttpException).getStatus()).toBe(
-					HttpStatus.NOT_FOUND,
-				);
-				expect((error as HttpException).message).toBe(
-					'User share not found',
-				);
+				expect((error as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+				expect((error as HttpException).message).toBe('User share not found');
 			}
 		});
 

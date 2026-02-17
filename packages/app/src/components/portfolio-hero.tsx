@@ -26,11 +26,7 @@ export function PortfolioHero({
 					Total Portfolio Balance
 				</p>
 				<div className="mt-3 text-5xl font-bold tabular-nums tracking-tight text-white">
-					{isLoading ? (
-						<Loader2 className="h-10 w-10 animate-spin text-white/30" />
-					) : (
-						totalBalance
-					)}
+					{isLoading ? <Loader2 className="h-10 w-10 animate-spin text-white/30" /> : totalBalance}
 				</div>
 
 				{/* Stats row */}

@@ -19,7 +19,7 @@ function stats(arr: number[]) {
 	const median = n % 2 ? sorted[Math.floor(n / 2)]! : (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2;
 	const p5 = sorted[Math.floor(n * 0.05)]!;
 	const p95 = sorted[Math.floor(n * 0.95)]!;
-	const ci95 = 1.96 * stddev / Math.sqrt(n); // 95% confidence interval
+	const ci95 = (1.96 * stddev) / Math.sqrt(n); // 95% confidence interval
 	return { mean, median, stddev, min: sorted[0]!, max: sorted[n - 1]!, p5, p95, ci95 };
 }
 
@@ -45,7 +45,7 @@ async function main() {
 		});
 
 		const t0 = performance.now();
-		await signer.signMessage('bench ' + Date.now() + ' ' + i);
+		await signer.signMessage(`bench ${Date.now()} ${i}`);
 		const elapsed = performance.now() - t0;
 
 		timings.push(elapsed);
@@ -62,7 +62,9 @@ async function main() {
 	console.log(`  Mean:     ${s.mean.toFixed(0)} ms`);
 	console.log(`  Median:   ${s.median.toFixed(0)} ms`);
 	console.log(`  Std dev:  ${s.stddev.toFixed(0)} ms`);
-	console.log(`  95% CI:   ±${s.ci95.toFixed(0)} ms  (${(s.mean - s.ci95).toFixed(0)}–${(s.mean + s.ci95).toFixed(0)} ms)`);
+	console.log(
+		`  95% CI:   ±${s.ci95.toFixed(0)} ms  (${(s.mean - s.ci95).toFixed(0)}–${(s.mean + s.ci95).toFixed(0)} ms)`,
+	);
 	console.log(`  Min:      ${s.min.toFixed(0)} ms`);
 	console.log(`  Max:      ${s.max.toFixed(0)} ms`);
 	console.log(`  P5:       ${s.p5.toFixed(0)} ms`);
@@ -70,11 +72,13 @@ async function main() {
 	console.log('');
 
 	// LaTeX-ready output
-	console.log(`  LaTeX: median=${s.median.toFixed(0)}ms, mean=${s.mean.toFixed(0)}±${s.ci95.toFixed(0)}ms, P5/P95=${s.p5.toFixed(0)}/${s.p95.toFixed(0)}ms, range=${s.min.toFixed(0)}–${s.max.toFixed(0)}ms`);
+	console.log(
+		`  LaTeX: median=${s.median.toFixed(0)}ms, mean=${s.mean.toFixed(0)}±${s.ci95.toFixed(0)}ms, P5/P95=${s.p5.toFixed(0)}/${s.p95.toFixed(0)}ms, range=${s.min.toFixed(0)}–${s.max.toFixed(0)}ms`,
+	);
 	console.log('');
 }
 
-main().catch(err => {
+main().catch((err) => {
 	console.error('Benchmark failed:', err);
 	process.exit(1);
 });

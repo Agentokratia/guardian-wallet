@@ -37,8 +37,7 @@ export function useCreateSigner() {
 
 export function useDKGInit() {
 	return useMutation({
-		mutationFn: (data: { signerId: string }) =>
-			api.post<DKGInitResult>('/dkg/init', data),
+		mutationFn: (data: { signerId: string }) => api.post<DKGInitResult>('/dkg/init', data),
 	});
 }
 

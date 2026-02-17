@@ -1,4 +1,3 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { IShareStore, Signer } from '@agentokratia/guardian-core';
 import {
 	ChainName,
@@ -7,6 +6,7 @@ import {
 	SignerStatus,
 	SignerType,
 } from '@agentokratia/guardian-core';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as cryptoUtils from '../../common/crypto-utils.js';
 import type { SignerRepository } from '../../signers/signer.repository.js';
@@ -145,17 +145,13 @@ describe('DKGService', () => {
 		it('throws NotFoundException when signer does not exist', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(null);
 
-			await expect(service.init({ signerId: 'nonexistent' })).rejects.toThrow(
-				NotFoundException,
-			);
+			await expect(service.init({ signerId: 'nonexistent' })).rejects.toThrow(NotFoundException);
 		});
 
 		it('throws BadRequestException when DKG already completed', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ dkgCompleted: true }));
 
-			await expect(service.init({ signerId: 'signer-1' })).rejects.toThrow(
-				BadRequestException,
-			);
+			await expect(service.init({ signerId: 'signer-1' })).rejects.toThrow(BadRequestException);
 		});
 
 		it('creates a new session and returns sessionId + signerId', async () => {
@@ -225,10 +221,7 @@ describe('DKGService', () => {
 			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, undefined);
 			// Server share stored in Vault (bundled as JSON key material)
 			expect(mocks.vault.storeShare).toHaveBeenCalledTimes(1);
-			expect(mocks.vault.storeShare).toHaveBeenCalledWith(
-				'signer-1',
-				expect.any(Uint8Array),
-			);
+			expect(mocks.vault.storeShare).toHaveBeenCalledWith('signer-1', expect.any(Uint8Array));
 		});
 
 		it('updates signer record with ethAddress and dkgCompleted', async () => {
@@ -263,9 +256,7 @@ describe('DKGService', () => {
 			expect(typeof result.userShare).toBe('string');
 
 			// Signer share is base64-encoded JSON { coreShare, auxInfo }
-			const signerKm = JSON.parse(
-				Buffer.from(result.signerShare, 'base64').toString('utf-8'),
-			);
+			const signerKm = JSON.parse(Buffer.from(result.signerShare, 'base64').toString('utf-8'));
 			expect(signerKm).toHaveProperty('coreShare');
 			expect(signerKm).toHaveProperty('auxInfo');
 		});
@@ -293,8 +284,16 @@ describe('DKGService', () => {
 		});
 
 		it('wipes all key material buffers in finally block', async () => {
-			const coreShares = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])];
-			const auxInfos = [new Uint8Array([11, 12]), new Uint8Array([13, 14]), new Uint8Array([15, 16])];
+			const coreShares = [
+				new Uint8Array([1, 2, 3]),
+				new Uint8Array([4, 5, 6]),
+				new Uint8Array([7, 8, 9]),
+			];
+			const auxInfos = [
+				new Uint8Array([11, 12]),
+				new Uint8Array([13, 14]),
+				new Uint8Array([15, 16]),
+			];
 			const publicKey = new Uint8Array([10, 20]);
 
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
@@ -317,8 +316,16 @@ describe('DKGService', () => {
 		});
 
 		it('wipes buffers even when vault store fails', async () => {
-			const coreShares = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7, 8, 9])];
-			const auxInfos = [new Uint8Array([11, 12]), new Uint8Array([13, 14]), new Uint8Array([15, 16])];
+			const coreShares = [
+				new Uint8Array([1, 2, 3]),
+				new Uint8Array([4, 5, 6]),
+				new Uint8Array([7, 8, 9]),
+			];
+			const auxInfos = [
+				new Uint8Array([11, 12]),
+				new Uint8Array([13, 14]),
+				new Uint8Array([15, 16]),
+			];
 			const publicKey = new Uint8Array([10, 20]);
 
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
