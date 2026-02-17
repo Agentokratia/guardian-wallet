@@ -9,7 +9,8 @@ export type {
 	IChain,
 	TransactionRequest,
 } from './chain.interface.js';
-export type { IVaultStore } from './vault-store.interface.js';
+export type { IShareStore, IVaultStore } from './share-store.interface.js';
+export type { IKmsProvider } from './kms-provider.interface.js';
 export type {
 	IPolicyEngine,
 	IRulesEngine,

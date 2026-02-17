@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { IVaultStore, Signer } from '@agentokratia/guardian-core';
+import type { IShareStore, Signer } from '@agentokratia/guardian-core';
 import {
 	ChainName,
 	NetworkName,
@@ -20,7 +20,6 @@ import { DKGService } from '../dkg.service.js';
 const mockScheme = {
 	runDkg: vi.fn(),
 	deriveAddress: vi.fn().mockReturnValue('0xDerivedAddress123'),
-	hasPrimesReady: vi.fn().mockResolvedValue(false),
 };
 
 vi.mock('@agentokratia/guardian-schemes', () => ({
@@ -133,7 +132,7 @@ describe('DKGService', () => {
 
 		service = new DKGService(
 			mocks.signerRepo as unknown as SignerRepository,
-			mocks.vault as unknown as IVaultStore,
+			mocks.vault as unknown as IShareStore,
 			mocks.auxInfoPool as unknown as AuxInfoPoolService,
 		);
 	});

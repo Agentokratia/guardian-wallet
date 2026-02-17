@@ -9,9 +9,9 @@ import {
 	type OnModuleDestroy,
 	type OnModuleInit,
 } from '@nestjs/common';
-import type { IVaultStore } from '@agentokratia/guardian-core';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
-import { VAULT_STORE } from '../common/vault.module.js';
+import { SHARE_STORE } from '../common/share-store.module.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,8 +41,8 @@ export interface AuxInfoPoolStatus {
 // Constants
 // ---------------------------------------------------------------------------
 
-const VAULT_POOL_PREFIX = 'auxinfo-pool';
-const MANIFEST_KEY = `${VAULT_POOL_PREFIX}/_manifest`;
+const POOL_PREFIX = 'auxinfo-pool';
+const MANIFEST_KEY = `${POOL_PREFIX}/_manifest`;
 const MONITOR_INTERVAL_MS = 30_000;
 const GENERATOR_TIMEOUT_MS = 600_000;
 
@@ -81,14 +81,14 @@ function resolveNativeBinary(): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Vault-backed AuxInfo pool with background regeneration.
+ * AuxInfo pool with background regeneration, persisted via share store.
  *
  * AuxInfo = Paillier keypairs + ZK proofs. NOT ECDSA key material.
  * Pre-generating is cryptographically safe per CGGMP24 spec (separable sub-protocol).
  *
- * Security: encrypted at rest (Vault KV v2), consumed entries deleted synchronously
+ * Security: encrypted at rest via share store, consumed entries deleted synchronously
  * to prevent crash-reuse. Paillier private keys are JS strings (not wipeable) —
- * same limitation as PrimeCache. Exploitation needs: memory dump + signing
+ * same limitation as any JS string. Exploitation needs: memory dump + signing
  * transcripts + one ECDSA share.
  */
 @Injectable()
@@ -100,7 +100,7 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 	private nativeBinaryPath: string | null = null;
 
 	constructor(
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(APP_CONFIG) private readonly config: AppConfig,
 	) {}
 
@@ -109,11 +109,11 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 	async onModuleInit(): Promise<void> {
 		this.nativeBinaryPath = resolveNativeBinary();
 		if (!this.nativeBinaryPath) {
-			this.logger.warn('Native binary not found — pool disabled, DKG falls back to PrimeCache');
+			this.logger.warn('Native binary not found — pool disabled, DKG falls back to cold start');
 			return;
 		}
 
-		await this.loadFromVault();
+		await this.loadPool();
 		this.logger.log(
 			`AuxInfo pool loaded: ${this.pool.length}/${this.config.AUXINFO_POOL_TARGET} entries`,
 		);
@@ -138,7 +138,7 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 	/**
 	 * Consume one AuxInfo entry (FIFO). Returns JSON string or null if empty.
 	 *
-	 * Vault deletion is synchronous to prevent crash-reuse — two signers sharing
+	 * Deletion is synchronous to prevent crash-reuse — two signers sharing
 	 * identical Paillier (N, p, q) would be a cross-contamination risk.
 	 */
 	async take(): Promise<string | null> {
@@ -150,9 +150,9 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 		);
 
 		try {
-			await this.removeEntryFromVault(entry.id);
+			await this.removeEntry(entry.id);
 		} catch (err) {
-			this.logger.warn(`Failed to remove ${entry.id} from Vault: ${String(err)}`);
+			this.logger.warn(`Failed to remove pool entry ${entry.id}: ${String(err)}`);
 		}
 
 		this.monitorTick();
@@ -218,7 +218,7 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 				try {
 					await this.persistEntry(entry);
 				} catch (err) {
-					this.logger.warn(`Vault persist failed for ${entry.id}: ${String(err)} — in-memory only`);
+					this.logger.warn(`Persist failed for ${entry.id}: ${String(err)} — in-memory only`);
 				}
 			})
 			.catch((err) => {
@@ -249,15 +249,15 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 		});
 	}
 
-	// ---- Vault Operations ----
+	// ---- Persistence ----
 
-	private async loadFromVault(): Promise<void> {
+	private async loadPool(): Promise<void> {
 		let manifest: ManifestData;
 		try {
-			const raw = await this.vault.getShare(MANIFEST_KEY);
+			const raw = await this.shareStore.getShare(MANIFEST_KEY);
 			manifest = JSON.parse(new TextDecoder().decode(raw)) as ManifestData;
 		} catch {
-			this.logger.debug('No Vault manifest found — starting with empty pool');
+			this.logger.debug('No manifest found — starting with empty pool');
 			return;
 		}
 
@@ -269,7 +269,7 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 		let loaded = 0;
 		for (const meta of manifest.entries) {
 			try {
-				const raw = await this.vault.getShare(`${VAULT_POOL_PREFIX}/${meta.id}`);
+				const raw = await this.shareStore.getShare(`${POOL_PREFIX}/${meta.id}`);
 				const auxInfoJson = new TextDecoder().decode(raw);
 
 				if (!isValidAuxInfoJson(auxInfoJson)) {
@@ -296,19 +296,19 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 			version: 1,
 			entries: this.pool.map((e) => ({ id: e.id, createdAt: e.createdAt })),
 		};
-		await this.vault.storeShare(MANIFEST_KEY, new TextEncoder().encode(JSON.stringify(manifest)));
+		await this.shareStore.storeShare(MANIFEST_KEY, new TextEncoder().encode(JSON.stringify(manifest)));
 	}
 
 	private async persistEntry(entry: PoolEntry): Promise<void> {
-		await this.vault.storeShare(
-			`${VAULT_POOL_PREFIX}/${entry.id}`,
+		await this.shareStore.storeShare(
+			`${POOL_PREFIX}/${entry.id}`,
 			new TextEncoder().encode(entry.auxInfoJson),
 		);
 		await this.saveManifest();
 	}
 
-	private async removeEntryFromVault(id: string): Promise<void> {
-		await this.vault.deleteShare(`${VAULT_POOL_PREFIX}/${id}`);
+	private async removeEntry(id: string): Promise<void> {
+		await this.shareStore.deleteShare(`${POOL_PREFIX}/${id}`);
 		await this.saveManifest();
 	}
 }

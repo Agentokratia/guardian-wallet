@@ -18,7 +18,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { HttpException, NotFoundException } from '@nestjs/common';
-import type { IChain, IVaultStore, Signer } from '@agentokratia/guardian-core';
+import type { IChain, IShareStore, Signer } from '@agentokratia/guardian-core';
 import { ChainName, NetworkName, SchemeName, SignerStatus, SignerType } from '@agentokratia/guardian-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuxInfoPoolService } from '../dkg/aux-info-pool.service.js';
@@ -32,7 +32,7 @@ import type { SignerService } from '../signers/signer.service.js';
 // Mock Vault (in-memory)
 // ---------------------------------------------------------------------------
 
-class MockVaultStore implements IVaultStore {
+class MockShareStore implements IShareStore {
 	private readonly store = new Map<string, Uint8Array>();
 
 	async storeShare(path: string, share: Uint8Array): Promise<void> {
@@ -139,14 +139,14 @@ function createMockSignerService() {
 describe('Guardian API Integration Tests', () => {
 	let controller: SignerController;
 	let signerService: ReturnType<typeof createMockSignerService>;
-	let vault: MockVaultStore;
+	let vault: MockShareStore;
 
 	const defaultReq = { sessionUser: '0xTestOwner' } as AuthenticatedRequest;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		signerService = createMockSignerService();
-		vault = new MockVaultStore();
+		vault = new MockShareStore();
 		controller = new SignerController(
 			signerService as unknown as SignerService,
 			mockChainRegistry as any,
@@ -422,7 +422,6 @@ describe('Guardian API Integration Tests', () => {
 			const mockScheme = {
 				runDkg: vi.fn(),
 				deriveAddress: vi.fn().mockReturnValue('0xE2E_DKG_Address_1234567890abcdef'),
-				hasPrimesReady: vi.fn().mockResolvedValue(false),
 			};
 
 			// Simulate in-memory signer store for DKG
@@ -438,7 +437,7 @@ describe('Guardian API Integration Tests', () => {
 				}),
 			};
 
-			const dkgVault = new MockVaultStore();
+			const dkgVault = new MockShareStore();
 			const mockAuxInfoPool = {
 				take: vi.fn().mockResolvedValue(null),
 				getStatus: vi.fn().mockReturnValue({

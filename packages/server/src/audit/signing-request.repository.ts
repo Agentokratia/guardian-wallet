@@ -108,6 +108,20 @@ export class SigningRequestRepository {
 	}
 
 	async sumValueBySignerInWindow(signerId: string, windowStart: Date): Promise<bigint> {
+		// Prefer server-side SUM via RPC (migration 00012)
+		const { data: rpcResult, error: rpcError } = await this.supabase.client.rpc(
+			'sum_value_by_signer_in_window',
+			{
+				p_signer_id: signerId,
+				p_window_start: windowStart.toISOString(),
+			},
+		);
+
+		if (!rpcError && rpcResult != null) {
+			return BigInt(rpcResult as string);
+		}
+
+		// Fallback: client-side aggregation (RPC not yet deployed)
 		const { data, error } = await this.supabase.client
 			.from(this.tableName)
 			.select('value_wei')

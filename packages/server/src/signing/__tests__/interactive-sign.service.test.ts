@@ -8,7 +8,7 @@ import {
 	SignerType,
 	SigningPath,
 } from '@agentokratia/guardian-core';
-import type { IChain, IPolicyEngine, IRulesEngine, IVaultStore, Signer } from '@agentokratia/guardian-core';
+import type { IChain, IPolicyEngine, IRulesEngine, IShareStore, Signer } from '@agentokratia/guardian-core';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hexToBytes, keccak256, toHex } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -209,7 +209,7 @@ describe('InteractiveSignService', () => {
 			mocks.rulesEngine as unknown as IRulesEngine,
 			mocks.policyDocRepo as unknown as PolicyDocumentRepository,
 			mocks.chainRegistry as unknown as ChainRegistryService,
-			mocks.vault as unknown as IVaultStore,
+			mocks.vault as unknown as IShareStore,
 		);
 	});
 

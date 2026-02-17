@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { IVaultStore } from '@agentokratia/guardian-core';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import NodeVault from 'node-vault';
 import { APP_CONFIG, type AppConfig } from './config.js';
 
 @Injectable()
-export class VaultStoreProvider implements IVaultStore {
-	private readonly logger = new Logger(VaultStoreProvider.name);
+export class VaultKvShareStore implements IShareStore {
+	private readonly logger = new Logger(VaultKvShareStore.name);
 	private readonly vault: NodeVault.client;
 	private readonly kvMount: string;
 	private readonly sharePrefix: string;

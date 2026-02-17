@@ -23,6 +23,8 @@ function makeConfig(): AppConfig {
 		VAULT_TOKEN: 'test-vault-token',
 		VAULT_KV_MOUNT: 'secret',
 		VAULT_SHARE_PREFIX: 'threshold/shares',
+		KMS_PROVIDER: 'vault-kv' as const,
+		KMS_LOCAL_KEY_FILE: '',
 		JWT_SECRET,
 		JWT_EXPIRY: '24h',
 		AUXINFO_POOL_TARGET: 5,

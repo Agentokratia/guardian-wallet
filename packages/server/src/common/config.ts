@@ -23,6 +23,10 @@ export interface AppConfig {
 	readonly VAULT_KV_MOUNT: string;
 	readonly VAULT_SHARE_PREFIX: string;
 
+	// KMS
+	readonly KMS_PROVIDER: 'vault-kv' | 'local-file';
+	readonly KMS_LOCAL_KEY_FILE: string;
+
 	// Auth
 	readonly JWT_SECRET: string;
 	readonly JWT_EXPIRY: string;
@@ -80,6 +84,25 @@ export function parseConfig(): AppConfig {
 		);
 	}
 
+	const kmsProviderRaw = optionalEnv('KMS_PROVIDER', 'vault-kv');
+	const validKmsProviders = ['vault-kv', 'local-file'] as const;
+	if (!validKmsProviders.includes(kmsProviderRaw as typeof validKmsProviders[number])) {
+		throw new Error(`KMS_PROVIDER must be one of: ${validKmsProviders.join(', ')}. Got: ${kmsProviderRaw}`);
+	}
+	const kmsProvider = kmsProviderRaw as 'vault-kv' | 'local-file';
+	const vaultAddr = optionalEnv('VAULT_ADDR', '');
+	const vaultToken = optionalEnv('VAULT_TOKEN', '');
+	const kmsLocalKeyFile = optionalEnv('KMS_LOCAL_KEY_FILE', '');
+
+	if (kmsProvider === 'vault-kv') {
+		if (!vaultAddr) throw new Error('VAULT_ADDR is required when KMS_PROVIDER=vault-kv');
+		if (!vaultToken) throw new Error('VAULT_TOKEN is required when KMS_PROVIDER=vault-kv');
+	}
+
+	if (kmsProvider === 'local-file') {
+		if (!kmsLocalKeyFile) throw new Error('KMS_LOCAL_KEY_FILE is required when KMS_PROVIDER=local-file');
+	}
+
 	return {
 		NODE_ENV: optionalEnv('NODE_ENV', 'development'),
 		PORT: port,
@@ -87,10 +110,13 @@ export function parseConfig(): AppConfig {
 		SUPABASE_URL: requireEnv('SUPABASE_URL'),
 		SUPABASE_SERVICE_KEY: requireEnv('SUPABASE_SERVICE_KEY'),
 
-		VAULT_ADDR: requireEnv('VAULT_ADDR'),
-		VAULT_TOKEN: requireEnv('VAULT_TOKEN'),
+		VAULT_ADDR: vaultAddr,
+		VAULT_TOKEN: vaultToken,
 		VAULT_KV_MOUNT: optionalEnv('VAULT_KV_MOUNT', 'secret'),
 		VAULT_SHARE_PREFIX: optionalEnv('VAULT_SHARE_PREFIX', 'threshold/shares'),
+
+		KMS_PROVIDER: kmsProvider,
+		KMS_LOCAL_KEY_FILE: kmsLocalKeyFile,
 
 		JWT_SECRET: jwtSecret,
 		JWT_EXPIRY: optionalEnv('JWT_EXPIRY', '24h'),

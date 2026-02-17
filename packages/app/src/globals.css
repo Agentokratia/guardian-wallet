@@ -215,7 +215,10 @@ kbd {
 	.animate-shimmer,
 	.animate-dot-pulse,
 	.animate-float,
-	.card-hover {
+	.card-hover,
+	.animate-spin,
+	.animate-pulse,
+	.animate-bounce {
 		animation: none !important;
 		transition: none !important;
 		transform: none !important;

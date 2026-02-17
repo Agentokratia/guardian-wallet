@@ -23,14 +23,6 @@ import { getAddress, keccak256, toHex } from 'viem';
 // Node.js-only imports — lazily loaded so the browser can use signing methods
 // without pulling in node:child_process or node:fs.
 // @vite-ignore comments prevent Vite/Rollup from bundling these for the browser.
-let _primeCache: import('./prime-cache.js').PrimeCache | undefined;
-async function getPrimeCache() {
-	if (!_primeCache) {
-		const mod = await import(/* @vite-ignore */ './prime-cache.js');
-		_primeCache = mod.primeCache;
-	}
-	return _primeCache;
-}
 let _execFile: typeof import('node:child_process').execFile | undefined;
 async function getExecFile() {
 	if (!_execFile) {
@@ -321,32 +313,24 @@ export class CGGMP24Scheme implements IThresholdScheme {
 				this._nativeBinPath = null;
 			} else {
 				try {
-					const pc = _primeCache;
-					if (pc) {
-						// If prime cache is loaded, use its binary path
-						const path = pc.getNativeBinaryPath();
-						this._nativeBinPath = existsSyncFn(path) ? path : null;
-					} else {
-						// Resolve path manually (same as prime-cache)
-						const { dirname, join, resolve } = await import(/* @vite-ignore */ 'node:path');
-						const { fileURLToPath } = await import(/* @vite-ignore */ 'node:url');
-						const thisDir = dirname(fileURLToPath(import.meta.url));
-						let found = false;
-						for (const candidate of [
-							resolve(thisDir, '..', '..', '..', 'mpc-wasm'),
-							resolve(thisDir, '..', '..', '..', '..', 'mpc-wasm'),
-							resolve(thisDir, '..', '..', '..', '..', 'packages', 'mpc-wasm'),
-						]) {
-							const binPath = join(candidate, 'native-gen', 'target', 'release', 'guardian-gen-primes');
-							if (existsSyncFn(binPath)) {
-								this._nativeBinPath = binPath;
-								found = true;
-								break;
-							}
+					const { dirname, join, resolve } = await import(/* @vite-ignore */ 'node:path');
+					const { fileURLToPath } = await import(/* @vite-ignore */ 'node:url');
+					const thisDir = dirname(fileURLToPath(import.meta.url));
+					let found = false;
+					for (const candidate of [
+						resolve(thisDir, '..', '..', '..', 'mpc-wasm'),
+						resolve(thisDir, '..', '..', '..', '..', 'mpc-wasm'),
+						resolve(thisDir, '..', '..', '..', '..', 'packages', 'mpc-wasm'),
+					]) {
+						const binPath = join(candidate, 'native-gen', 'target', 'release', 'guardian-gen-primes');
+						if (existsSyncFn(binPath)) {
+							this._nativeBinPath = binPath;
+							found = true;
+							break;
 						}
-						if (!found) {
-							this._nativeBinPath = null;
-						}
+					}
+					if (!found) {
+						this._nativeBinPath = null;
 					}
 				} catch {
 					this._nativeBinPath = null;
@@ -380,73 +364,65 @@ export class CGGMP24Scheme implements IThresholdScheme {
 	// ---- Full DKG (native binary — GMP accelerated) ----
 
 	/**
-	 * Run a DKG ceremony via native binary with tiered acceleration:
+	 * Run a DKG ceremony via native binary:
 	 *
-	 * 1. **Cached AuxInfo** → keygen only → **~1s** (Phase A pre-computed)
-	 * 2. **Cached primes** → aux_info_gen + keygen → **~15s** (primes pre-computed)
-	 * 3. **Cold start** → full DKG → **~180s** (everything computed inline)
-	 *
-	 * After each DKG, starts background AuxInfo regeneration for next time.
+	 * 1. **Pool AuxInfo** → keygen only → **~1s** (Phase A pre-computed by AuxInfo pool)
+	 * 2. **Cold start** → full DKG → **~180s** (everything computed inline)
 	 */
 	async runDkg(
 		n: number = 3,
 		threshold: number = 2,
 		options?: { cachedAuxInfo?: string },
 	): Promise<DkgResult> {
-		const pc = await getPrimeCache();
 		const execFileFn = await getExecFile();
-		const nativeBinary = pc.getNativeBinaryPath();
+		const nativeBinary = await this.resolveNativeBinaryPath();
+		if (!nativeBinary) {
+			throw new Error('Native DKG binary not found — cannot run DKG');
+		}
 
 		const eidBytes = new Uint8Array(32);
 		crypto.getRandomValues(eidBytes);
 		const eidHex = Buffer.from(eidBytes).toString('hex');
 
-		// Priority 0: Externally supplied AuxInfo (from server pool)
+		// Fast path: externally supplied AuxInfo (from server pool)
 		if (options?.cachedAuxInfo) {
-			console.log('[DKG] Using externally supplied AuxInfo — keygen only (pool fast path)');
+			console.log('[DKG] Using pool AuxInfo — keygen only (~1s)');
 			return this.runNativeDkg(
 				execFileFn, nativeBinary,
 				'dkg-with-aux', n, threshold, eidHex,
 				options.cachedAuxInfo,
 			);
-			// No PrimeCache regeneration — server pool manages its own replenishment
 		}
 
-		// Priority 1: Cached AuxInfo → keygen only (~1s)
-		const cachedAuxInfo = pc.takeAuxInfoLine();
-		if (cachedAuxInfo) {
-			console.log('[DKG] Using cached AuxInfo — keygen only (fast path)');
-			const result = await this.runNativeDkg(
-				execFileFn, nativeBinary,
-				'dkg-with-aux', n, threshold, eidHex,
-				cachedAuxInfo,
-			);
-			pc.startAuxInfoRegeneration(n);
-			return result;
-		}
-
-		// Priority 2: Cached primes → aux_info_gen + keygen (~15s)
-		const cachedPrimeLines = pc.takePrimeLines(n);
-		if (cachedPrimeLines) {
-			console.log('[DKG] Using cached primes — Phase A + B (~15s)');
-			const result = await this.runNativeDkg(
-				execFileFn, nativeBinary,
-				'dkg-with-primes', n, threshold, eidHex,
-				cachedPrimeLines.join('\n') + '\n',
-			);
-			pc.startAuxInfoRegeneration(n);
-			return result;
-		}
-
-		// Priority 3: Cold start — full DKG (~180s)
-		console.log('[DKG] No cache — cold start (generating primes + aux_info inline)');
-		const result = await this.runNativeDkg(
+		// Cold start — full DKG (~180s)
+		console.log('[DKG] No pool AuxInfo — cold start (generating primes + aux_info inline)');
+		return this.runNativeDkg(
 			execFileFn, nativeBinary,
 			'dkg', n, threshold, eidHex,
 			null,
 		);
-		pc.startAuxInfoRegeneration(n);
-		return result;
+	}
+
+	/** Resolve path to the native DKG binary. */
+	private async resolveNativeBinaryPath(): Promise<string | null> {
+		const existsSyncFn = await getExistsSyncAsync();
+		if (!existsSyncFn) return null;
+		try {
+			const { dirname, join, resolve } = await import(/* @vite-ignore */ 'node:path');
+			const { fileURLToPath } = await import(/* @vite-ignore */ 'node:url');
+			const thisDir = dirname(fileURLToPath(import.meta.url));
+			for (const candidate of [
+				resolve(thisDir, '..', '..', '..', 'mpc-wasm'),
+				resolve(thisDir, '..', '..', '..', '..', 'mpc-wasm'),
+				resolve(thisDir, '..', '..', '..', '..', 'packages', 'mpc-wasm'),
+			]) {
+				const binPath = join(candidate, 'native-gen', 'target', 'release', 'guardian-gen-primes');
+				if (existsSyncFn(binPath)) return binPath;
+			}
+		} catch {
+			// No native binary available
+		}
+		return null;
 	}
 
 	private async runNativeDkg(
@@ -497,37 +473,6 @@ export class CGGMP24Scheme implements IThresholdScheme {
 			})),
 			publicKey,
 		};
-	}
-
-	/**
-	 * Load caches from disk (AuxInfo + primes). Call on server startup.
-	 * Returns total items loaded (auxInfo sets + prime sets).
-	 */
-	async loadCachedPrimes(): Promise<number> {
-		const pc = await getPrimeCache();
-		const auxLoaded = pc.loadAuxInfoFromFile();
-		const primesLoaded = pc.loadFromFile();
-		if (auxLoaded > 0) {
-			console.log(`[CGGMP24] ${auxLoaded} cached AuxInfo sets — DKG will be ~1s`);
-		}
-		return auxLoaded + primesLoaded;
-	}
-
-	/** Whether fast DKG is available (AuxInfo or primes cached). */
-	async hasPrimesReady(): Promise<boolean> {
-		const pc = await getPrimeCache();
-		return pc.auxInfoAvailable > 0 || pc.available >= 3;
-	}
-
-	/**
-	 * Trigger background AuxInfo generation if none cached.
-	 * Non-blocking — returns immediately.
-	 */
-	async ensureAuxInfoCached(): Promise<void> {
-		const pc = await getPrimeCache();
-		if (pc.auxInfoAvailable === 0) {
-			pc.startAuxInfoRegeneration(3);
-		}
 	}
 
 	/**

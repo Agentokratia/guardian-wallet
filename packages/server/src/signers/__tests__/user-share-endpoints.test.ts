@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
-import type { IChain, IVaultStore } from '@agentokratia/guardian-core';
+import type { IChain, IShareStore } from '@agentokratia/guardian-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRequest } from '../../common/authenticated-request.js';
 import { SignerController } from '../signer.controller.js';
@@ -10,7 +10,7 @@ import type { SignerService } from '../signer.service.js';
 // ---------------------------------------------------------------------------
 
 function createMocks() {
-	const vault: IVaultStore = {
+	const shareStore: IShareStore = {
 		storeShare: vi.fn().mockResolvedValue(undefined),
 		getShare: vi.fn().mockResolvedValue(new Uint8Array(0)),
 		deleteShare: vi.fn().mockResolvedValue(undefined),
@@ -45,7 +45,7 @@ function createMocks() {
 		getByChainId: vi.fn(),
 	};
 
-	return { vault, signerService, chainRegistry, networkService };
+	return { shareStore, signerService, chainRegistry, networkService };
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ describe('SignerController — user share endpoints', () => {
 			mocks.signerService as unknown as SignerService,
 			mocks.chainRegistry as any,
 			mocks.networkService as any,
-			mocks.vault,
+			mocks.shareStore,
 			{} as any,
 		);
 	});
@@ -95,13 +95,13 @@ describe('SignerController — user share endpoints', () => {
 
 			await controller.storeUserShare('signer-1', dto, defaultReq);
 
-			expect(mocks.vault.storeShare).toHaveBeenCalledWith(
+			expect(mocks.shareStore.storeShare).toHaveBeenCalledWith(
 				'user-encrypted/signer-1',
 				expect.any(Uint8Array),
 			);
 
 			// Verify the stored bytes are valid JSON matching the DTO
-			const calls = (mocks.vault.storeShare as ReturnType<typeof vi.fn>).mock.calls;
+			const calls = (mocks.shareStore.storeShare as ReturnType<typeof vi.fn>).mock.calls;
 			const storedBytes = calls[0]![1] as Uint8Array;
 			const storedJson = JSON.parse(new TextDecoder().decode(storedBytes));
 			expect(storedJson).toEqual(dto);
@@ -147,7 +147,7 @@ describe('SignerController — user share endpoints', () => {
 				salt: 'c2FsdA==',
 			};
 			const storedBytes = new TextEncoder().encode(JSON.stringify(dto));
-			(mocks.vault.getShare as ReturnType<typeof vi.fn>).mockResolvedValueOnce(storedBytes);
+			(mocks.shareStore.getShare as ReturnType<typeof vi.fn>).mockResolvedValueOnce(storedBytes);
 
 			await controller.getUserShare('signer-1', defaultReq);
 
@@ -162,18 +162,18 @@ describe('SignerController — user share endpoints', () => {
 				salt: 'c2FsdA==',
 			};
 			const storedBytes = new TextEncoder().encode(JSON.stringify(dto));
-			(mocks.vault.getShare as ReturnType<typeof vi.fn>).mockResolvedValueOnce(storedBytes);
+			(mocks.shareStore.getShare as ReturnType<typeof vi.fn>).mockResolvedValueOnce(storedBytes);
 
 			const result = await controller.getUserShare('signer-1', defaultReq);
 
-			expect(mocks.vault.getShare).toHaveBeenCalledWith(
+			expect(mocks.shareStore.getShare).toHaveBeenCalledWith(
 				'user-encrypted/signer-1',
 			);
 			expect(result).toEqual(dto);
 		});
 
 		it('throws 404 HttpException when Vault has no share', async () => {
-			(mocks.vault.getShare as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			(mocks.shareStore.getShare as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 				new Error('not found'),
 			);
 

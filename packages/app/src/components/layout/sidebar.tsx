@@ -90,7 +90,7 @@ export function Sidebar() {
 				<Link
 					to="/audit"
 					className={cn(
-						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors',
+						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
 						pathname.startsWith('/audit')
 							? 'bg-accent-muted text-accent'
 							: 'text-text-muted hover:bg-surface-hover/60 hover:text-text',
@@ -102,7 +102,7 @@ export function Sidebar() {
 				<Link
 					to="/settings"
 					className={cn(
-						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors',
+						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
 						pathname.startsWith('/settings')
 							? 'bg-accent-muted text-accent'
 							: 'text-text-muted hover:bg-surface-hover/60 hover:text-text',

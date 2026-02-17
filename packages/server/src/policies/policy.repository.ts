@@ -95,11 +95,13 @@ export class PolicyRepository {
 		});
 
 		if (error) {
+			// RPC missing (migration not applied yet) — fall back to read-then-write.
+			// Acceptable because policy counters are advisory, not security-critical.
 			const existing = await this.findById(id);
 			if (existing) {
 				await this.supabase.client
 					.from(this.tableName)
-					.update({ times_triggered: existing.timesTriggered + 1 })
+					.update({ times_triggered: (existing.timesTriggered ?? 0) + 1 })
 					.eq('id', id);
 			}
 		}
