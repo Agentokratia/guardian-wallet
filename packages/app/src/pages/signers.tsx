@@ -2,6 +2,7 @@ import { ActivityFeed } from '@/components/activity-feed';
 import { Addr } from '@/components/ui/addr';
 import { Button } from '@/components/ui/button';
 import { Dot } from '@/components/ui/dot';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuditLog } from '@/hooks/use-audit-log';
 import { useNetworks } from '@/hooks/use-networks';
 import { usePortfolioBalance } from '@/hooks/use-portfolio-balance';
@@ -10,18 +11,9 @@ import { useSigners } from '@/hooks/use-signers';
 import { formatTimestamp } from '@/lib/formatters';
 import { getTypeIcon, statusConfig } from '@/lib/signer-constants';
 import { cn } from '@/lib/utils';
-import {
-	Activity,
-	ArrowUpRight,
-	Lock,
-	Plus,
-	Shield,
-	ShieldAlert,
-	TrendingUp,
-} from 'lucide-react';
+import { Activity, ArrowUpRight, Lock, Plus, Shield, ShieldAlert, TrendingUp } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 /* -------------------------------------------------------------------------- */
 /*  Constants                                                                  */
@@ -70,19 +62,12 @@ function PortfolioChart({ className }: { className?: string }) {
 
 	for (let i = 0; i <= 48; i++) {
 		const x = (i / 48) * W;
-		const y =
-			H * 0.7 +
-			Math.sin(i * 0.35) * 6 +
-			Math.cos(i * 0.6) * 4 +
-			Math.sin(i * 1.2) * 2;
+		const y = H * 0.7 + Math.sin(i * 0.35) * 6 + Math.cos(i * 0.6) * 4 + Math.sin(i * 1.2) * 2;
 		points.push([x, y]);
 	}
 
 	const line = points
-		.map(
-			(p, i) =>
-				`${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`,
-		)
+		.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`)
 		.join(' ');
 	const area = `${line} L${W},${H} L0,${H} Z`;
 	const last = points[points.length - 1];
@@ -150,18 +135,8 @@ function PortfolioChart({ className }: { className?: string }) {
 			{/* Glow dot at current */}
 			<circle cx={last[0]} cy={last[1]} r="2.5" fill="#818cf8" />
 			<circle cx={last[0]} cy={last[1]} r="7" fill="#818cf8" opacity="0.2">
-				<animate
-					attributeName="r"
-					values="7;12;7"
-					dur="3s"
-					repeatCount="indefinite"
-				/>
-				<animate
-					attributeName="opacity"
-					values="0.2;0.05;0.2"
-					dur="3s"
-					repeatCount="indefinite"
-				/>
+				<animate attributeName="r" values="7;12;7" dur="3s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0.2;0.05;0.2" dur="3s" repeatCount="indefinite" />
 			</circle>
 		</svg>
 	);
@@ -242,14 +217,7 @@ function NetworkDonut({
 			>
 				{centerLabel}
 			</text>
-			<text
-				x="50"
-				y="58"
-				textAnchor="middle"
-				fill="#6B6B6B"
-				fontSize="5.5"
-				fontWeight="500"
-			>
+			<text x="50" y="58" textAnchor="middle" fill="#6B6B6B" fontSize="5.5" fontWeight="500">
 				{hasValue ? 'portfolio' : 'no funds'}
 			</text>
 		</svg>
@@ -275,12 +243,7 @@ interface AccountRowProps {
 	lastAction?: string;
 }
 
-function AccountRow({
-	signer,
-	balance,
-	policyCount,
-	lastAction,
-}: AccountRowProps) {
+function AccountRow({ signer, balance, policyCount, lastAction }: AccountRowProps) {
 	const status = statusConfig[signer.status];
 	const icon = getTypeIcon(signer.type, 'h-3.5 w-3.5');
 	const typeColor = TYPE_COLORS[signer.type] ?? '#6366f1';
@@ -317,9 +280,7 @@ function AccountRow({
 			{/* Name + Address + Type */}
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2">
-					<span className="truncate text-sm font-medium text-text">
-						{signer.name}
-					</span>
+					<span className="truncate text-sm font-medium text-text">{signer.name}</span>
 					<span
 						className="hidden shrink-0 rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider sm:inline-block"
 						style={{ backgroundColor: `${typeColor}12`, color: typeColor }}
@@ -328,17 +289,16 @@ function AccountRow({
 					</span>
 				</div>
 				<div className="mt-0.5 flex items-center gap-2">
-					<Addr
-						address={signer.ethAddress}
-						className="!text-[10px] !px-0 !py-0 !bg-transparent"
-					/>
+					<Addr address={signer.ethAddress} className="!text-[10px] !px-0 !py-0 !bg-transparent" />
 					<Dot color={status.dot} className="h-1.5 w-1.5 shrink-0" />
-					<span className={cn(
-						'text-[10px] font-medium',
-						signer.status === 'active' && 'text-success/70',
-						signer.status === 'paused' && 'text-warning/70',
-						signer.status === 'revoked' && 'text-danger/70',
-					)}>
+					<span
+						className={cn(
+							'text-[10px] font-medium',
+							signer.status === 'active' && 'text-success/70',
+							signer.status === 'paused' && 'text-warning/70',
+							signer.status === 'revoked' && 'text-danger/70',
+						)}
+					>
 						{status.label}
 					</span>
 				</div>
@@ -348,13 +308,9 @@ function AccountRow({
 			<div className="flex items-center gap-5 shrink-0">
 				{/* Balance */}
 				<div className="text-right">
-					<div className="text-sm font-semibold tabular-nums text-text">
-						{balance || '0 ETH'}
-					</div>
+					<div className="text-sm font-semibold tabular-nums text-text">{balance || '0 ETH'}</div>
 					{lastActiveText && (
-						<div className="mt-0.5 text-[10px] tabular-nums text-text-dim">
-							{lastActiveText}
-						</div>
+						<div className="mt-0.5 text-[10px] tabular-nums text-text-dim">{lastActiveText}</div>
 					)}
 				</div>
 
@@ -363,9 +319,7 @@ function AccountRow({
 					<TooltipTrigger asChild>
 						<div className="hidden items-center gap-1 rounded-md bg-accent-muted/50 px-2 py-1 md:flex cursor-default">
 							<Shield className="h-3 w-3 text-accent/50" aria-hidden="true" />
-							<span className="text-[11px] tabular-nums text-text-dim">
-								{policyCount}
-							</span>
+							<span className="text-[11px] tabular-nums text-text-dim">{policyCount}</span>
 						</div>
 					</TooltipTrigger>
 					<TooltipContent>
@@ -421,10 +375,7 @@ export function SignersPage() {
 	const { data: recentActivity, isLoading: activityLoading } = useAuditLog({
 		limit: 20,
 	});
-	const signerIds = useMemo(
-		() => signers?.map((s) => s.id) ?? [],
-		[signers],
-	);
+	const signerIds = useMemo(() => signers?.map((s) => s.id) ?? [], [signers]);
 	const { data: policyCounts } = useSignerPolicyCounts(signerIds);
 	const {
 		totalFormatted,
@@ -434,8 +385,7 @@ export function SignersPage() {
 	} = usePortfolioBalance(signerIds);
 	const { data: networks } = useNetworks();
 
-	const activeCount =
-		signers?.filter((s) => s.status === 'active').length ?? 0;
+	const activeCount = signers?.filter((s) => s.status === 'active').length ?? 0;
 	const totalCount = signers?.length ?? 0;
 	const totalPolicies = useMemo(() => {
 		if (!policyCounts) return 0;
@@ -446,8 +396,7 @@ export function SignersPage() {
 		const todayStart = new Date();
 		todayStart.setHours(0, 0, 0, 0);
 		return recentActivity.filter(
-			(a) =>
-				a.status === 'blocked' && new Date(a.createdAt) >= todayStart,
+			(a) => a.status === 'blocked' && new Date(a.createdAt) >= todayStart,
 		).length;
 	}, [recentActivity]);
 	const totalRequests = recentActivity?.length ?? 0;
@@ -464,11 +413,13 @@ export function SignersPage() {
 	// Enabled networks from the networks table
 	const enabledNetworks = useMemo(() => {
 		if (!networks) return [];
-		return networks.filter((n) => n.enabled).map((n) => ({
-			name: n.name,
-			displayName: n.displayName,
-			color: NETWORK_COLORS[n.name] ?? '#6366f1',
-		}));
+		return networks
+			.filter((n) => n.enabled)
+			.map((n) => ({
+				name: n.name,
+				displayName: n.displayName,
+				color: NETWORK_COLORS[n.name] ?? '#6366f1',
+			}));
 	}, [networks]);
 
 	// Aggregate balances across all signers per network for donut chart
@@ -548,9 +499,7 @@ export function SignersPage() {
 								<span className="text-border">|</span>
 								<span className="flex items-center gap-1">
 									<span className="inline-block h-1.5 w-1.5 rounded-full bg-success/70" />
-									<span className="tabular-nums">
-										{activeCount} active
-									</span>
+									<span className="tabular-nums">{activeCount} active</span>
 								</span>
 							</div>
 
@@ -568,9 +517,7 @@ export function SignersPage() {
 													backgroundColor: net.color,
 												}}
 											/>
-											<span className="text-[11px] text-text-muted">
-												{net.displayName}
-											</span>
+											<span className="text-[11px] text-text-muted">{net.displayName}</span>
 										</div>
 									))}
 								</div>
@@ -578,13 +525,8 @@ export function SignersPage() {
 
 							{/* Trust signal */}
 							<div className="mt-5 flex items-center gap-1.5 text-[10px] text-text-dim">
-								<Lock
-									className="h-3 w-3"
-									aria-hidden="true"
-								/>
-								<span>
-									2-of-3 threshold cryptography
-								</span>
+								<Lock className="h-3 w-3" aria-hidden="true" />
+								<span>2-of-3 threshold cryptography</span>
 							</div>
 						</div>
 
@@ -612,46 +554,31 @@ export function SignersPage() {
 			<div className="grid grid-cols-1 gap-4 md:grid-cols-12">
 				{/* Network Distribution */}
 				<div className="rounded-xl border border-border bg-surface p-5 md:col-span-4">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
-						Networks
-					</h2>
+					<h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">Networks</h2>
 
 					<div className="mt-4 flex items-center gap-5">
 						<div className="h-[110px] w-[110px] shrink-0">
 							<NetworkDonut
 								segments={networkSegments}
-								centerLabel={
-									enabledNetworks.length > 0
-										? String(enabledNetworks.length)
-										: '--'
-								}
+								centerLabel={enabledNetworks.length > 0 ? String(enabledNetworks.length) : '--'}
 							/>
 						</div>
 						<div className="min-w-0 space-y-2.5">
 							{networkSegments.length > 0 ? (
 								networkSegments.map((seg) => (
-									<div
-										key={seg.name}
-										className="flex items-center gap-2"
-									>
+									<div key={seg.name} className="flex items-center gap-2">
 										<span
 											className="inline-block h-2 w-2 shrink-0 rounded-full"
 											style={{
 												backgroundColor: seg.color,
 											}}
 										/>
-										<span className="truncate text-xs text-text-muted">
-											{seg.label}
-										</span>
-										<span className="ml-auto text-xs tabular-nums text-text-dim">
-											{seg.value}
-										</span>
+										<span className="truncate text-xs text-text-muted">{seg.label}</span>
+										<span className="ml-auto text-xs tabular-nums text-text-dim">{seg.value}</span>
 									</div>
 								))
 							) : (
-								<span className="text-xs text-text-dim">
-									No accounts yet
-								</span>
+								<span className="text-xs text-text-dim">No accounts yet</span>
 							)}
 						</div>
 					</div>
@@ -664,12 +591,8 @@ export function SignersPage() {
 							<Shield className="h-4 w-4" />
 						</div>
 						<div className="mt-3">
-							<div className="text-2xl font-bold tabular-nums text-text">
-								{totalPolicies}
-							</div>
-							<div className="mt-0.5 text-[11px] text-text-dim">
-								Active Policies
-							</div>
+							<div className="text-2xl font-bold tabular-nums text-text">{totalPolicies}</div>
+							<div className="mt-0.5 text-[11px] text-text-dim">Active Policies</div>
 						</div>
 					</div>
 
@@ -677,20 +600,14 @@ export function SignersPage() {
 						<div
 							className={cn(
 								'flex h-8 w-8 items-center justify-center rounded-lg',
-								blockedToday > 0
-									? 'bg-danger/10 text-danger'
-									: 'bg-accent/[0.06] text-text-dim',
+								blockedToday > 0 ? 'bg-danger/10 text-danger' : 'bg-accent/[0.06] text-text-dim',
 							)}
 						>
 							<ShieldAlert className="h-4 w-4" />
 						</div>
 						<div className="mt-3">
-							<div className="text-2xl font-bold tabular-nums text-text">
-								{blockedToday}
-							</div>
-							<div className="mt-0.5 text-[11px] text-text-dim">
-								Blocked Today
-							</div>
+							<div className="text-2xl font-bold tabular-nums text-text">{blockedToday}</div>
+							<div className="mt-0.5 text-[11px] text-text-dim">Blocked Today</div>
 						</div>
 					</div>
 
@@ -699,12 +616,8 @@ export function SignersPage() {
 							<Activity className="h-4 w-4" />
 						</div>
 						<div className="mt-3">
-							<div className="text-2xl font-bold tabular-nums text-text">
-								{totalRequests}
-							</div>
-							<div className="mt-0.5 text-[11px] text-text-dim">
-								Recent Requests
-							</div>
+							<div className="text-2xl font-bold tabular-nums text-text">{totalRequests}</div>
+							<div className="mt-0.5 text-[11px] text-text-dim">Recent Requests</div>
 						</div>
 					</div>
 
@@ -716,9 +629,7 @@ export function SignersPage() {
 							<div className="text-2xl font-bold tabular-nums text-text">
 								{activeCount}/{totalCount}
 							</div>
-							<div className="mt-0.5 text-[11px] text-text-dim">
-								Accounts Active
-							</div>
+							<div className="mt-0.5 text-[11px] text-text-dim">Accounts Active</div>
 						</div>
 					</div>
 				</div>
@@ -729,9 +640,7 @@ export function SignersPage() {
 			{/* ---------------------------------------------------------------- */}
 			<section>
 				<div className="mb-3 flex items-center justify-between">
-					<h2 className="text-[15px] font-semibold text-text">
-						Accounts
-					</h2>
+					<h2 className="text-[15px] font-semibold text-text">Accounts</h2>
 					<Button size="sm" asChild>
 						<Link to="/signers/new">
 							<Plus className="h-4 w-4" />
@@ -743,44 +652,35 @@ export function SignersPage() {
 				{signersLoading ? (
 					<div className="space-y-px rounded-xl border border-border bg-surface overflow-hidden">
 						{Array.from({ length: 3 }, (_, i) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
 							<SkeletonRow key={`sk-${i}`} />
 						))}
 					</div>
 				) : signers && signers.length > 0 ? (
 					<div className="space-y-1">
-							{signers.map((signer, i) => (
-								<div
-									key={signer.id}
-									className="animate-stagger-in"
-									style={{ '--stagger': i } as React.CSSProperties}
-								>
-									<AccountRow
-										signer={signer}
-										balance={balances[signer.id]}
-										policyCount={
-											policyCounts?.[signer.id] ?? 0
-										}
-										lastAction={
-											lastActionBySigner[signer.id]
-										}
-									/>
-								</div>
-							))}
+						{signers.map((signer, i) => (
+							<div
+								key={signer.id}
+								className="animate-stagger-in"
+								style={{ '--stagger': i } as React.CSSProperties}
+							>
+								<AccountRow
+									signer={signer}
+									balance={balances[signer.id]}
+									policyCount={policyCounts?.[signer.id] ?? 0}
+									lastAction={lastActionBySigner[signer.id]}
+								/>
+							</div>
+						))}
 					</div>
 				) : (
 					<div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-8 py-16 text-center">
 						<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/[0.06] text-text-muted animate-float">
 							<Shield className="h-7 w-7" />
 						</div>
-						<h3 className="mt-5 text-base font-semibold text-text">
-							Create Your First Account
-						</h3>
+						<h3 className="mt-5 text-base font-semibold text-text">Create Your First Account</h3>
 						<p className="mt-1.5 max-w-sm text-sm text-text-muted">
-							Each account is protected by threshold
-							cryptography. The private key is split into 3
-							shares — no single device ever holds the full
-							key.
+							Each account is protected by threshold cryptography. The private key is split into 3
+							shares — no single device ever holds the full key.
 						</p>
 						<Button asChild className="mt-5">
 							<Link to="/signers/new">
@@ -802,9 +702,7 @@ export function SignersPage() {
 			{(recentActivity?.length ?? 0) > 0 && (
 				<section>
 					<div className="mb-3 flex items-center justify-between">
-						<h2 className="text-[15px] font-semibold text-text">
-							Recent Activity
-						</h2>
+						<h2 className="text-[15px] font-semibold text-text">Recent Activity</h2>
 						<Link
 							to="/audit"
 							className="text-xs text-text-muted transition-colors hover:text-accent"

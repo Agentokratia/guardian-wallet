@@ -1,5 +1,5 @@
+import type { EthereumChain } from '@agentokratia/guardian-chains';
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { EthereumChain } from '@agentokratia/guardian-chains';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { NetworkService } from '../networks/network.service.js';
 import { type TokenInfo, TokenRepository } from './token.repository.js';
@@ -9,7 +9,10 @@ export interface TokenWithBalance extends TokenInfo {
 }
 
 const TOKEN_BALANCE_CACHE_TTL = 15_000;
-const tokenBalanceCache = new Map<string, { data: { address: string; chainId: number; tokens: TokenWithBalance[] }; ts: number }>();
+const tokenBalanceCache = new Map<
+	string,
+	{ data: { address: string; chainId: number; tokens: TokenWithBalance[] }; ts: number }
+>();
 
 @Injectable()
 export class TokenService {
@@ -65,7 +68,8 @@ export class TokenService {
 		const ethChain = chain as EthereumChain;
 
 		const RPC_TIMEOUT = 3_000;
-		const timeout = (ms: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+		const timeout = (ms: number) =>
+			new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
 
 		const results = await Promise.allSettled(
 			tokens.map(async (token): Promise<TokenWithBalance> => {
@@ -73,7 +77,10 @@ export class TokenService {
 				if (token.isNative) {
 					balance = await Promise.race([chain.getBalance(ethAddress), timeout(RPC_TIMEOUT)]);
 				} else if (token.address) {
-					balance = await Promise.race([ethChain.getTokenBalance(token.address, ethAddress), timeout(RPC_TIMEOUT)]);
+					balance = await Promise.race([
+						ethChain.getTokenBalance(token.address, ethAddress),
+						timeout(RPC_TIMEOUT),
+					]);
 				} else {
 					balance = 0n;
 				}
@@ -82,9 +89,7 @@ export class TokenService {
 		);
 
 		const tokensWithBalances: TokenWithBalance[] = results.map((r, i) =>
-			r.status === 'fulfilled'
-				? r.value
-				: { ...tokens[i]!, balance: '0' },
+			r.status === 'fulfilled' ? r.value : { ...tokens[i]!, balance: '0' },
 		);
 
 		const response = { address: ethAddress, chainId, tokens: tokensWithBalances };
@@ -101,7 +106,14 @@ export class TokenService {
 		decimals: number,
 	): Promise<TokenInfo> {
 		try {
-			const result = await this.repo.addSignerToken(signerId, chainId, symbol, name, address, decimals);
+			const result = await this.repo.addSignerToken(
+				signerId,
+				chainId,
+				symbol,
+				name,
+				address,
+				decimals,
+			);
 			this.invalidateBalanceCache(signerId, chainId);
 			return result;
 		} catch (err) {

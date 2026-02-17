@@ -8,10 +8,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import { Pill } from '@/components/ui/pill';
-import {
-	usePolicy,
-	useSavePolicy,
-} from '@/hooks/use-policies';
+import { usePolicy, useSavePolicy } from '@/hooks/use-policies';
 import { useSigner } from '@/hooks/use-signer';
 import { usePauseSigner, useResumeSigner, useRevokeSigner } from '@/hooks/use-signer-actions';
 import { useToast } from '@/hooks/use-toast';
@@ -112,7 +109,11 @@ export function AccountSettingsPage() {
 			const result = await api.post<{ apiKey: string }>(`/signers/${signerId}/regenerate-key`);
 			setNewApiKey(result.apiKey);
 		} catch {
-			toast({ title: 'Error', description: 'Failed to regenerate API key.', variant: 'destructive' });
+			toast({
+				title: 'Error',
+				description: 'Failed to regenerate API key.',
+				variant: 'destructive',
+			});
 		} finally {
 			setRegenerating(false);
 		}
@@ -207,9 +208,7 @@ export function AccountSettingsPage() {
 			<div>
 				<div className="flex items-center gap-2 mb-3">
 					<Shield className="h-4 w-4 text-text-dim" />
-					<h2 className="text-[15px] font-semibold text-text">
-						Policies
-					</h2>
+					<h2 className="text-[15px] font-semibold text-text">Policies</h2>
 					{ruleCount > 0 && (
 						<span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent/[0.06] px-1.5 text-[11px] font-semibold text-text-muted">
 							{ruleCount}
@@ -217,12 +216,12 @@ export function AccountSettingsPage() {
 					)}
 				</div>
 				<p className="text-[13px] text-text-dim mb-4">
-					Define rules that control what transactions this account can sign. Blocked transactions are logged and rejected automatically.
+					Define rules that control what transactions this account can sign. Blocked transactions
+					are logged and rejected automatically.
 				</p>
 				{policiesLoading ? (
 					<div className="space-y-2 animate-pulse">
 						{Array.from({ length: 3 }, (_, i) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
 							<div key={`p-${i}`} className="h-14 rounded-lg bg-surface-hover" />
 						))}
 					</div>
@@ -267,7 +266,8 @@ export function AccountSettingsPage() {
 						gw_live_{'*'.repeat(12)}
 					</code>
 					<p className="text-[11px] text-text-dim mt-2">
-						Used by the signer SDK to authenticate signing requests. Regenerating will invalidate all current integrations immediately.
+						Used by the signer SDK to authenticate signing requests. Regenerating will invalidate
+						all current integrations immediately.
 					</p>
 				</div>
 			</div>
@@ -290,7 +290,12 @@ export function AccountSettingsPage() {
 									Temporarily stop all signing. Can be resumed at any time.
 								</p>
 							</div>
-							<Button variant="outline" size="sm" onClick={handlePause} disabled={pauseSigner.isPending}>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={handlePause}
+								disabled={pauseSigner.isPending}
+							>
 								<Pause className="h-4 w-4" />
 								Pause
 							</Button>
@@ -304,7 +309,12 @@ export function AccountSettingsPage() {
 									Re-enable signing for this account.
 								</p>
 							</div>
-							<Button variant="outline" size="sm" onClick={handleResume} disabled={resumeSigner.isPending}>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={handleResume}
+								disabled={resumeSigner.isPending}
+							>
 								<Play className="h-4 w-4" />
 								Resume
 							</Button>
@@ -322,7 +332,12 @@ export function AccountSettingsPage() {
 										Permanently disable this account. This cannot be undone.
 									</p>
 								</div>
-								<Button variant="destructive" size="sm" onClick={handleRevoke} disabled={revokeSigner.isPending}>
+								<Button
+									variant="destructive"
+									size="sm"
+									onClick={handleRevoke}
+									disabled={revokeSigner.isPending}
+								>
 									<Trash2 className="h-4 w-4" />
 									Revoke
 								</Button>

@@ -4,11 +4,7 @@ import { useEffect, useRef, useState } from 'react';
  * Animates a number from 0 to `target` over `duration` ms.
  * Returns the current interpolated value as a string with `decimals` places.
  */
-export function useAnimatedCounter(
-	target: number,
-	duration = 600,
-	decimals = 2,
-): string {
+export function useAnimatedCounter(target: number, duration = 600, decimals = 2): string {
 	const [current, setCurrent] = useState(0);
 	const prevTarget = useRef(0);
 	const raf = useRef<number>();

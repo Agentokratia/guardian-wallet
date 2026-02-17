@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { ThresholdSigner } from '@agentokratia/guardian-signer';
+import type { ThresholdSigner } from '@agentokratia/guardian-signer';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';

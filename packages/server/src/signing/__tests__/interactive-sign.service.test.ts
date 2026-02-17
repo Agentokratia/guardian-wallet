@@ -8,7 +8,13 @@ import {
 	SignerType,
 	SigningPath,
 } from '@agentokratia/guardian-core';
-import type { IChain, IPolicyEngine, IRulesEngine, IShareStore, Signer } from '@agentokratia/guardian-core';
+import type {
+	IChain,
+	IPolicyEngine,
+	IRulesEngine,
+	IShareStore,
+	Signer,
+} from '@agentokratia/guardian-core';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hexToBytes, keccak256, toHex } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -184,7 +190,17 @@ function createMocks() {
 		upsert: vi.fn(),
 	};
 
-	return { signerRepo, signingRequestRepo, policyRepo, policyEngine, rulesEngine, policyDocRepo, chain, chainRegistry, vault };
+	return {
+		signerRepo,
+		signingRequestRepo,
+		policyRepo,
+		policyEngine,
+		rulesEngine,
+		policyDocRepo,
+		chain,
+		chainRegistry,
+		vault,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -236,9 +252,7 @@ describe('InteractiveSignService', () => {
 		});
 
 		it('throws ForbiddenException for paused signer', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(
-				makeSigner({ status: SignerStatus.PAUSED }),
-			);
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ status: SignerStatus.PAUSED }));
 
 			await expect(
 				service.createSession({
@@ -250,9 +264,7 @@ describe('InteractiveSignService', () => {
 		});
 
 		it('throws ForbiddenException for revoked signer', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(
-				makeSigner({ status: SignerStatus.REVOKED }),
-			);
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ status: SignerStatus.REVOKED }));
 
 			await expect(
 				service.createSession({
@@ -502,10 +514,18 @@ describe('InteractiveSignService', () => {
 
 			// Both sessions destroyed
 			await expect(
-				service.processRound({ sessionId: s1.sessionId, signerId: 'signer-1', incomingMessages: [] }),
+				service.processRound({
+					sessionId: s1.sessionId,
+					signerId: 'signer-1',
+					incomingMessages: [],
+				}),
 			).rejects.toThrow('Signing session not found');
 			await expect(
-				service.processRound({ sessionId: s2.sessionId, signerId: 'signer-1', incomingMessages: [] }),
+				service.processRound({
+					sessionId: s2.sessionId,
+					signerId: 'signer-1',
+					incomingMessages: [],
+				}),
 			).rejects.toThrow('Signing session not found');
 		});
 	});
@@ -528,9 +548,7 @@ describe('InteractiveSignService', () => {
 		});
 
 		it('throws ForbiddenException for paused signer', async () => {
-			mocks.signerRepo.findById.mockResolvedValue(
-				makeSigner({ status: SignerStatus.PAUSED }),
-			);
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner({ status: SignerStatus.PAUSED }));
 
 			await expect(
 				service.createMessageSession({

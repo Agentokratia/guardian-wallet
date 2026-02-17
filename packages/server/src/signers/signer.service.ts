@@ -1,4 +1,3 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SignerStatus } from '@agentokratia/guardian-core';
 import type {
 	ChainName,
@@ -7,6 +6,7 @@ import type {
 	Signer,
 	SignerType,
 } from '@agentokratia/guardian-core';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { generateApiKey, hashApiKey } from '../common/crypto-utils.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
 import { SignerRepository } from './signer.repository.js';

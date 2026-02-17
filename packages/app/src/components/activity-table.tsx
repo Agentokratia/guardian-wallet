@@ -85,9 +85,7 @@ export function ActivityTable({
 						const color =
 							statusColor[row.status as keyof typeof statusColor] ?? ('default' as const);
 						const explorerUrl =
-							row.txHash && row.chainId
-								? getExplorerTxUrlByChainId(row.chainId, row.txHash)
-								: null;
+							row.txHash && row.chainId ? getExplorerTxUrlByChainId(row.chainId, row.txHash) : null;
 
 						return (
 							<TableRow
@@ -140,15 +138,19 @@ export function ActivityTable({
 											</a>
 										)}
 									</div>
-								{isBlocked && row.policyViolations && row.policyViolations.length > 0 && (
-									<div className="mt-0.5 space-y-0.5">
-										{row.policyViolations.map((v, i) => (
-											<div key={i} className="text-[10px] text-danger truncate max-w-[200px]" title={v.reason}>
-												{v.reason}
-											</div>
-										))}
-									</div>
-								)}
+									{isBlocked && row.policyViolations && row.policyViolations.length > 0 && (
+										<div className="mt-0.5 space-y-0.5">
+											{row.policyViolations.map((v, i) => (
+												<div
+													key={i}
+													className="text-[10px] text-danger truncate max-w-[200px]"
+													title={v.reason}
+												>
+													{v.reason}
+												</div>
+											))}
+										</div>
+									)}
 								</TableCell>
 							</TableRow>
 						);

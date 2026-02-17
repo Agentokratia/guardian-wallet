@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { FALLBACK_NETWORKS } from '@/lib/network-meta';
+import { useQuery } from '@tanstack/react-query';
 
 export interface Network {
 	id: string;

@@ -1,4 +1,3 @@
-import { Injectable, Logger } from '@nestjs/common';
 import {
 	type IPolicyEngine,
 	type PolicyContext,
@@ -6,6 +5,7 @@ import {
 	PolicyType,
 	type PolicyViolation,
 } from '@agentokratia/guardian-core';
+import { Injectable, Logger } from '@nestjs/common';
 import {
 	evaluateAllowedContracts,
 	evaluateAllowedFunctions,

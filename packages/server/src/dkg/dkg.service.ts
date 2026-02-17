@@ -1,3 +1,5 @@
+import type { IShareStore } from '@agentokratia/guardian-core';
+import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import {
 	BadRequestException,
 	Inject,
@@ -6,8 +8,6 @@ import {
 	NotFoundException,
 	type OnModuleInit,
 } from '@nestjs/common';
-import type { IShareStore } from '@agentokratia/guardian-core';
-import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { wipeBuffer } from '../common/crypto-utils.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
 import { SignerRepository } from '../signers/signer.repository.js';
@@ -56,10 +56,7 @@ export class DKGService implements OnModuleInit {
 	private readonly scheme = new CGGMP24Scheme();
 
 	// Track pending DKG sessions (validated signer IDs awaiting finalization)
-	private readonly pendingSessions = new Map<
-		string,
-		{ signerId: string; createdAt: number }
-	>();
+	private readonly pendingSessions = new Map<string, { signerId: string; createdAt: number }>();
 
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
@@ -167,20 +164,21 @@ export class DKGService implements OnModuleInit {
 		this.logger.log(`DKG complete in ${elapsed}s — ${dkgResult.shares.length} shares generated`);
 
 		if (dkgResult.shares.length < 3) {
-			throw new BadRequestException(
-				`Expected 3 shares, got ${dkgResult.shares.length}`,
-			);
+			throw new BadRequestException(`Expected 3 shares, got ${dkgResult.shares.length}`);
 		}
 
 		// Bundle each party's key material: { coreShare: base64, auxInfo: base64 }
+		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
 		const signerKeyMaterial = bundleKeyMaterial(
 			dkgResult.shares[0]!.coreShare,
 			dkgResult.shares[0]!.auxInfo,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
 		const serverKeyMaterial = bundleKeyMaterial(
 			dkgResult.shares[1]!.coreShare,
 			dkgResult.shares[1]!.auxInfo,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
 		const userKeyMaterial = bundleKeyMaterial(
 			dkgResult.shares[2]!.coreShare,
 			dkgResult.shares[2]!.auxInfo,

@@ -9,16 +9,21 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useNetworks } from '@/hooks/use-networks';
-import { useAddToken } from '@/hooks/use-tokens';
 import { useToast } from '@/hooks/use-toast';
+import { useAddToken } from '@/hooks/use-tokens';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPublicClient, defineChain, erc20Abi, getAddress, http, type Address } from 'viem';
+import { http, type Address, createPublicClient, defineChain, erc20Abi, getAddress } from 'viem';
 
 function getPublicClient(chainId: number, rpcUrl: string) {
 	return createPublicClient({
-		chain: defineChain({ id: chainId, name: '', nativeCurrency: { name: '', symbol: '', decimals: 18 }, rpcUrls: { default: { http: [rpcUrl] } } }),
+		chain: defineChain({
+			id: chainId,
+			name: '',
+			nativeCurrency: { name: '', symbol: '', decimals: 18 },
+			rpcUrls: { default: { http: [rpcUrl] } },
+		}),
 		transport: http(rpcUrl),
 	});
 }
@@ -36,7 +41,12 @@ interface AddTokenDialogProps {
 
 const ETH_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
-export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultChainId }: AddTokenDialogProps) {
+export function AddTokenDialog({
+	open,
+	onOpenChange,
+	signerId,
+	chainId: defaultChainId,
+}: AddTokenDialogProps) {
 	const { toast } = useToast();
 	const addToken = useAddToken();
 	const { data: networks } = useNetworks();
@@ -54,10 +64,7 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 	const [autoFilled, setAutoFilled] = useState(false);
 	const fetchRef = useRef(0); // prevent stale fetches
 
-	const enabledNetworks = useMemo(
-		() => (networks ?? []).filter((n) => n.enabled),
-		[networks],
-	);
+	const enabledNetworks = useMemo(() => (networks ?? []).filter((n) => n.enabled), [networks]);
 
 	const selectedNetwork = enabledNetworks.find((n) => n.chainId === selectedChainId);
 
@@ -122,7 +129,9 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 			}
 		})();
 
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [address, selectedChainId, isValidAddress, selectedNetwork]);
 
 	const handleSubmit = (e: React.FormEvent) => {
@@ -160,7 +169,13 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}>
+		<Dialog
+			open={open}
+			onOpenChange={(v) => {
+				if (!v) resetForm();
+				onOpenChange(v);
+			}}
+		>
 			<DialogContent className="border-border bg-surface sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle className="text-text">Add Token</DialogTitle>
@@ -171,9 +186,7 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 				<form onSubmit={handleSubmit} className="space-y-4">
 					{/* Network picker */}
 					<div className="space-y-1.5">
-						<label className="text-xs font-medium text-text-muted">
-							Network
-						</label>
+						<label className="text-xs font-medium text-text-muted">Network</label>
 						<div className="relative">
 							<button
 								type="button"
@@ -181,9 +194,7 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 								className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm transition-colors hover:bg-surface-hover"
 							>
 								<div className="flex items-center gap-2">
-									{selectedNetwork && (
-										<NetworkIcon network={selectedNetwork.name} size="sm" />
-									)}
+									{selectedNetwork && <NetworkIcon network={selectedNetwork.name} size="sm" />}
 									<span className="text-text">
 										{selectedNetwork?.displayName ?? 'Select network'}
 									</span>
@@ -193,10 +204,12 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 										</span>
 									)}
 								</div>
-								<ChevronDown className={cn(
-									'h-3.5 w-3.5 text-text-dim transition-transform',
-									networkOpen && 'rotate-180',
-								)} />
+								<ChevronDown
+									className={cn(
+										'h-3.5 w-3.5 text-text-dim transition-transform',
+										networkOpen && 'rotate-180',
+									)}
+								/>
 							</button>
 
 							{networkOpen && (
@@ -254,9 +267,7 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 						{address.length > 0 && !isValidAddress && (
 							<p className="text-xs text-danger">Enter a valid ERC-20 contract address</p>
 						)}
-						{fetchError && (
-							<p className="text-xs text-warning">{fetchError}</p>
-						)}
+						{fetchError && <p className="text-xs text-warning">{fetchError}</p>}
 						{autoFilled && (
 							<p className="text-xs text-success">Token detected — fields auto-filled</p>
 						)}
@@ -309,7 +320,14 @@ export function AddTokenDialog({ open, onOpenChange, signerId, chainId: defaultC
 
 					{/* Actions */}
 					<div className="flex justify-end gap-2 pt-2">
-						<Button type="button" variant="ghost" onClick={() => { resetForm(); onOpenChange(false); }}>
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => {
+								resetForm();
+								onOpenChange(false);
+							}}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" disabled={!canSubmit || addToken.isPending || fetching}>

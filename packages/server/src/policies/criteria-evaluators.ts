@@ -30,12 +30,18 @@ function safeBigInt(value: string): bigint {
 
 function compareValues(a: bigint, op: string, b: bigint): boolean {
 	switch (op) {
-		case '<=': return a <= b;
-		case '<': return a < b;
-		case '>=': return a >= b;
-		case '>': return a > b;
-		case '=': return a === b;
-		default: return false;
+		case '<=':
+			return a <= b;
+		case '<':
+			return a < b;
+		case '>=':
+			return a >= b;
+		case '>':
+			return a > b;
+		case '=':
+			return a === b;
+		default:
+			return false;
 	}
 }
 
@@ -154,16 +160,26 @@ export function evaluateMonthlyLimit(c: MonthlyLimitCriterion, ctx: PolicyContex
 export function evaluateCriterion(criterion: Criterion, ctx: PolicyContext): boolean {
 	try {
 		switch (criterion.type) {
-			case 'ethValue': return evaluateEthValue(criterion, ctx);
-			case 'evmAddress': return evaluateEvmAddress(criterion, ctx);
-			case 'evmNetwork': return evaluateEvmNetwork(criterion, ctx);
-			case 'evmFunction': return evaluateEvmFunction(criterion, ctx);
-			case 'ipAddress': return evaluateIpAddress(criterion, ctx);
-			case 'rateLimit': return evaluateRateLimit(criterion, ctx);
-			case 'timeWindow': return evaluateTimeWindow(criterion, ctx);
-			case 'dailyLimit': return evaluateDailyLimit(criterion, ctx);
-			case 'monthlyLimit': return evaluateMonthlyLimit(criterion, ctx);
-			default: return false;
+			case 'ethValue':
+				return evaluateEthValue(criterion, ctx);
+			case 'evmAddress':
+				return evaluateEvmAddress(criterion, ctx);
+			case 'evmNetwork':
+				return evaluateEvmNetwork(criterion, ctx);
+			case 'evmFunction':
+				return evaluateEvmFunction(criterion, ctx);
+			case 'ipAddress':
+				return evaluateIpAddress(criterion, ctx);
+			case 'rateLimit':
+				return evaluateRateLimit(criterion, ctx);
+			case 'timeWindow':
+				return evaluateTimeWindow(criterion, ctx);
+			case 'dailyLimit':
+				return evaluateDailyLimit(criterion, ctx);
+			case 'monthlyLimit':
+				return evaluateMonthlyLimit(criterion, ctx);
+			default:
+				return false;
 		}
 	} catch {
 		// Fail closed: any evaluation error → criterion not met

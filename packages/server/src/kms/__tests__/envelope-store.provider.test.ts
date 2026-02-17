@@ -1,10 +1,10 @@
-import { writeFileSync, unlinkSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { LocalFileKmsProvider } from '../local-file.provider.js';
+import { mkdtempSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EnvelopeStoreProvider } from '../envelope-store.provider.js';
+import { LocalFileKmsProvider } from '../local-file.provider.js';
 
 /**
  * In-memory mock of the Supabase client for testing.
@@ -139,9 +139,7 @@ describe('EnvelopeStoreProvider', () => {
 	});
 
 	it('getShare throws on missing path', async () => {
-		await expect(provider.getShare('nonexistent/path')).rejects.toThrow(
-			'Share not found',
-		);
+		await expect(provider.getShare('nonexistent/path')).rejects.toThrow('Share not found');
 	});
 
 	it('healthCheck returns true when KMS and DB are healthy', async () => {
@@ -200,9 +198,9 @@ describe('EnvelopeStoreProvider', () => {
 			return result;
 		});
 
-		await expect(
-			provider.storeShare(path, new Uint8Array(share)),
-		).rejects.toThrow('Failed to store encrypted share');
+		await expect(provider.storeShare(path, new Uint8Array(share))).rejects.toThrow(
+			'Failed to store encrypted share',
+		);
 
 		expect(capturedKey).toBeDefined();
 		const allZero = (capturedKey as Uint8Array).every((b) => b === 0);
@@ -218,13 +216,13 @@ describe('EnvelopeStoreProvider', () => {
 		const row = mockSupabase._store.get(path) as { envelope: Record<string, unknown> };
 		const envelope = row.envelope;
 
-		expect(envelope['version']).toBe(1);
-		expect(envelope['algorithm']).toBe('aes-256-gcm');
-		expect(envelope['keyId']).toBe('local-file-master');
-		expect(envelope['aadPath']).toBe(path);
-		expect(typeof envelope['encryptedDek']).toBe('string');
-		expect(typeof envelope['iv']).toBe('string');
-		expect(typeof envelope['ciphertext']).toBe('string');
-		expect(typeof envelope['authTag']).toBe('string');
+		expect(envelope.version).toBe(1);
+		expect(envelope.algorithm).toBe('aes-256-gcm');
+		expect(envelope.keyId).toBe('local-file-master');
+		expect(envelope.aadPath).toBe(path);
+		expect(typeof envelope.encryptedDek).toBe('string');
+		expect(typeof envelope.iv).toBe('string');
+		expect(typeof envelope.ciphertext).toBe('string');
+		expect(typeof envelope.authTag).toBe('string');
 	});
 });

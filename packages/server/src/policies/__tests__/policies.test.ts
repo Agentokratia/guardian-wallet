@@ -187,34 +187,22 @@ describe('evaluateBlockedAddresses', () => {
 
 describe('evaluateRateLimit', () => {
 	it('allows when under rate limit', () => {
-		const result = evaluateRateLimit(
-			{ maxPerHour: 10 },
-			makeContext({ requestCountLastHour: 5 }),
-		);
+		const result = evaluateRateLimit({ maxPerHour: 10 }, makeContext({ requestCountLastHour: 5 }));
 		expect(result).toBe(true);
 	});
 
 	it('blocks when at rate limit', () => {
-		const result = evaluateRateLimit(
-			{ maxPerHour: 10 },
-			makeContext({ requestCountLastHour: 10 }),
-		);
+		const result = evaluateRateLimit({ maxPerHour: 10 }, makeContext({ requestCountLastHour: 10 }));
 		expect(result).toBe(false);
 	});
 
 	it('blocks when over rate limit', () => {
-		const result = evaluateRateLimit(
-			{ maxPerHour: 10 },
-			makeContext({ requestCountLastHour: 15 }),
-		);
+		const result = evaluateRateLimit({ maxPerHour: 10 }, makeContext({ requestCountLastHour: 15 }));
 		expect(result).toBe(false);
 	});
 
 	it('allows zero requests', () => {
-		const result = evaluateRateLimit(
-			{ maxPerHour: 10 },
-			makeContext({ requestCountLastHour: 0 }),
-		);
+		const result = evaluateRateLimit({ maxPerHour: 10 }, makeContext({ requestCountLastHour: 0 }));
 		expect(result).toBe(true);
 	});
 });
@@ -260,4 +248,3 @@ describe('evaluateTimeWindow', () => {
 		expect(result).toBe(false);
 	});
 });
-

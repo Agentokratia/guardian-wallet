@@ -1,5 +1,13 @@
-import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 import { PolicyType } from '@agentokratia/guardian-core';
+import {
+	IsArray,
+	IsBoolean,
+	IsEnum,
+	IsNotEmpty,
+	IsObject,
+	IsOptional,
+	IsString,
+} from 'class-validator';
 
 export class CreatePolicyDto {
 	@IsEnum(PolicyType)

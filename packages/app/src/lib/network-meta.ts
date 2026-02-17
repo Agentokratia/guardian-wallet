@@ -21,7 +21,12 @@ const META: Record<string, NetworkMeta> = {
 	base: { bg: 'bg-[#0052FF]/15', text: 'text-[#0052FF]', abbr: 'B', hex: '#0052FF' },
 	'base-sepolia': { bg: 'bg-[#0052FF]/10', text: 'text-[#0052FF]/70', abbr: 'B', hex: '#0052FF' },
 	arbitrum: { bg: 'bg-[#28A0F0]/15', text: 'text-[#28A0F0]', abbr: 'A', hex: '#28A0F0' },
-	'arbitrum-sepolia': { bg: 'bg-[#28A0F0]/10', text: 'text-[#28A0F0]/70', abbr: 'A', hex: '#28A0F0' },
+	'arbitrum-sepolia': {
+		bg: 'bg-[#28A0F0]/10',
+		text: 'text-[#28A0F0]/70',
+		abbr: 'A',
+		hex: '#28A0F0',
+	},
 };
 
 const DEFAULT_META: NetworkMeta = {

@@ -1,15 +1,13 @@
-import { Global, Inject, Injectable, Module } from '@nestjs/common';
 import { EthereumChain } from '@agentokratia/guardian-chains';
 import type { IChain } from '@agentokratia/guardian-core';
+import { Global, Inject, Injectable, Module } from '@nestjs/common';
 import { NetworkService } from '../networks/network.service.js';
 
 @Injectable()
 export class ChainRegistryService {
 	private readonly chains = new Map<number, EthereumChain>();
 
-	constructor(
-		@Inject(NetworkService) private readonly networkService: NetworkService,
-	) {}
+	constructor(@Inject(NetworkService) private readonly networkService: NetworkService) {}
 
 	async getChain(chainId: number): Promise<IChain> {
 		const cached = this.chains.get(chainId);

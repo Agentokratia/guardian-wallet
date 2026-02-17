@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Mono } from '@/components/ui/mono';
 import { Pill } from '@/components/ui/pill';
-import { downloadFile } from '@/lib/download';
 import {
 	Select,
 	SelectContent,
@@ -25,6 +24,7 @@ import {
 import { useAuditLog } from '@/hooks/use-audit-log';
 import { useSigners } from '@/hooks/use-signers';
 import { getExplorerTxUrlByChainId } from '@/lib/chains';
+import { downloadFile } from '@/lib/download';
 import { formatTxHash, formatWei } from '@/lib/formatters';
 import { statusColor } from '@/lib/status-colors';
 import type { SigningRequest } from '@/lib/types';
@@ -265,11 +265,7 @@ export function AuditPage() {
 					</div>
 				) : (
 					<>
-						<ActivityFeed
-							entries={filteredEntries}
-							signerNames={signerNameLookup}
-							showSigner
-						/>
+						<ActivityFeed entries={filteredEntries} signerNames={signerNameLookup} showSigner />
 						{filteredEntries.length > 0 && (
 							<div className="mt-3 text-[11px] text-text-dim text-right">
 								Showing {filteredEntries.length} of {entries?.length ?? 0} entries
@@ -304,7 +300,9 @@ export function AuditPage() {
 								) : filteredEntries.length === 0 ? (
 									<TableRow>
 										<TableCell colSpan={8} className="text-center py-12">
-											<p className="text-sm font-medium text-text-muted">No signing requests found</p>
+											<p className="text-sm font-medium text-text-muted">
+												No signing requests found
+											</p>
 											<p className="text-[12px] text-text-dim mt-1">
 												{search || activeFilterCount > 0
 													? 'Try adjusting your filters or search query.'
@@ -354,15 +352,21 @@ export function AuditPage() {
 												</TableCell>
 												<TableCell>
 													<Pill color={statusColor[entry.status] ?? 'default'}>{entry.status}</Pill>
-													{entry.status === 'blocked' && entry.policyViolations && entry.policyViolations.length > 0 && (
-														<div className="mt-0.5 space-y-0.5">
-															{entry.policyViolations.map((v, i) => (
-																<div key={i} className="text-[10px] text-danger truncate max-w-[180px]" title={v.reason}>
-																	{v.reason}
-																</div>
-															))}
-														</div>
-													)}
+													{entry.status === 'blocked' &&
+														entry.policyViolations &&
+														entry.policyViolations.length > 0 && (
+															<div className="mt-0.5 space-y-0.5">
+																{entry.policyViolations.map((v, i) => (
+																	<div
+																		key={i}
+																		className="text-[10px] text-danger truncate max-w-[180px]"
+																		title={v.reason}
+																	>
+																		{v.reason}
+																	</div>
+																))}
+															</div>
+														)}
 												</TableCell>
 												<TableCell>
 													{entry.txHash ? (

@@ -110,9 +110,7 @@ describe('SessionGuard', () => {
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('throws UnauthorizedException for expired JWT', async () => {
@@ -124,9 +122,7 @@ describe('SessionGuard', () => {
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('throws UnauthorizedException for tampered JWT signature', async () => {
@@ -142,9 +138,7 @@ describe('SessionGuard', () => {
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('throws UnauthorizedException for malformed JWT (wrong number of parts)', async () => {
@@ -153,9 +147,7 @@ describe('SessionGuard', () => {
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('throws UnauthorizedException for single-part token', async () => {
@@ -164,23 +156,22 @@ describe('SessionGuard', () => {
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('throws UnauthorizedException for JWT signed with wrong secret', async () => {
 		const now = Math.floor(Date.now() / 1000);
-		const token = createJwt({ sub: 'user-123', iat: now, exp: now + 3600 }, 'wrong-secret-key-min-16');
+		const token = createJwt(
+			{ sub: 'user-123', iat: now, exp: now + 3600 },
+			'wrong-secret-key-min-16',
+		);
 
 		const request: Record<string, unknown> = {
 			cookies: { session: token },
 			headers: {},
 		};
 
-		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(
-			UnauthorizedException,
-		);
+		await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
 	});
 
 	it('prefers session cookie over Bearer token', async () => {

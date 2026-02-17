@@ -94,9 +94,9 @@ describe('share-loader', () => {
 
 			await saveShareToFile(share, filePath, 'correct-passphrase');
 
-			await expect(
-				loadShareFromFile(filePath, 'wrong-passphrase'),
-			).rejects.toThrow('Failed to decrypt share file');
+			await expect(loadShareFromFile(filePath, 'wrong-passphrase')).rejects.toThrow(
+				'Failed to decrypt share file',
+			);
 		});
 	});
 
@@ -110,9 +110,7 @@ describe('share-loader', () => {
 			const { writeFile } = await import('node:fs/promises');
 			await writeFile(filePath, new Uint8Array([1, 2, 3]));
 
-			await expect(loadShareFromFile(filePath, 'pass')).rejects.toThrow(
-				'Share file too small',
-			);
+			await expect(loadShareFromFile(filePath, 'pass')).rejects.toThrow('Share file too small');
 		});
 
 		it('throws error for corrupted ciphertext', async () => {

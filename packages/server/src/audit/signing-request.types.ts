@@ -1,4 +1,9 @@
-import type { PolicyViolation, RequestStatus, RequestType, SigningPath } from '@agentokratia/guardian-core';
+import type {
+	PolicyViolation,
+	RequestStatus,
+	RequestType,
+	SigningPath,
+} from '@agentokratia/guardian-core';
 
 export interface SigningRequestEntity {
 	readonly id: string;

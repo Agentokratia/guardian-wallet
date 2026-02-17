@@ -40,12 +40,11 @@ export const initCommand = new Command('init')
 			}
 
 			const rl2 = createInterface({ input: stdin, output: stdout });
-			const secretFilePath =
-				(
-					await rl2.question(
-						chalk.cyan('  API secret file ') + chalk.dim('(path to .secret file)') + chalk.cyan(': '),
-					)
-				).trim();
+			const secretFilePath = (
+				await rl2.question(
+					chalk.cyan('  API secret file ') + chalk.dim('(path to .secret file)') + chalk.cyan(': '),
+				)
+			).trim();
 			rl2.close();
 
 			let apiSecret: string | undefined;
@@ -55,7 +54,9 @@ export const initCommand = new Command('init')
 				apiSecretFile = secretFilePath;
 			} else {
 				apiSecret = await promptHidden(
-					chalk.cyan('  API secret ') + chalk.dim('(paste base64 keyshare, hidden)') + chalk.cyan(': '),
+					chalk.cyan('  API secret ') +
+						chalk.dim('(paste base64 keyshare, hidden)') +
+						chalk.cyan(': '),
 				);
 			}
 

@@ -46,8 +46,5 @@ export interface IPolicyEngine {
 }
 
 export interface IRulesEngine {
-	evaluate(
-		document: PolicyDocument | null,
-		context: PolicyContext,
-	): Promise<PolicyResult>;
+	evaluate(document: PolicyDocument | null, context: PolicyContext): Promise<PolicyResult>;
 }

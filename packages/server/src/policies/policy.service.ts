@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { PolicyType } from '@agentokratia/guardian-core';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PolicyRepository } from './policy.repository.js';
 import type { PolicyEntity } from './policy.types.js';
 
@@ -20,9 +20,7 @@ export interface UpdatePolicyInput {
 
 @Injectable()
 export class PolicyService {
-	constructor(
-		@Inject(PolicyRepository) private readonly policyRepo: PolicyRepository,
-	) {}
+	constructor(@Inject(PolicyRepository) private readonly policyRepo: PolicyRepository) {}
 
 	async get(id: string): Promise<PolicyEntity> {
 		const policy = await this.policyRepo.findById(id);

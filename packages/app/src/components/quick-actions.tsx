@@ -15,10 +15,7 @@ export function QuickActions({ signerId, network, onReceive }: QuickActionsProps
 	return (
 		<div className="flex items-center justify-center gap-8">
 			{/* Send — primary */}
-			<Link
-				to={sendPath}
-				className="flex flex-col items-center gap-2 group"
-			>
+			<Link to={sendPath} className="flex flex-col items-center gap-2 group">
 				<div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#18181B] shadow-sm transition-all group-hover:scale-110 group-active:scale-95">
 					<ArrowUpRight className="h-5 w-5" strokeWidth={2.5} />
 				</div>
@@ -28,11 +25,7 @@ export function QuickActions({ signerId, network, onReceive }: QuickActionsProps
 			</Link>
 
 			{/* Receive — secondary */}
-			<button
-				type="button"
-				onClick={onReceive}
-				className="flex flex-col items-center gap-2 group"
-			>
+			<button type="button" onClick={onReceive} className="flex flex-col items-center gap-2 group">
 				<div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.12] text-white transition-all group-hover:scale-110 group-hover:bg-white/[0.18] group-active:scale-95">
 					<ArrowDownLeft className="h-5 w-5" strokeWidth={2.5} />
 				</div>
@@ -42,10 +35,7 @@ export function QuickActions({ signerId, network, onReceive }: QuickActionsProps
 			</button>
 
 			{/* Settings — tertiary */}
-			<Link
-				to={`/signers/${signerId}/settings`}
-				className="flex flex-col items-center gap-2 group"
-			>
+			<Link to={`/signers/${signerId}/settings`} className="flex flex-col items-center gap-2 group">
 				<div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.08] text-white/60 transition-all group-hover:scale-110 group-hover:bg-white/[0.14] group-active:scale-95">
 					<Settings className="h-5 w-5" strokeWidth={2} />
 				</div>

@@ -1,5 +1,5 @@
-import { useQueries } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
+import { useQueries } from '@tanstack/react-query';
 import type { TokenBalance } from './use-token-balances';
 
 interface TokenBalancesResponse {
@@ -27,9 +27,7 @@ export function useAllTokenBalances(
 		queries: networkChainIds.map(({ chainId }) => ({
 			queryKey: ['token-balances', signerId, chainId],
 			queryFn: () =>
-				api.get<TokenBalancesResponse>(
-					`/signers/${signerId}/token-balances?chainId=${chainId}`,
-				),
+				api.get<TokenBalancesResponse>(`/signers/${signerId}/token-balances?chainId=${chainId}`),
 			enabled: !!signerId && !!chainId,
 			refetchInterval: 30_000,
 		})),

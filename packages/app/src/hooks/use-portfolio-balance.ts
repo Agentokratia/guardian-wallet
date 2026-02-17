@@ -26,7 +26,8 @@ export function usePortfolioBalance(signerIds: string[], chainId?: number) {
 
 	let totalWei = 0n;
 	const balances: Record<string, string> = {};
-	const networkBalances: Record<string, { network: string; chainId: number; balance: string }[]> = {};
+	const networkBalances: Record<string, { network: string; chainId: number; balance: string }[]> =
+		{};
 
 	for (let i = 0; i < signerIds.length; i++) {
 		const q = queries[i];

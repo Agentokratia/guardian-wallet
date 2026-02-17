@@ -1,10 +1,10 @@
-import { Global, Module, type OnModuleDestroy } from '@nestjs/common';
 import type { IKmsProvider } from '@agentokratia/guardian-core';
-import { APP_CONFIG, type AppConfig } from './config.js';
-import { VaultKvShareStore } from './vault-kv-share-store.js';
-import { SupabaseService } from './supabase.service.js';
-import { LocalFileKmsProvider } from '../kms/local-file.provider.js';
+import { Global, Module, type OnModuleDestroy } from '@nestjs/common';
 import { EnvelopeStoreProvider } from '../kms/envelope-store.provider.js';
+import { LocalFileKmsProvider } from '../kms/local-file.provider.js';
+import { APP_CONFIG, type AppConfig } from './config.js';
+import { SupabaseService } from './supabase.service.js';
+import { VaultKvShareStore } from './vault-kv-share-store.js';
 
 export const SHARE_STORE = Symbol('SHARE_STORE');
 

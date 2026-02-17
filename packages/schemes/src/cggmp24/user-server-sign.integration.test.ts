@@ -13,7 +13,7 @@
  */
 
 import { keccak256, toHex } from 'viem';
-import { describe, expect, it, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { CGGMP24Scheme, type DkgResult } from './cggmp24.scheme.js';
 
 // Shared DKG result across all tests (DKG is expensive ~1-15s)
@@ -59,8 +59,12 @@ describe('User+Server signing path (integration)', () => {
 
 		// Exchange messages — simulate the round loop
 		const result = await exchangeRounds(
-			serverScheme, serverSession.sessionId, serverSession.firstMessages,
-			clientScheme, clientSession.sessionId, clientSession.firstMessages,
+			serverScheme,
+			serverSession.sessionId,
+			serverSession.firstMessages,
+			clientScheme,
+			clientSession.sessionId,
+			clientSession.firstMessages,
 		);
 
 		expect(result.serverComplete).toBe(true);
@@ -106,8 +110,12 @@ describe('User+Server signing path (integration)', () => {
 
 		// Exchange messages — simulate the round loop
 		const result = await exchangeRounds(
-			serverScheme, serverSession.sessionId, serverSession.firstMessages,
-			browserScheme, browserSession.sessionId, browserSession.firstMessages,
+			serverScheme,
+			serverSession.sessionId,
+			serverSession.firstMessages,
+			browserScheme,
+			browserSession.sessionId,
+			browserSession.firstMessages,
 		);
 
 		expect(result.serverComplete).toBe(true);
@@ -118,7 +126,9 @@ describe('User+Server signing path (integration)', () => {
 		const browserSig = await browserScheme.finalizeSign(browserSession.sessionId);
 
 		console.log(`[Browser] Server sig: r=${toHex(serverSig.r).slice(0, 10)}... v=${serverSig.v}`);
-		console.log(`[Browser] Browser sig: r=${toHex(browserSig.r).slice(0, 10)}... v=${browserSig.v}`);
+		console.log(
+			`[Browser] Browser sig: r=${toHex(browserSig.r).slice(0, 10)}... v=${browserSig.v}`,
+		);
 
 		// Both should produce the same signature
 		expect(toHex(serverSig.r)).toBe(toHex(browserSig.r));
@@ -173,7 +183,9 @@ describe('User+Server signing path (integration)', () => {
 			serverFirstBytes,
 		);
 
-		console.log(`[B64] Browser processResult: complete=${processResult.complete} outgoing=${processResult.outgoingMessages.length}`);
+		console.log(
+			`[B64] Browser processResult: complete=${processResult.complete} outgoing=${processResult.outgoingMessages.length}`,
+		);
 
 		// Combine browser first messages + processResult messages (as browser-signer.ts does)
 		const browserFirstBytes = browserFirstParsed.map((msg: unknown) =>
@@ -202,7 +214,9 @@ describe('User+Server signing path (integration)', () => {
 			);
 
 			serverComplete = serverResult.complete;
-			console.log(`[B64] Round ${roundCount}: server complete=${serverComplete} outgoing=${serverResult.outgoingMessages.length}`);
+			console.log(
+				`[B64] Round ${roundCount}: server complete=${serverComplete} outgoing=${serverResult.outgoingMessages.length}`,
+			);
 
 			if (serverResult.outgoingMessages.length > 0 && !serverComplete) {
 				// Server → base64 → Browser
@@ -219,7 +233,9 @@ describe('User+Server signing path (integration)', () => {
 				);
 
 				outgoing = browserResult.outgoingMessages;
-				console.log(`[B64] Round ${roundCount}: browser complete=${browserResult.complete} outgoing=${browserResult.outgoingMessages.length}`);
+				console.log(
+					`[B64] Round ${roundCount}: browser complete=${browserResult.complete} outgoing=${browserResult.outgoingMessages.length}`,
+				);
 			} else {
 				outgoing = [];
 			}
@@ -280,7 +296,9 @@ async function exchangeRounds(
 	let completeA = resultA.complete;
 	let completeB = resultB.complete;
 
-	console.log(`  Round 0: A complete=${completeA} outA=${outgoingA.length} | B complete=${completeB} outB=${outgoingB.length}`);
+	console.log(
+		`  Round 0: A complete=${completeA} outA=${outgoingA.length} | B complete=${completeB} outB=${outgoingB.length}`,
+	);
 
 	const MAX_ROUNDS = 20;
 	let round = 0;
@@ -312,7 +330,9 @@ async function exchangeRounds(
 			outgoingB = [];
 		}
 
-		console.log(`  Round ${round}: A complete=${completeA} outA=${outgoingA.length} | B complete=${completeB} outB=${outgoingB.length}`);
+		console.log(
+			`  Round ${round}: A complete=${completeA} outA=${outgoingA.length} | B complete=${completeB} outB=${outgoingB.length}`,
+		);
 
 		// Safety: if both have no outgoing and neither is complete, we're stuck
 		if (outgoingA.length === 0 && outgoingB.length === 0 && (!completeA || !completeB)) {

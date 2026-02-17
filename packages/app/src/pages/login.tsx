@@ -85,7 +85,9 @@ function NavBar({ onGetStarted, loading }: { onGetStarted: () => void; loading: 
 				<div className="flex items-center gap-2.5">
 					<GuardianLogo width={24} height={24} />
 					<span className="text-sm font-bold text-text font-serif">Guardian</span>
-					<span className="hidden sm:inline text-[11px] text-text-dim font-mono">by Agentokratia</span>
+					<span className="hidden sm:inline text-[11px] text-text-dim font-mono">
+						by Agentokratia
+					</span>
 				</div>
 				<div className="hidden md:flex items-center gap-6">
 					<a href="#why" className="text-[13px] text-text-muted hover:text-text transition-colors">
@@ -103,7 +105,11 @@ function NavBar({ onGetStarted, loading }: { onGetStarted: () => void; loading: 
 						disabled={loading}
 						className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[13px] font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
 					>
-						{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+						{loading ? (
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						) : (
+							<Mail className="h-3.5 w-3.5" />
+						)}
 						{loading ? 'Loading...' : 'Launch App'}
 					</button>
 				</div>
@@ -170,7 +176,8 @@ function AuthForm() {
 		} catch (loginErr: unknown) {
 			const loginMsg = loginErr instanceof Error ? loginErr.message : '';
 			const isNotFound = loginMsg.includes('No account found') || loginMsg.includes('404');
-			const isNotComplete = loginMsg.includes('registration not complete') || loginMsg.includes('No passkeys');
+			const isNotComplete =
+				loginMsg.includes('registration not complete') || loginMsg.includes('No passkeys');
 
 			if (isNotFound || isNotComplete) {
 				// User doesn't exist or hasn't finished registration — start OTP flow
@@ -179,7 +186,8 @@ function AuthForm() {
 					setUserId(result.userId);
 					setStep('otp');
 				} catch (regErr: unknown) {
-					const message = regErr instanceof Error ? regErr.message : 'Failed to send verification code';
+					const message =
+						regErr instanceof Error ? regErr.message : 'Failed to send verification code';
 					setError(message);
 				}
 			} else {
@@ -399,9 +407,7 @@ export function LoginPage() {
 				<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(26,26,26,0.03)_0%,transparent_70%)]" />
 
 				<div className="relative mx-auto max-w-3xl text-center">
-					<p className="text-[13px] font-medium text-text-muted mb-6">
-						Guardian by Agentokratia
-					</p>
+					<p className="text-[13px] font-medium text-text-muted mb-6">Guardian by Agentokratia</p>
 
 					<h1 className="font-serif text-[clamp(2.8rem,7vw,4.5rem)] font-normal leading-[1.05] tracking-tight text-text">
 						Agents deserve wallets
@@ -410,7 +416,8 @@ export function LoginPage() {
 					</h1>
 
 					<p className="mx-auto mt-8 max-w-md text-[18px] leading-relaxed text-text-muted">
-						The private key never exists. Not in memory, not in transit, not ever. Agents transact with full autonomy. The key stays impossible to steal.
+						The private key never exists. Not in memory, not in transit, not ever. Agents transact
+						with full autonomy. The key stays impossible to steal.
 					</p>
 
 					{/* Auth form — primary CTA */}
@@ -420,7 +427,11 @@ export function LoginPage() {
 						) : (
 							<>
 								<div className="flex flex-col sm:flex-row items-center gap-3">
-									<Button size="lg" onClick={scrollToHero} className="min-w-[220px] h-12 text-[15px]">
+									<Button
+										size="lg"
+										onClick={scrollToHero}
+										className="min-w-[220px] h-12 text-[15px]"
+									>
 										<Mail className="h-4 w-4" />
 										Get Started
 									</Button>
@@ -475,7 +486,9 @@ export function LoginPage() {
 					</p>
 					<div className="mx-auto mt-8 h-px w-16 bg-border" />
 					<p className="mt-8 text-[16px] leading-relaxed text-text-muted max-w-md mx-auto">
-						Guardian splits the private key into three shares. The full key is never constructed — not during creation, not during signing. Agents transact freely. Math enforces the rules.
+						Guardian splits the private key into three shares. The full key is never constructed —
+						not during creation, not during signing. Agents transact freely. Math enforces the
+						rules.
 					</p>
 				</div>
 			</section>
@@ -496,14 +509,13 @@ export function LoginPage() {
 
 					<div className="space-y-20">
 						{PROMISES.map((p, i) => (
-							<div key={p.headline} className={`flex flex-col md:flex-row gap-8 md:gap-16 items-start ${i % 2 === 1 ? 'md:flex-row-reverse' : ''}`}>
+							<div
+								key={p.headline}
+								className={`flex flex-col md:flex-row gap-8 md:gap-16 items-start ${i % 2 === 1 ? 'md:flex-row-reverse' : ''}`}
+							>
 								<div className="flex-1">
-									<h3 className="font-serif text-2xl font-normal text-text mb-4">
-										{p.headline}
-									</h3>
-									<p className="text-[16px] leading-relaxed text-text-muted">
-										{p.body}
-									</p>
+									<h3 className="font-serif text-2xl font-normal text-text mb-4">{p.headline}</h3>
+									<p className="text-[16px] leading-relaxed text-text-muted">{p.body}</p>
 								</div>
 								<div className="w-full md:w-64 shrink-0">
 									<div className="aspect-square rounded-2xl border border-border bg-surface flex items-center justify-center">
@@ -512,11 +524,21 @@ export function LoginPage() {
 												{i === 0 ? 'Key Security' : i === 1 ? 'Policy Engine' : 'Recovery'}
 											</div>
 											<div className="font-serif text-lg text-text">
-												{i === 0 ? '2-of-3 threshold' : i === 1 ? 'Rules, not hope' : '3 signing paths'}
+												{i === 0
+													? '2-of-3 threshold'
+													: i === 1
+														? 'Rules, not hope'
+														: '3 signing paths'}
 											</div>
 											<div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-text-dim">
 												<Lock className="h-2.5 w-2.5" />
-												<span>{i === 0 ? 'Distributed key generation' : i === 1 ? 'Enforced on-sign' : 'Never locked out'}</span>
+												<span>
+													{i === 0
+														? 'Distributed key generation'
+														: i === 1
+															? 'Enforced on-sign'
+															: 'Never locked out'}
+												</span>
 											</div>
 										</div>
 									</div>
@@ -538,16 +560,12 @@ export function LoginPage() {
 								<div className="text-[clamp(2rem,5vw,3rem)] font-bold tabular-nums text-text leading-none">
 									{n.value}
 								</div>
-								<div className="mt-2 text-[14px] font-medium text-text">
-									{n.label}
-								</div>
-								<div className="mt-0.5 text-[12px] text-text-dim">
-									{n.sublabel}
-								</div>
+								<div className="mt-2 text-[14px] font-medium text-text">{n.label}</div>
+								<div className="mt-0.5 text-[12px] text-text-dim">{n.sublabel}</div>
 							</div>
 						))}
 					</div>
-					</div>
+				</div>
 			</section>
 
 			{/* ================================================================ */}
@@ -576,7 +594,9 @@ export function LoginPage() {
 						</div>
 						<pre className="overflow-x-auto p-5 text-[13px] leading-relaxed font-mono">
 							<code>
-								<span className="text-text-dim">{'// An agent gets a wallet. The key never exists.\n'}</span>
+								<span className="text-text-dim">
+									{'// An agent gets a wallet. The key never exists.\n'}
+								</span>
 								<span className="text-[#8B5CF6]">import</span>
 								<span className="text-text">{' { ThresholdSigner } '}</span>
 								<span className="text-[#8B5CF6]">from</span>
@@ -601,7 +621,9 @@ export function LoginPage() {
 								<span className="text-text">();</span>
 								<span className="text-text-dim">{' // drop-in viem account'}</span>
 								{'\n\n'}
-								<span className="text-text-dim">{'// Sign like any wallet. The math does the rest.\n'}</span>
+								<span className="text-text-dim">
+									{'// Sign like any wallet. The math does the rest.\n'}
+								</span>
 								<span className="text-[#2563EB]">const</span>
 								<span className="text-[#0891B2]"> hash</span>
 								<span className="text-text">{' = '}</span>
@@ -616,7 +638,8 @@ export function LoginPage() {
 					</div>
 
 					<p className="mt-6 text-center text-[14px] text-text-muted">
-						One import. One function call. Agents sign transactions with threshold security — the key is never in one place.
+						One import. One function call. Agents sign transactions with threshold security — the
+						key is never in one place.
 					</p>
 				</div>
 			</section>
@@ -661,9 +684,7 @@ export function LoginPage() {
 			{/* ================================================================ */}
 			<section id="faq" className="border-t border-border px-6 py-24">
 				<div className="mx-auto max-w-2xl">
-					<h2 className="font-serif text-3xl font-normal text-text text-center mb-12">
-						Questions
-					</h2>
+					<h2 className="font-serif text-3xl font-normal text-text text-center mb-12">Questions</h2>
 					<div className="rounded-xl border border-border bg-surface px-6">
 						{FAQ_ITEMS.map((item) => (
 							<FaqItem key={item.q} q={item.q} a={item.a} />
@@ -718,7 +739,9 @@ export function LoginPage() {
 								</div>
 								<div className="space-y-2">
 									{['Ethereum', 'Base', 'Arbitrum', 'Sepolia'].map((net) => (
-										<div key={net} className="text-[13px] text-text-muted">{net}</div>
+										<div key={net} className="text-[13px] text-text-muted">
+											{net}
+										</div>
 									))}
 								</div>
 							</div>

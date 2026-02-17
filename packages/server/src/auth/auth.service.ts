@@ -1,5 +1,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import {
+	generateAuthChallenge,
+	generateOTP,
+	generateRegistrationChallenge,
+	verifyAuthentication,
+	verifyRegistration,
+} from '@agentokratia/guardian-auth/server';
+import {
 	BadRequestException,
 	ConflictException,
 	Inject,
@@ -8,13 +15,6 @@ import {
 	NotFoundException,
 	UnauthorizedException,
 } from '@nestjs/common';
-import {
-	generateAuthChallenge,
-	generateOTP,
-	generateRegistrationChallenge,
-	verifyAuthentication,
-	verifyRegistration,
-} from '@agentokratia/guardian-auth/server';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/types';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
 import { SupabaseService } from '../common/supabase.service.js';
@@ -91,12 +91,14 @@ export class AuthService {
 		const otpHash = createHash('sha256').update(otp.code).digest('hex');
 
 		// Store OTP hash in DB
-		const { error: otpInsertError } = await this.supabase.client.from('email_verifications').insert({
-			user_id: userId,
-			email: normalized,
-			otp_hash: otpHash,
-			expires_at: otp.expiresAt.toISOString(),
-		});
+		const { error: otpInsertError } = await this.supabase.client
+			.from('email_verifications')
+			.insert({
+				user_id: userId,
+				email: normalized,
+				otp_hash: otpHash,
+				expires_at: otp.expiresAt.toISOString(),
+			});
 
 		if (otpInsertError) {
 			this.logger.error(`Failed to insert OTP: ${JSON.stringify(otpInsertError)}`);
@@ -179,7 +181,11 @@ export class AuthService {
 		// Mark email as verified
 		await this.supabase.client
 			.from('users')
-			.update({ email_verified: true, status: 'pending_passkey', updated_at: new Date().toISOString() })
+			.update({
+				email_verified: true,
+				status: 'pending_passkey',
+				updated_at: new Date().toISOString(),
+			})
 			.eq('id', userId);
 
 		// Get existing credentials to exclude
@@ -248,10 +254,7 @@ export class AuthService {
 			updateData.eth_address = prfDerivedAddress.toLowerCase();
 		}
 
-		await this.supabase.client
-			.from('users')
-			.update(updateData)
-			.eq('id', userId);
+		await this.supabase.client.from('users').update(updateData).eq('id', userId);
 
 		// Get user for JWT
 		const { data: updatedUser } = await this.supabase.client

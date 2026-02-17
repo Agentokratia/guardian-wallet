@@ -72,7 +72,9 @@ export function Sidebar() {
 					<AccountListItem
 						key={signer.id}
 						signer={signer}
-						isActive={pathname === `/signers/${signer.id}` || pathname.startsWith(`/signers/${signer.id}/`)}
+						isActive={
+							pathname === `/signers/${signer.id}` || pathname.startsWith(`/signers/${signer.id}/`)
+						}
 					/>
 				))}
 				{hasMore && (
@@ -122,7 +124,10 @@ export function Sidebar() {
 								pulse={health?.vault?.connected}
 								className="h-2 w-2"
 							/>
-							<Mono size="sm" className={health?.vault?.connected ? 'text-text-muted' : 'text-danger/80'}>
+							<Mono
+								size="sm"
+								className={health?.vault?.connected ? 'text-text-muted' : 'text-danger/80'}
+							>
 								{health?.vault?.connected ? 'Vault connected' : 'Vault offline'}
 							</Mono>
 						</div>
@@ -141,7 +146,8 @@ export function Sidebar() {
 						</div>
 					</TooltipTrigger>
 					<TooltipContent side="right">
-						Every private key is split into 3 shares via threshold cryptography. Any 2 can sign — the full key never exists.
+						Every private key is split into 3 shares via threshold cryptography. Any 2 can sign —
+						the full key never exists.
 					</TooltipContent>
 				</Tooltip>
 				<button

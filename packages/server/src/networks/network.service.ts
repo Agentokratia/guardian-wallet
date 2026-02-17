@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { type Network, NetworkRepository } from './network.repository.js';
 

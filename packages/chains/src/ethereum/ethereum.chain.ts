@@ -1,4 +1,9 @@
-import type { DecodedAction, FeeEstimate, IChain, TransactionRequest } from '@agentokratia/guardian-core';
+import type {
+	DecodedAction,
+	FeeEstimate,
+	IChain,
+	TransactionRequest,
+} from '@agentokratia/guardian-core';
 import {
 	http,
 	type PublicClient,
@@ -141,7 +146,12 @@ export class EthereumChain implements IChain {
 		});
 	}
 
-	async estimateGas(request: { from?: string; to?: string; value?: bigint; data?: Uint8Array }): Promise<bigint> {
+	async estimateGas(request: {
+		from?: string;
+		to?: string;
+		value?: bigint;
+		data?: Uint8Array;
+	}): Promise<bigint> {
 		const data = request.data ? toHex(request.data) : undefined;
 		return this.client.estimateGas({
 			account: request.from as `0x${string}` | undefined,

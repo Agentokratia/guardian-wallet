@@ -22,7 +22,10 @@ export function useAuditLog(filters?: AuditLogFilters) {
 	return useQuery({
 		queryKey: ['audit-log', filters],
 		queryFn: async () => {
-			const res = await api.get<{ data: SigningRequest[]; meta: { total: number; page: number; limit: number; totalPages: number } }>(`/audit-log?${params}`);
+			const res = await api.get<{
+				data: SigningRequest[];
+				meta: { total: number; page: number; limit: number; totalPages: number };
+			}>(`/audit-log?${params}`);
 			return res.data;
 		},
 	});

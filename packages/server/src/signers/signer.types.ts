@@ -49,7 +49,7 @@ export function signerRowToDomain(row: SignerRow): Signer {
 		ethAddress: row.eth_address,
 		chain: row.chain as ChainName,
 		scheme: row.scheme as SchemeName,
-		network: row.network ? row.network as NetworkName : undefined,
+		network: row.network ? (row.network as NetworkName) : undefined,
 		status: row.status as SignerStatus,
 		ownerAddress: row.owner_address,
 		apiKeyHash: row.api_key_hash,
@@ -63,7 +63,9 @@ export function signerRowToDomain(row: SignerRow): Signer {
 }
 
 /** Strip internal fields before returning to clients. */
-export function signerToPublic(signer: Signer): Omit<Signer, 'apiKeyHash' | 'vaultSharePath' | 'ownerAddress'> {
+export function signerToPublic(
+	signer: Signer,
+): Omit<Signer, 'apiKeyHash' | 'vaultSharePath' | 'ownerAddress'> {
 	const { apiKeyHash: _, vaultSharePath: __, ownerAddress: ___, ...pub } = signer;
 	return pub;
 }

@@ -1,5 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
 import type { PolicyRule } from '@agentokratia/guardian-core';
+import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseService } from '../common/supabase.service.js';
 import type { PolicyDocumentEntity, PolicyDocumentRow } from './policy-document.types.js';
 

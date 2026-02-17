@@ -9,9 +9,9 @@ import { useAuditLog } from '@/hooks/use-audit-log';
 import { useBalance } from '@/hooks/use-balance';
 import { type Network, useNetworks } from '@/hooks/use-networks';
 import { useSigner } from '@/hooks/use-signer';
-import { useRemoveToken } from '@/hooks/use-tokens';
-import type { TokenBalance } from '@/hooks/use-token-balances';
 import { useToast } from '@/hooks/use-toast';
+import type { TokenBalance } from '@/hooks/use-token-balances';
+import { useRemoveToken } from '@/hooks/use-tokens';
 import { formatTokenBalance, formatWei } from '@/lib/formatters';
 import { getTypeIcon, statusConfig } from '@/lib/signer-constants';
 import { cn } from '@/lib/utils';
@@ -104,7 +104,10 @@ const TOKEN_COLORS: Record<string, { bg: string; text: string }> = {
 function TokenLogo({ symbol, logoUrl }: { symbol: string; logoUrl: string | null }) {
 	const [imgFailed, setImgFailed] = useState(false);
 	const src = logoUrl ?? KNOWN_LOGOS[symbol.toUpperCase()];
-	const colors = TOKEN_COLORS[symbol.toUpperCase()] ?? { bg: 'bg-stone-500/10', text: 'text-stone-500' };
+	const colors = TOKEN_COLORS[symbol.toUpperCase()] ?? {
+		bg: 'bg-stone-500/10',
+		text: 'text-stone-500',
+	};
 
 	if (src && !imgFailed) {
 		return (
@@ -118,7 +121,13 @@ function TokenLogo({ symbol, logoUrl }: { symbol: string; logoUrl: string | null
 	}
 
 	return (
-		<div className={cn('flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold', colors.bg, colors.text)}>
+		<div
+			className={cn(
+				'flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold',
+				colors.bg,
+				colors.text,
+			)}
+		>
 			{symbol.length <= 4 ? symbol : symbol.slice(0, 3)}
 		</div>
 	);
@@ -162,33 +171,32 @@ function AggregatedTokenRow({
 					<div className="flex items-center gap-1.5">
 						<span className="text-[13px] font-semibold text-text">{token.symbol}</span>
 						{canExpand && (
-							<span className="text-[10px] text-text-dim">
-								{networkCount} networks
-							</span>
+							<span className="text-[10px] text-text-dim">{networkCount} networks</span>
 						)}
 					</div>
 					<div className="text-[11px] text-text-dim truncate">{token.name}</div>
 				</div>
 
 				<div className="flex items-center gap-2 shrink-0">
-					<span className={cn(
-						'text-[13px] font-semibold tabular-nums font-mono',
-						isZero ? 'text-text-dim' : 'text-text',
-					)}>
+					<span
+						className={cn(
+							'text-[13px] font-semibold tabular-nums font-mono',
+							isZero ? 'text-text-dim' : 'text-text',
+						)}
+					>
 						{formatted}
 					</span>
-					<span className={cn(
-						'text-[11px]',
-						isZero ? 'text-text-dim/50' : 'text-text-muted',
-					)}>
+					<span className={cn('text-[11px]', isZero ? 'text-text-dim/50' : 'text-text-muted')}>
 						{token.symbol}
 					</span>
 
 					{canExpand && (
-						<ChevronDown className={cn(
-							'h-3.5 w-3.5 text-text-dim transition-transform duration-200',
-							expanded && 'rotate-180',
-						)} />
+						<ChevronDown
+							className={cn(
+								'h-3.5 w-3.5 text-text-dim transition-transform duration-200',
+								expanded && 'rotate-180',
+							)}
+						/>
 					)}
 
 					{!canExpand && signerId && (
@@ -219,10 +227,12 @@ function AggregatedTokenRow({
 								<span className="text-[11px] text-text-muted flex-1 truncate">
 									{entry.displayName}
 								</span>
-								<span className={cn(
-									'text-[11px] font-mono tabular-nums',
-									netZero ? 'text-text-dim/50' : 'text-text-muted',
-								)}>
+								<span
+									className={cn(
+										'text-[11px] font-mono tabular-nums',
+										netZero ? 'text-text-dim/50' : 'text-text-muted',
+									)}
+								>
 									{netBal} {token.symbol}
 								</span>
 								{!netZero && signerId && (
@@ -277,13 +287,18 @@ export function SignerDetailPage() {
 	// Derive from networks (available instantly via placeholderData) — no waterfall
 	const networkChainIds = useMemo(() => {
 		if (!networks) return [];
-		return networks.filter((n) => n.enabled).map((n) => ({
-			network: n.name,
-			chainId: n.chainId,
-		}));
+		return networks
+			.filter((n) => n.enabled)
+			.map((n) => ({
+				network: n.name,
+				chainId: n.chainId,
+			}));
 	}, [networks]);
 
-	const { groups: tokenGroups, isLoading: tokensLoading } = useAllTokenBalances(signerId, networkChainIds);
+	const { groups: tokenGroups, isLoading: tokensLoading } = useAllTokenBalances(
+		signerId,
+		networkChainIds,
+	);
 
 	const todayStart = useMemo(() => {
 		const d = new Date();
@@ -396,7 +411,8 @@ export function SignerDetailPage() {
 	const icon = getTypeIcon(signer.type, 'h-4 w-4');
 
 	const networkCount = balanceData?.balances?.length ?? 0;
-	const fundedNetworkCount = balanceData?.balances?.filter((b) => BigInt(b.balance) > 0n).length ?? 0;
+	const fundedNetworkCount =
+		balanceData?.balances?.filter((b) => BigInt(b.balance) > 0n).length ?? 0;
 
 	const sendPath = selectedNetwork
 		? `/signers/${signerId}/sign?network=${selectedNetwork}`
@@ -440,9 +456,7 @@ export function SignerDetailPage() {
 								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/[0.08] text-text shadow-sm">
 									{icon}
 								</div>
-								<h1 className="text-lg font-bold text-text truncate">
-									{signer.name}
-								</h1>
+								<h1 className="text-lg font-bold text-text truncate">{signer.name}</h1>
 								<Pill color={status.pill}>{status.label}</Pill>
 							</div>
 							<div className="mt-2 flex items-center gap-1.5 pl-[46px]">
@@ -504,10 +518,12 @@ export function SignerDetailPage() {
 								{fundedNetworkCount > 0
 									? `${fundedNetworkCount}/${networkCount} networks`
 									: `${networkCount} networks`}
-								<ChevronDown className={cn(
-									'h-3 w-3 transition-transform duration-200',
-									showNetworks && 'rotate-180',
-								)} />
+								<ChevronDown
+									className={cn(
+										'h-3 w-3 transition-transform duration-200',
+										showNetworks && 'rotate-180',
+									)}
+								/>
 							</button>
 						)}
 					</div>
@@ -522,9 +538,9 @@ export function SignerDetailPage() {
 									<button
 										type="button"
 										key={nb.network}
-										onClick={() => setSelectedNetwork(
-											nb.network === selectedNetwork ? null : nb.network,
-										)}
+										onClick={() =>
+											setSelectedNetwork(nb.network === selectedNetwork ? null : nb.network)
+										}
 										className={cn(
 											'flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[12px] transition-colors',
 											isActive ? 'bg-accent-muted' : 'hover:bg-surface-hover',
@@ -533,17 +549,18 @@ export function SignerDetailPage() {
 									>
 										<div className="flex items-center gap-1.5">
 											<NetworkIcon network={nb.network} size="sm" />
-											<span className={cn(
-												'font-medium',
-												isActive ? 'text-text' : 'text-text-muted',
-											)}>
+											<span
+												className={cn('font-medium', isActive ? 'text-text' : 'text-text-muted')}
+											>
 												{networkMap.get(nb.network)?.displayName ?? nb.network}
 											</span>
 										</div>
-										<span className={cn(
-											'font-mono text-[11px] tabular-nums',
-											isActive ? 'text-text' : 'text-text-dim',
-										)}>
+										<span
+											className={cn(
+												'font-mono text-[11px] tabular-nums',
+												isActive ? 'text-text' : 'text-text-dim',
+											)}
+										>
 											{formatWei(nb.balance)}
 										</span>
 									</button>
@@ -563,7 +580,9 @@ export function SignerDetailPage() {
 						<TrendingUp className="h-4 w-4 text-[#6366f1]/70" />
 					</div>
 					<div>
-						<div className="text-[10px] font-medium uppercase tracking-wider text-text-dim">Today's Spend</div>
+						<div className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
+							Today's Spend
+						</div>
 						<div className="mt-0.5 text-base font-bold tabular-nums text-text">
 							{activityLoading ? '...' : todaysSpend}
 						</div>
@@ -574,10 +593,10 @@ export function SignerDetailPage() {
 						<Activity className="h-4 w-4 text-success/70" />
 					</div>
 					<div>
-						<div className="text-[10px] font-medium uppercase tracking-wider text-text-dim">Requests Today</div>
-						<div className="mt-0.5 text-base font-bold tabular-nums text-text">
-							{requestsToday}
+						<div className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
+							Requests Today
 						</div>
+						<div className="mt-0.5 text-base font-bold tabular-nums text-text">{requestsToday}</div>
 					</div>
 				</div>
 			</div>
@@ -588,11 +607,7 @@ export function SignerDetailPage() {
 			<div>
 				<div className="mb-3 flex items-center justify-between">
 					<h2 className="text-[15px] font-semibold text-text">Tokens</h2>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => setAddTokenOpen(true)}
-					>
+					<Button variant="outline" size="sm" onClick={() => setAddTokenOpen(true)}>
 						<Plus className="h-3.5 w-3.5" />
 						Add Token
 					</Button>
@@ -601,8 +616,10 @@ export function SignerDetailPage() {
 				{tokensLoading ? (
 					<div className="rounded-xl border border-border bg-surface animate-pulse">
 						{Array.from({ length: 3 }, (_, i) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
-							<div key={`ts-${i}`} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
+							<div
+								key={`ts-${i}`}
+								className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0"
+							>
 								<div className="h-8 w-8 rounded-full bg-surface-hover" />
 								<div className="flex-1 space-y-1.5">
 									<div className="h-4 w-14 rounded animate-shimmer" />
@@ -616,35 +633,42 @@ export function SignerDetailPage() {
 					<div className="rounded-xl border border-border bg-surface overflow-hidden divide-y divide-border">
 						{/* Funded tokens always visible */}
 						{fundedTokens.map((token, i) => (
-							<div key={token.symbol} className="animate-stagger-in" style={{ '--stagger': i } as React.CSSProperties}>
-							<AggregatedTokenRow
-								token={token}
-								signerId={signerId}
-								multiNetwork={hasMultipleNetworks}
-							/>
+							<div
+								key={token.symbol}
+								className="animate-stagger-in"
+								style={{ '--stagger': i } as React.CSSProperties}
+							>
+								<AggregatedTokenRow
+									token={token}
+									signerId={signerId}
+									multiNetwork={hasMultipleNetworks}
+								/>
 							</div>
 						))}
 
 						{/* Zero-balance tokens — collapsed by default */}
 						{zeroTokens.length > 0 && (
 							<>
-								{showZeroTokens && zeroTokens.map((token) => (
-									<AggregatedTokenRow
-										key={token.symbol}
-										token={token}
-										signerId={signerId}
-										multiNetwork={hasMultipleNetworks}
-									/>
-								))}
+								{showZeroTokens &&
+									zeroTokens.map((token) => (
+										<AggregatedTokenRow
+											key={token.symbol}
+											token={token}
+											signerId={signerId}
+											multiNetwork={hasMultipleNetworks}
+										/>
+									))}
 								<button
 									type="button"
 									onClick={() => setShowZeroTokens(!showZeroTokens)}
 									className="flex w-full items-center justify-center gap-1.5 py-2 text-[11px] font-medium text-text-dim hover:text-text-muted hover:bg-surface-hover transition-colors"
 								>
-									<ChevronDown className={cn(
-										'h-3 w-3 transition-transform duration-200',
-										showZeroTokens && 'rotate-180',
-									)} />
+									<ChevronDown
+										className={cn(
+											'h-3 w-3 transition-transform duration-200',
+											showZeroTokens && 'rotate-180',
+										)}
+									/>
 									{showZeroTokens
 										? 'Hide zero balances'
 										: `${zeroTokens.length} token${zeroTokens.length > 1 ? 's' : ''} with zero balance`}
@@ -670,7 +694,6 @@ export function SignerDetailPage() {
 				{activityLoading ? (
 					<div className="rounded-xl border border-border bg-surface p-5 space-y-3 animate-pulse">
 						{Array.from({ length: 3 }, (_, i) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
 							<div key={`a-${i}`} className="h-10 rounded-lg bg-surface-hover" />
 						))}
 					</div>

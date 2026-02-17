@@ -1,6 +1,6 @@
 import {
-	CanActivate,
-	ExecutionContext,
+	type CanActivate,
+	type ExecutionContext,
 	HttpException,
 	HttpStatus,
 	Injectable,

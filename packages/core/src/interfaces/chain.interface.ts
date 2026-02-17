@@ -37,7 +37,12 @@ export interface IChain {
 	broadcastTransaction(signed: Uint8Array): Promise<string>;
 	getBalance(address: string): Promise<bigint>;
 	getNonce(address: string): Promise<number>;
-	estimateGas(request: { from?: string; to?: string; value?: bigint; data?: Uint8Array }): Promise<bigint>;
+	estimateGas(request: {
+		from?: string;
+		to?: string;
+		value?: bigint;
+		data?: Uint8Array;
+	}): Promise<bigint>;
 	getGasPrice(): Promise<bigint>;
 	estimateFeesPerGas(): Promise<FeeEstimate>;
 }

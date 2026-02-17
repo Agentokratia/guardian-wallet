@@ -34,7 +34,9 @@ export function SettingsPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle className="text-base">System Status</CardTitle>
-						<CardDescription>Real-time health of the services that power signing operations</CardDescription>
+						<CardDescription>
+							Real-time health of the services that power signing operations
+						</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-4">
 						{healthLoading ? (
@@ -51,7 +53,9 @@ export function SettingsPage() {
 											<span className="text-sm font-medium text-text">
 												Vault: {vaultConnected ? 'Connected' : 'Disconnected'}
 											</span>
-											<p className="text-[11px] text-text-dim mt-0.5">Stores encrypted key shares</p>
+											<p className="text-[11px] text-text-dim mt-0.5">
+												Stores encrypted key shares
+											</p>
 										</div>
 									</div>
 									<div className="flex items-center gap-2">
@@ -60,7 +64,9 @@ export function SettingsPage() {
 											<span className="text-sm font-medium text-text">
 												Database: {dbConnected ? 'Connected' : 'Disconnected'}
 											</span>
-											<p className="text-[11px] text-text-dim mt-0.5">Account records and audit log</p>
+											<p className="text-[11px] text-text-dim mt-0.5">
+												Account records and audit log
+											</p>
 										</div>
 									</div>
 								</div>
@@ -94,13 +100,15 @@ export function SettingsPage() {
 						) : networks && networks.length > 0 ? (
 							<div className="space-y-3">
 								{networks.map((n, i) => (
-									<div key={n.id} className="flex items-center justify-between text-sm animate-stagger-in" style={{ '--stagger': i } as React.CSSProperties}>
+									<div
+										key={n.id}
+										className="flex items-center justify-between text-sm animate-stagger-in"
+										style={{ '--stagger': i } as React.CSSProperties}
+									>
 										<div className="flex items-center gap-2">
 											<Dot color={n.enabled ? 'success' : 'warning'} />
 											<span className="font-medium text-text">{n.displayName}</span>
-											{n.isTestnet && (
-												<Pill color="default">testnet</Pill>
-											)}
+											{n.isTestnet && <Pill color="default">testnet</Pill>}
 										</div>
 										<Mono size="xs" className="text-text-dim">
 											Chain {n.chainId}
@@ -109,7 +117,9 @@ export function SettingsPage() {
 								))}
 							</div>
 						) : (
-							<p className="text-[13px] text-text-muted">No networks configured. Check your server's chain registry.</p>
+							<p className="text-[13px] text-text-muted">
+								No networks configured. Check your server's chain registry.
+							</p>
 						)}
 					</CardContent>
 				</Card>

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-	decryptUserShare,
-	encryptUserShare,
-} from '../lib/user-share-store';
+import { decryptUserShare, encryptUserShare } from '../lib/user-share-store';
 
 // Mock the auth package's deriveEncryptionKeyFromPRF
 vi.mock('@agentokratia/guardian-auth/browser', () => ({
@@ -16,7 +13,12 @@ vi.mock('@agentokratia/guardian-auth/browser', () => ({
 			['deriveKey'],
 		);
 		return crypto.subtle.deriveKey(
-			{ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(16).buffer as ArrayBuffer, info: new Uint8Array(0).buffer as ArrayBuffer },
+			{
+				name: 'HKDF',
+				hash: 'SHA-256',
+				salt: new Uint8Array(16).buffer as ArrayBuffer,
+				info: new Uint8Array(0).buffer as ArrayBuffer,
+			},
 			keyMaterial,
 			{ name: 'AES-GCM', length: 256 },
 			false,
@@ -53,9 +55,7 @@ describe('user-share-store (PRF-based)', () => {
 			const share = new Uint8Array([1, 2, 3, 4]);
 			const encrypted = await encryptUserShare(share, FAKE_PRF);
 
-			await expect(
-				decryptUserShare(encrypted, FAKE_PRF_2),
-			).rejects.toThrow();
+			await expect(decryptUserShare(encrypted, FAKE_PRF_2)).rejects.toThrow();
 		});
 
 		it('produces different ciphertext for same plaintext (random salt/iv)', async () => {

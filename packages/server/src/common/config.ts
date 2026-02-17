@@ -8,7 +8,6 @@ function optionalEnv(name: string, fallback: string): string {
 	return process.env[name] || fallback;
 }
 
-
 export interface AppConfig {
 	readonly NODE_ENV: string;
 	readonly PORT: number;
@@ -68,7 +67,7 @@ export function parseConfig(): AppConfig {
 		throw new Error('JWT_SECRET must be at least 16 characters');
 	}
 
-	const portStr = process.env['PORT'];
+	const portStr = process.env.PORT;
 	const port = portStr ? Number.parseInt(portStr, 10) : 8080;
 	if (Number.isNaN(port)) {
 		throw new Error(`PORT must be a valid number, got: ${portStr}`);
@@ -86,8 +85,10 @@ export function parseConfig(): AppConfig {
 
 	const kmsProviderRaw = optionalEnv('KMS_PROVIDER', 'vault-kv');
 	const validKmsProviders = ['vault-kv', 'local-file'] as const;
-	if (!validKmsProviders.includes(kmsProviderRaw as typeof validKmsProviders[number])) {
-		throw new Error(`KMS_PROVIDER must be one of: ${validKmsProviders.join(', ')}. Got: ${kmsProviderRaw}`);
+	if (!validKmsProviders.includes(kmsProviderRaw as (typeof validKmsProviders)[number])) {
+		throw new Error(
+			`KMS_PROVIDER must be one of: ${validKmsProviders.join(', ')}. Got: ${kmsProviderRaw}`,
+		);
 	}
 	const kmsProvider = kmsProviderRaw as 'vault-kv' | 'local-file';
 	const vaultAddr = optionalEnv('VAULT_ADDR', '');
@@ -100,7 +101,8 @@ export function parseConfig(): AppConfig {
 	}
 
 	if (kmsProvider === 'local-file') {
-		if (!kmsLocalKeyFile) throw new Error('KMS_LOCAL_KEY_FILE is required when KMS_PROVIDER=local-file');
+		if (!kmsLocalKeyFile)
+			throw new Error('KMS_LOCAL_KEY_FILE is required when KMS_PROVIDER=local-file');
 	}
 
 	return {
@@ -123,9 +125,11 @@ export function parseConfig(): AppConfig {
 
 		RP_ID: optionalEnv('RP_ID', 'localhost'),
 		RP_NAME: optionalEnv('RP_NAME', 'Guardian Wallet'),
-		ALLOWED_ORIGINS: optionalEnv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',').map((s) => s.trim()),
+		ALLOWED_ORIGINS: optionalEnv('ALLOWED_ORIGINS', 'http://localhost:3000')
+			.split(',')
+			.map((s) => s.trim()),
 
-		EMAIL_PROVIDER: (optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend'),
+		EMAIL_PROVIDER: optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend',
 		RESEND_API_KEY: optionalEnv('RESEND_API_KEY', ''),
 
 		AUXINFO_POOL_TARGET: poolTarget,

@@ -145,7 +145,10 @@ export class HttpClient {
 			});
 		} catch (err: unknown) {
 			if (err instanceof Error && err.name === 'AbortError') {
-				throw new HttpClientError(408, `Request timed out after ${this.timeout}ms: ${init.method} ${path}`);
+				throw new HttpClientError(
+					408,
+					`Request timed out after ${this.timeout}ms: ${init.method} ${path}`,
+				);
 			}
 			// Retry once on ECONNRESET — Node.js fetch (undici) can hit a stale
 			// keep-alive connection that the server already closed.
@@ -158,7 +161,10 @@ export class HttpClient {
 					});
 				} catch (retryErr: unknown) {
 					if (retryErr instanceof Error && retryErr.name === 'AbortError') {
-						throw new HttpClientError(408, `Request timed out after ${this.timeout}ms: ${init.method} ${path}`);
+						throw new HttpClientError(
+							408,
+							`Request timed out after ${this.timeout}ms: ${init.method} ${path}`,
+						);
 					}
 					throw retryErr;
 				}
@@ -187,7 +193,11 @@ export class HttpClient {
 	private isConnectionReset(err: unknown): boolean {
 		if (!(err instanceof Error)) return false;
 		const msg = err.message + (err.cause instanceof Error ? ` ${err.cause.message}` : '');
-		return msg.includes('ECONNRESET') || msg.includes('socket hang up') || msg.includes('network socket disconnected');
+		return (
+			msg.includes('ECONNRESET') ||
+			msg.includes('socket hang up') ||
+			msg.includes('network socket disconnected')
+		);
 	}
 
 	// -----------------------------------------------------------------------
@@ -209,10 +219,7 @@ export class HttpClient {
 	async createMessageSignSession(
 		data: CreateMessageSignSessionRequest,
 	): Promise<CreateMessageSignSessionResponse> {
-		return this.post<CreateMessageSignSessionResponse>(
-			`${API_PREFIX}/sign-message/session`,
-			data,
-		);
+		return this.post<CreateMessageSignSessionResponse>(`${API_PREFIX}/sign-message/session`, data);
 	}
 
 	/**
@@ -234,10 +241,6 @@ export class HttpClient {
 	 * Finalize a message signing session. Returns the (v,r,s) signature.
 	 */
 	async completeMessageSign(data: CompleteSignRequest): Promise<CompleteMessageSignResponse> {
-		return this.post<CompleteMessageSignResponse>(
-			`${API_PREFIX}/sign-message/complete`,
-			data,
-		);
+		return this.post<CompleteMessageSignResponse>(`${API_PREFIX}/sign-message/complete`, data);
 	}
-
 }

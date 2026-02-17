@@ -1,4 +1,4 @@
-import { PolicyType, type PolicyContext, type PolicyDocument } from '@agentokratia/guardian-core';
+import { type PolicyContext, type PolicyDocument, PolicyType } from '@agentokratia/guardian-core';
 import { describe, expect, it } from 'vitest';
 import { RulesEngineProvider } from '../rules-engine.provider.js';
 
@@ -259,10 +259,7 @@ describe('RulesEngineProvider', () => {
 		expect(result2.violations[0]?.type).toBe(PolicyType.RULE_REJECT);
 
 		// Tx with huge value → default deny (reject rule doesn't match, accept rule's ethValue fails)
-		const result3 = await engine.evaluate(
-			doc,
-			makeContext({ valueWei: 10000000000000000000n }),
-		);
+		const result3 = await engine.evaluate(doc, makeContext({ valueWei: 10000000000000000000n }));
 		expect(result3.allowed).toBe(false);
 		expect(result3.violations[0]?.type).toBe(PolicyType.DEFAULT_DENY);
 	});

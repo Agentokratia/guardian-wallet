@@ -16,7 +16,8 @@ export function SetupPage() {
 
 				{/* Description */}
 				<p className="mt-3 text-sm leading-relaxed text-text-muted">
-					Guarded accounts for humans and AI agents. Each account gets its own address, protected so no single device ever holds the full key.
+					Guarded accounts for humans and AI agents. Each account gets its own address, protected so
+					no single device ever holds the full key.
 				</p>
 
 				{/* CTA */}

@@ -1,5 +1,5 @@
 import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
-import { ThresholdSigner } from '@agentokratia/guardian-signer';
+import type { ThresholdSigner } from '@agentokratia/guardian-signer';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
@@ -245,9 +245,7 @@ export const proxyCommand = new Command('proxy')
 				}
 			}
 			if (!matched) {
-				console.error(
-					chalk.red(`\n  Error: Network "${config.network}" not found on server.`),
-				);
+				console.error(chalk.red(`\n  Error: Network "${config.network}" not found on server.`));
 				console.error(
 					chalk.dim(`  Available: ${[...networkMap.values()].map((n) => n.name).join(', ')}\n`),
 				);
