@@ -6,10 +6,10 @@ import {
 	NotFoundException,
 	type OnModuleInit,
 } from '@nestjs/common';
-import type { IVaultStore } from '@agentokratia/guardian-core';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { wipeBuffer } from '../common/crypto-utils.js';
-import { VAULT_STORE } from '../common/vault.module.js';
+import { SHARE_STORE } from '../common/share-store.module.js';
 import { SignerRepository } from '../signers/signer.repository.js';
 import { AuxInfoPoolService } from './aux-info-pool.service.js';
 
@@ -47,7 +47,7 @@ export interface FinalizeDKGOutput {
  *
  * Distribution:
  * - Share[0] (signer): returned to client for encrypted .share.enc file
- * - Share[1] (server): stored in Vault as JSON { coreShare, auxInfo }
+ * - Share[1] (server): stored in share store as JSON { coreShare, auxInfo }
  * - Share[2] (user): returned to client for wallet encryption
  */
 @Injectable()
@@ -63,7 +63,7 @@ export class DKGService implements OnModuleInit {
 
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(AuxInfoPoolService) private readonly auxInfoPool: AuxInfoPoolService,
 	) {
 		// Cleanup expired sessions every 30s
@@ -78,19 +78,10 @@ export class DKGService implements OnModuleInit {
 	}
 
 	/**
-	 * Load caches and initialize WASM for signing on startup.
-	 * Triggers background AuxInfo generation if none cached.
+	 * Initialize WASM for signing on startup.
+	 * DKG acceleration is handled by the AuxInfo pool.
 	 */
 	async onModuleInit(): Promise<void> {
-		const loaded = await this.scheme.loadCachedPrimes();
-		const hasFast = await this.scheme.hasPrimesReady();
-		if (hasFast) {
-			this.logger.log(`Loaded ${loaded} cache items — DKG acceleration ready`);
-		} else {
-			this.logger.warn('No cached AuxInfo or primes — starting background generation');
-			await this.scheme.ensureAuxInfoCached();
-		}
-
 		// Init WASM for signing (DKG uses native binary, signing still needs WASM)
 		try {
 			await this.scheme.initWasm();
@@ -155,16 +146,13 @@ export class DKGService implements OnModuleInit {
 		try {
 			poolAuxInfo = await this.auxInfoPool.take();
 		} catch (err) {
-			this.logger.warn(`Pool take() failed: ${String(err)} — falling back to PrimeCache`);
+			this.logger.warn(`Pool take() failed: ${String(err)} — falling back to cold start`);
 		}
 
 		if (poolAuxInfo) {
 			this.logger.log(`Starting DKG for signer ${input.signerId}... (pool AuxInfo — ~1s)`);
 		} else {
-			const hasCachedPrimes = await this.scheme.hasPrimesReady();
-			this.logger.log(
-				`Starting DKG for signer ${input.signerId}... (no pool, primes: ${hasCachedPrimes ? 'yes' : 'no'})`,
-			);
+			this.logger.log(`Starting DKG for signer ${input.signerId}... (cold start — ~120s)`);
 		}
 
 		const startTime = Date.now();
@@ -202,9 +190,9 @@ export class DKGService implements OnModuleInit {
 			// Derive Ethereum address from shared public key
 			const ethAddress = this.scheme.deriveAddress(dkgResult.publicKey);
 
-			// Store server key material in Vault
+			// Store server key material in share store
 			const vaultPath = input.signerId;
-			await this.vault.storeShare(vaultPath, serverKeyMaterial);
+			await this.shareStore.storeShare(vaultPath, serverKeyMaterial);
 
 			// Update signer record
 			await this.signerRepo.update(input.signerId, {
@@ -216,7 +204,7 @@ export class DKGService implements OnModuleInit {
 			this.logger.log(`DKG finalized for signer ${input.signerId}, address: ${ethAddress}`);
 
 			// Return signer + user key material bundles.
-			// Server key material stays in Vault — never returned.
+			// Server key material stays in share store — never returned.
 			return {
 				signerId: input.signerId,
 				ethAddress,

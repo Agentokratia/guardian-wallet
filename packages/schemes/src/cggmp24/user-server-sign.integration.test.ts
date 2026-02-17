@@ -23,8 +23,6 @@ let scheme: CGGMP24Scheme;
 describe('User+Server signing path (integration)', () => {
 	beforeAll(async () => {
 		scheme = new CGGMP24Scheme();
-		// Load caches (AuxInfo/primes) for fast DKG
-		await scheme.loadCachedPrimes();
 		// Initialize WASM for signing
 		await scheme.initWasm();
 		// Run DKG to get 3 shares: share[0]=signer, share[1]=server, share[2]=user

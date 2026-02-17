@@ -2,13 +2,13 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException } fr
 import { SignerStatus } from '@agentokratia/guardian-core';
 import type {
 	ChainName,
-	IVaultStore,
+	IShareStore,
 	SchemeName,
 	Signer,
 	SignerType,
 } from '@agentokratia/guardian-core';
 import { generateApiKey, hashApiKey } from '../common/crypto-utils.js';
-import { VAULT_STORE } from '../common/vault.module.js';
+import { SHARE_STORE } from '../common/share-store.module.js';
 import { SignerRepository } from './signer.repository.js';
 import type { CreateSignerData } from './signer.types.js';
 
@@ -38,7 +38,7 @@ export class SignerService {
 
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 	) {}
 
 	async list(): Promise<Signer[]> {
@@ -141,10 +141,10 @@ export class SignerService {
 
 		if (signer.vaultSharePath && signer.vaultSharePath !== 'pending') {
 			try {
-				await this.vault.deleteShare(signer.vaultSharePath);
+				await this.shareStore.deleteShare(signer.vaultSharePath);
 			} catch (error) {
 				this.logger.error(
-					`SECURITY: Failed to delete server share from Vault for signer ${id} at path ${signer.vaultSharePath}. Manual cleanup required. Error: ${error}`,
+					`SECURITY: Failed to delete server share for signer ${id} at path ${signer.vaultSharePath}. Manual cleanup required. Error: ${error}`,
 				);
 			}
 		}

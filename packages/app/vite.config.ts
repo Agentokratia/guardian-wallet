@@ -39,7 +39,6 @@ export default defineConfig({
 	build: {
 		rollupOptions: {
 			external: [
-				/prime-cache/,  // Node.js-only (DKG cache)
 				'env',          // WASM host import (provided by WebAssembly runtime)
 			],
 		},

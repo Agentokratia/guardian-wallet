@@ -6,7 +6,7 @@ import { ChainModule } from './common/chain.module.js';
 import { ConfigModule } from './common/config.module.js';
 import { GlobalExceptionFilter } from './common/global-exception.filter.js';
 import { SupabaseModule } from './common/supabase.module.js';
-import { VaultModule } from './common/vault.module.js';
+import { ShareStoreModule } from './common/share-store.module.js';
 import { DKGModule } from './dkg/dkg.module.js';
 import { HealthController } from './health.controller.js';
 import { NetworkModule } from './networks/network.module.js';
@@ -19,7 +19,7 @@ import { TokenModule } from './tokens/token.module.js';
 	imports: [
 		ConfigModule,
 		SupabaseModule,
-		VaultModule,
+		ShareStoreModule,
 		NetworkModule,
 		ChainModule,
 		AuthModule,

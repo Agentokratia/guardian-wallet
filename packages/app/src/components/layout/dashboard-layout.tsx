@@ -25,7 +25,7 @@ export function DashboardLayout() {
 					<button
 						type="button"
 						onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
-						className="mr-auto hidden md:flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] text-text-dim hover:text-text-muted hover:border-border-light transition-colors"
+						className="mr-auto hidden md:flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] text-text-dim hover:text-text-muted hover:border-border-light transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
 					>
 						<Search className="h-3 w-3" />
 						<span>Search...</span>

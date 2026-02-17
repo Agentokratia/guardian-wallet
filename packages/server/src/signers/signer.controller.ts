@@ -1,11 +1,11 @@
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpException, HttpStatus, Inject, Logger, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import type { IVaultStore } from '@agentokratia/guardian-core';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { NetworkService } from '../networks/network.service.js';
 import { hexToBytes } from '../common/encoding.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
-import { VAULT_STORE } from '../common/vault.module.js';
+import { SHARE_STORE } from '../common/share-store.module.js';
 import { AddTokenDto } from '../tokens/dto/add-token.dto.js';
 import { TokenService } from '../tokens/token.service.js';
 import { CreateSignerDto } from './dto/create-signer.dto.js';
@@ -31,7 +31,7 @@ export class SignerController {
 		@Inject(SignerService) private readonly signerService: SignerService,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
 		@Inject(NetworkService) private readonly networkService: NetworkService,
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(TokenService) private readonly tokenService: TokenService,
 	) {}
 
@@ -201,7 +201,7 @@ export class SignerController {
 		await this.getOwnedSigner(id, req);
 		const json = JSON.stringify(body);
 		const bytes = new TextEncoder().encode(json);
-		await this.vault.storeShare(`user-encrypted/${id}`, bytes);
+		await this.shareStore.storeShare(`user-encrypted/${id}`, bytes);
 		return { success: true };
 	}
 
@@ -209,7 +209,7 @@ export class SignerController {
 	async getUserShare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		try {
-			const bytes = await this.vault.getShare(`user-encrypted/${id}`);
+			const bytes = await this.shareStore.getShare(`user-encrypted/${id}`);
 			const json = new TextDecoder().decode(bytes);
 			const blob = JSON.parse(json);
 			this.logger.log(`getUserShare: sessionUser=${req.sessionUser}, blob.walletAddress=${blob.walletAddress}, iv=${blob.iv?.slice(0, 20)}, salt=${blob.salt?.slice(0, 20)}, ct_len=${blob.ciphertext?.length}`);
@@ -224,7 +224,7 @@ export class SignerController {
 			return blob;
 		} catch (error: unknown) {
 			if (error instanceof HttpException) throw error;
-			this.logger.error(`getUserShare: Vault read failed for user-encrypted/${id}:`, error);
+			this.logger.error(`getUserShare: share store read failed for user-encrypted/${id}:`, error);
 			throw new HttpException('User share not found', HttpStatus.NOT_FOUND);
 		}
 	}

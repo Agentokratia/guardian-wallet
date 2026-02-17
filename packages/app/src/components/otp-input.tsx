@@ -120,8 +120,8 @@ export function OTPInput({
 					disabled={disabled}
 					className={cn(
 						'h-12 w-10 rounded-lg border bg-surface text-center font-mono text-lg font-bold text-text',
-						'transition-all duration-150',
-						'focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none',
+						'transition-[border-color,box-shadow] duration-150',
+						'focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
 						'disabled:opacity-50 disabled:cursor-not-allowed',
 						value[i] ? 'border-accent/50' : 'border-border',
 					)}

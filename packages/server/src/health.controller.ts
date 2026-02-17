@@ -1,32 +1,38 @@
 import { Controller, Get, Inject, Res } from '@nestjs/common';
-import type { IVaultStore } from '@agentokratia/guardian-core';
+import type { IShareStore } from '@agentokratia/guardian-core';
 import type { Response } from 'express';
 import { SupabaseService } from './common/supabase.service.js';
-import { VAULT_STORE } from './common/vault.module.js';
+import { APP_CONFIG, type AppConfig } from './common/config.js';
+import { SHARE_STORE } from './common/share-store.module.js';
 import { AuxInfoPoolService } from './dkg/aux-info-pool.service.js';
 
 @Controller('health')
 export class HealthController {
 	constructor(
 		@Inject(SupabaseService) private readonly supabase: SupabaseService,
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(AuxInfoPoolService) private readonly auxInfoPool: AuxInfoPoolService,
+		@Inject(APP_CONFIG) private readonly config: AppConfig,
 	) {}
 
 	@Get()
 	async check(@Res() res: Response) {
-		const [vaultOk, dbOk] = await Promise.all([
-			this.vault.healthCheck(),
+		const [shareStoreOk, dbOk] = await Promise.all([
+			this.shareStore.healthCheck(),
 			this.supabase.healthCheck(),
 		]);
 
-		const healthy = vaultOk && dbOk;
+		const healthy = shareStoreOk && dbOk;
 		const poolStatus = this.auxInfoPool.getStatus();
 
 		res.status(healthy ? 200 : 503).json({
 			status: healthy ? 'ok' : 'degraded',
 			uptime: Math.floor(process.uptime()),
-			vault: { connected: vaultOk },
+			shareStore: {
+				provider: this.config.KMS_PROVIDER,
+				connected: shareStoreOk,
+			},
+			vault: { connected: shareStoreOk },
 			db: dbOk,
 			auxInfoPool: poolStatus,
 			timestamp: new Date().toISOString(),

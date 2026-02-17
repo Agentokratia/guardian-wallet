@@ -11,8 +11,8 @@ import type {
 	IChain,
 	IPolicyEngine,
 	IRulesEngine,
+	IShareStore,
 	IThresholdScheme,
-	IVaultStore,
 	KeyMaterial,
 	PolicyContext,
 	TransactionRequest,
@@ -23,7 +23,7 @@ import { hexToBytes, keccak256, toHex } from 'viem';
 import { SigningRequestRepository } from '../audit/signing-request.repository.js';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { wipeBuffer } from '../common/crypto-utils.js';
-import { VAULT_STORE } from '../common/vault.module.js';
+import { SHARE_STORE } from '../common/share-store.module.js';
 import { PolicyDocumentRepository } from '../policies/policy-document.repository.js';
 import { PolicyRepository } from '../policies/policy.repository.js';
 import { SignerRepository } from '../signers/signer.repository.js';
@@ -134,7 +134,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		@Inject('RULES_ENGINE') private readonly rulesEngine: IRulesEngine,
 		@Inject(PolicyDocumentRepository) private readonly policyDocRepo: PolicyDocumentRepository,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
-		@Inject(VAULT_STORE) private readonly vault: IVaultStore,
+		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 	) {
 		this.scheme = new CGGMP24Scheme();
 		this.cleanupTimer = setInterval(() => this.cleanupExpiredSessions(), CLEANUP_INTERVAL_MS);
@@ -254,10 +254,10 @@ export class InteractiveSignService implements OnModuleDestroy {
 		const { serverPartyIndex, clientPartyIndex, partiesAtKeygen } =
 			this.getPartyConfig(signingPath);
 
-		// Step 7: Fetch server key material from Vault
+		// Step 7: Fetch server key material from share store
 		let serverKeyMaterialBytes: Uint8Array | null = null;
 		try {
-			serverKeyMaterialBytes = await this.vault.getShare(signer.vaultSharePath);
+			serverKeyMaterialBytes = await this.shareStore.getShare(signer.vaultSharePath);
 
 			// Parse key material: { coreShare, auxInfo }
 			const keyMaterial = parseKeyMaterial(serverKeyMaterialBytes);
@@ -532,7 +532,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		// Fetch server key material and create sign session with hash upfront
 		let serverKeyMaterialBytes: Uint8Array | null = null;
 		try {
-			serverKeyMaterialBytes = await this.vault.getShare(signer.vaultSharePath);
+			serverKeyMaterialBytes = await this.shareStore.getShare(signer.vaultSharePath);
 			const keyMaterial = parseKeyMaterial(serverKeyMaterialBytes);
 
 			// Extract public key for recovery ID computation
@@ -748,7 +748,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 }
 
 /**
- * Parse key material from Vault: JSON { coreShare: base64, auxInfo: base64 }
+ * Parse key material from share store: JSON { coreShare: base64, auxInfo: base64 }
  */
 function parseKeyMaterial(bytes: Uint8Array): { coreShare: Uint8Array; auxInfo: Uint8Array } {
 	const json = new TextDecoder().decode(bytes);
