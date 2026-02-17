@@ -90,7 +90,7 @@ function makeSigner(overrides: Partial<Signer> = {}): Signer {
 		type: SignerType.AI_AGENT,
 		ethAddress: '0xabc123',
 		chain: ChainName.ETHEREUM,
-		scheme: SchemeName.CGGMP21,
+		scheme: SchemeName.CGGMP24,
 		network: NetworkName.SEPOLIA,
 		status: SignerStatus.ACTIVE,
 		ownerAddress: '0xTestOwner',

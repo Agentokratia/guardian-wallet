@@ -14,7 +14,7 @@ function makeShare(overrides: Partial<Share> = {}): Share {
 		data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]),
 		participantIndex: 1,
 		publicKey: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
-		scheme: 'cggmp21' as Share['scheme'],
+		scheme: 'cggmp24' as Share['scheme'],
 		curve: 'secp256k1' as Share['curve'],
 		...overrides,
 	};
