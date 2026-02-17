@@ -105,7 +105,7 @@ const CANNED_SIGNER = {
 	type: 'autonomous',
 	ethAddress: '0x' + 'ab'.repeat(20),
 	chain: 'ethereum',
-	scheme: 'cggmp21',
+	scheme: 'cggmp24',
 	network: 'sepolia',
 	status: 'active',
 	ownerAddress: '0xTestOwner',
@@ -166,7 +166,7 @@ describe('Guardian API Integration Tests', () => {
 				name: 'Test Agent',
 				type: 'autonomous' as never,
 				chain: 'ethereum' as never,
-				scheme: 'cggmp21' as never,
+				scheme: 'cggmp24' as never,
 				network: 'sepolia' as never,
 			}, defaultReq);
 
@@ -261,7 +261,7 @@ describe('Guardian API Integration Tests', () => {
 		};
 
 		it('stores encrypted user share blob in Vault', async () => {
-			const { signer } = await controller.create({ name: 'Share', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Share', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			const result = await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 			expect(result.success).toBe(true);
@@ -271,7 +271,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('retrieves encrypted user share blob from Vault', async () => {
-			const { signer } = await controller.create({ name: 'Retrieve', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Retrieve', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 			const retrieved = await controller.getUserShare(signer.id, defaultReq);
@@ -283,7 +283,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('roundtrip: stored bytes are JSON-encoded ciphertext, NOT raw share', async () => {
-			const { signer } = await controller.create({ name: 'Roundtrip', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Roundtrip', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 
@@ -299,7 +299,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('overwrites existing encrypted share', async () => {
-			const { signer } = await controller.create({ name: 'Overwrite', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Overwrite', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
 
@@ -317,7 +317,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('returns 404 when no encrypted share exists', async () => {
-			const { signer } = await controller.create({ name: 'NoShare', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'NoShare', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			try {
 				await controller.getUserShare(signer.id, defaultReq);
@@ -342,7 +342,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('server never holds raw user share — only encrypted blob', async () => {
-			const { signer } = await controller.create({ name: 'Security', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Security', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			// Store encrypted blob
 			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
@@ -393,7 +393,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('Vault paths are correctly separated: server share vs encrypted user share', async () => {
-			const { signer } = await controller.create({ name: 'Paths', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp21' as never, network: 'sepolia' as never }, defaultReq);
+			const { signer } = await controller.create({ name: 'Paths', type: 'autonomous' as never, chain: 'ethereum' as never, scheme: 'cggmp24' as never, network: 'sepolia' as never }, defaultReq);
 
 			// Store user encrypted share
 			await controller.storeUserShare(signer.id, {
@@ -461,7 +461,7 @@ describe('Guardian API Integration Tests', () => {
 				type: SignerType.AI_AGENT,
 				ethAddress: '',
 				chain: ChainName.ETHEREUM,
-				scheme: SchemeName.CGGMP21,
+				scheme: SchemeName.CGGMP24,
 				network: NetworkName.SEPOLIA,
 				status: SignerStatus.ACTIVE,
 				ownerAddress: '0xTestOwner',
@@ -559,7 +559,7 @@ describe('Guardian API Integration Tests', () => {
 				name: 'E2E Agent',
 				type: 'autonomous' as never,
 				chain: 'ethereum' as never,
-				scheme: 'cggmp21' as never,
+				scheme: 'cggmp24' as never,
 				network: 'sepolia' as never,
 			}, defaultReq);
 

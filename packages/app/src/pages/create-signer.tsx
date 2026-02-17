@@ -155,7 +155,7 @@ export function CreateSignerPage() {
 			const { signer, apiKey } = await createSigner.mutateAsync({
 				name: name.trim(),
 				type: accountType,
-				scheme: 'cggmp21',
+				scheme: 'cggmp24',
 				description: description.trim() || undefined,
 			});
 

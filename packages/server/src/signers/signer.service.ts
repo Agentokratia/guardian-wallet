@@ -70,7 +70,7 @@ export class SignerService {
 			type: input.type,
 			ethAddress: placeholder,
 			chain: input.chain ?? ('ethereum' as ChainName),
-			scheme: input.scheme ?? ('cggmp21' as SchemeName),
+			scheme: input.scheme ?? ('cggmp24' as SchemeName),
 			network: input.network,
 			ownerAddress: input.ownerAddress,
 			apiKeyHash,

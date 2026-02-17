@@ -11,7 +11,7 @@ CREATE TABLE signers (
   )),
   eth_address TEXT UNIQUE NOT NULL,
   chain TEXT NOT NULL DEFAULT 'ethereum',
-  scheme TEXT NOT NULL DEFAULT 'cggmp21',
+  scheme TEXT NOT NULL DEFAULT 'cggmp24',
   network TEXT NOT NULL DEFAULT 'mainnet',
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'revoked')),
   api_key_hash TEXT NOT NULL,
