@@ -17,7 +17,7 @@
 	"types": "./dist/main.d.ts",
 	"files": ["dist"],
 	"engines": { "node": ">=20.0.0" },
-	"publishConfig": { "access": "public" },
+	"private": true,
 	"scripts": {
 		"build": "tsc",
 		"dev": "tsx watch --env-file=../../.env src/main.ts",

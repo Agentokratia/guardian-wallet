@@ -3,7 +3,7 @@ name = "guardian-mpc-wasm"
 version = "0.1.0"
 edition = "2021"
 description = "WASM wrapper for CGGMP24 threshold ECDSA — keygen, signing, presignatures"
-license = "AGPL-3.0-only"
+license = "Apache-2.0"
 publish = false
 
 [lib]

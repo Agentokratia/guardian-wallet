@@ -2,7 +2,7 @@
 	"name": "@agentokratia/guardian-signer",
 	"version": "0.1.0",
 	"description": "SDK for threshold signing \u2014 the key never exists",
-	"license": "AGPL-3.0-only",
+	"license": "Apache-2.0",
 	"author": "Agentokratia <hello@agentokratia.com>",
 	"repository": {
 		"type": "git",
