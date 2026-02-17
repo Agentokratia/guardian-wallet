@@ -8,6 +8,7 @@ coverage/
 .env
 .env.local
 .env.production
+examples/.env
 
 # IDE
 .idea/
@@ -31,6 +32,13 @@ Thumbs.db
 target/
 pkg/
 pkg-web/
+
+# Foundry (forge) build artifacts
+examples/forge-proxy/cache/
+examples/forge-proxy/out/
+
+# Generated exports
+examples/full-lifecycle/audit-export.csv
 
 # Vault
 vault-data/

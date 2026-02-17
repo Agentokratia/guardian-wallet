@@ -195,9 +195,8 @@ import { ThresholdSigner } from '@agentokratia/guardian-signer';
 import { createWalletClient, http, parseEther } from 'viem';
 import { baseSepolia } from 'viem/chains';
 
-const signer = await ThresholdSigner.fromFile({
-  sharePath: './my-agent.share.enc',
-  passphrase: process.env.SHARE_PASSPHRASE!,
+const signer = await ThresholdSigner.fromSecret({
+  apiSecret: process.env.GUARDIAN_API_SECRET!,
   serverUrl: process.env.GUARDIAN_SERVER!,
   apiKey: process.env.GUARDIAN_API_KEY!,
 });
@@ -228,7 +227,11 @@ const sendETH = tool({
     amount: z.string().describe('Amount in ETH'),
   }),
   execute: async ({ to, amount }) => {
-    const signer = await ThresholdSigner.fromFile({ /* config */ });
+    const signer = await ThresholdSigner.fromSecret({
+      apiSecret: process.env.GUARDIAN_API_SECRET!,
+      serverUrl: process.env.GUARDIAN_SERVER!,
+      apiKey: process.env.GUARDIAN_API_KEY!,
+    });
     const hash = await signer.signTx({ to, value: parseEther(amount) });
     signer.destroy();
     return { txHash: hash };
@@ -251,7 +254,11 @@ const guardianSignTool = new DynamicStructuredTool({
     amount: z.string(),
   }),
   func: async ({ to, amount }) => {
-    const signer = await ThresholdSigner.fromFile({ /* config */ });
+    const signer = await ThresholdSigner.fromSecret({
+      apiSecret: process.env.GUARDIAN_API_SECRET!,
+      serverUrl: process.env.GUARDIAN_SERVER!,
+      apiKey: process.env.GUARDIAN_API_KEY!,
+    });
     const hash = await signer.signTx({ to, value: parseEther(amount) });
     signer.destroy();
     return JSON.stringify({ txHash: hash });

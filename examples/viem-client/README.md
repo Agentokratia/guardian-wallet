@@ -2,25 +2,13 @@
 
 Direct WalletClient integration using `ThresholdSigner.toViemAccount()`. The full private key never exists.
 
-## Setup
-
-```bash
-npm install
-
-export GUARDIAN_SERVER=http://localhost:8080
-export GUARDIAN_API_KEY=gw_live_...
-export SHARE_PASSPHRASE=your-passphrase
-export SHARE_PATH=./my-agent.share.enc
-```
-
 ## Run
 
 ```bash
-# Send 0.001 ETH to default address
-npx tsx send.ts
+# Setup: see examples/README.md
 
-# Send to a specific address
-npx tsx send.ts 0xRecipient... 0.01
+pnpm example:viem <to> <amount>
+pnpm example:viem 0xRecipient 0.001
 ```
 
 ## How It Works

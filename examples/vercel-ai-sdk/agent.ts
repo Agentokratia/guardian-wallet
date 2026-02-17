@@ -1,67 +1,68 @@
 /**
  * Guardian Wallet + Vercel AI SDK
  *
- * An AI agent that can check balances, send ETH, and sign messages
- * using threshold signing (2-of-3 MPC). The full private key never exists.
- *
- * Prerequisites:
- *   - Guardian server running (docker compose up -d)
- *   - Signer created with share file + API key
- *   - ANTHROPIC_API_KEY set
+ * An AI agent that signs Ethereum transactions using Guardian's threshold
+ * wallet. The full private key never exists — signing is 2-of-3 MPC.
  *
  * Usage:
- *   npx tsx agent.ts
+ *   pnpm example:vercel-ai
+ *   pnpm example:vercel-ai "Check my wallet balance"
  */
 
-import { generateText, tool } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
-import { createPublicClient, http, formatEther, parseEther } from 'viem';
+import { generateText, tool } from 'ai';
+import { http, createPublicClient, formatEther, parseEther } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { z } from 'zod';
 
-const signer = await ThresholdSigner.fromFile({
-	sharePath: process.env.SHARE_PATH || './my-agent.share.enc',
-	passphrase: process.env.SHARE_PASSPHRASE!,
+// ── LLM — Gemini via OpenAI-compatible endpoint ─────────────────────
+import { createOpenAI } from '@ai-sdk/openai';
+const gemini = createOpenAI({
+	apiKey: process.env.GOOGLE_API_KEY,
+	baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+});
+const model = gemini('gemini-2.0-flash');
+// ─────────────────────────────────────────────────────────────────────
+
+const signer = await ThresholdSigner.fromSecret({
+	apiSecret: process.env.GUARDIAN_API_SECRET as string,
 	serverUrl: process.env.GUARDIAN_SERVER || 'http://localhost:8080',
-	apiKey: process.env.GUARDIAN_API_KEY!,
+	apiKey: process.env.GUARDIAN_API_KEY as string,
 });
 
-const publicClient = createPublicClient({
-	chain: baseSepolia,
-	transport: http(),
-});
+const account = signer.toViemAccount();
+const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
 
 const tools = {
 	get_balance: tool({
 		description: 'Get the ETH balance of the threshold wallet',
-		parameters: z.object({}),
+		parameters: z.object({
+			address: z.string().describe('The wallet address to check, or "self" for this wallet'),
+		}),
 		execute: async () => {
-			const balance = await publicClient.getBalance({
-				address: signer.address as `0x${string}`,
-			});
-			return `Balance: ${formatEther(balance)} ETH (address: ${signer.address})`;
+			const balance = await publicClient.getBalance({ address: account.address });
+			return `Balance: ${formatEther(balance)} ETH (address: ${account.address})`;
 		},
 	}),
 
 	send_transaction: tool({
-		description:
-			'Send ETH to an address using threshold signing (2-of-3 MPC)',
+		description: 'Send ETH to an address using threshold signing (2-of-3 MPC)',
 		parameters: z.object({
 			to: z.string().describe('Recipient Ethereum address'),
-			value: z.string().describe('Amount in ETH (e.g. "0.01")'),
+			value: z.string().describe('Amount in ETH (e.g. "0.001")'),
 		}),
 		execute: async ({ to, value }) => {
 			const result = await signer.signTransaction({
 				to,
 				value: parseEther(value).toString(),
+				chainId: baseSepolia.id,
 			});
-			return `Transaction sent! Hash: ${result.txHash}`;
+			return `Sent! Hash: ${result.txHash}\nhttps://sepolia.basescan.org/tx/${result.txHash}`;
 		},
 	}),
 
 	sign_message: tool({
-		description: 'Sign a message using threshold signing',
+		description: 'Sign a message using threshold signing (2-of-3 MPC)',
 		parameters: z.object({
 			message: z.string().describe('Message to sign'),
 		}),
@@ -74,15 +75,23 @@ const tools = {
 
 const prompt =
 	process.argv[2] ||
-	'Check my wallet balance, then send 0.001 ETH to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+	`You're an AI agent starting up. Check your wallet balance to confirm you're funded. Then sign the message "guardian-agent-online::${new Date().toISOString()}" as proof-of-liveness. Report your status.`;
 
-console.log(`Agent prompt: ${prompt}\n`);
+console.log(`\n🤖 Agent prompt: ${prompt}\n`);
 
 const { text } = await generateText({
-	model: anthropic('claude-sonnet-4-5-20250929'),
+	model,
+	system:
+		'You are an autonomous agent with a threshold-signing Ethereum wallet. The private key never exists — signing is 2-of-3 MPC.',
 	tools,
 	maxSteps: 5,
 	prompt,
+	onStepFinish: ({ toolCalls }) => {
+		for (const call of toolCalls) {
+			console.log(`  → ${call.toolName}`);
+		}
+	},
 });
 
-console.log(text);
+console.log(`\n${text}`);
+signer.destroy();
