@@ -37,6 +37,11 @@ jobs:
         run: npm publish --access public
         continue-on-error: true
 
+      - name: Publish @agentokratia/guardian-mpc-wasm
+        working-directory: packages/mpc-wasm
+        run: npm publish --access public
+        continue-on-error: true
+
       - name: Publish @agentokratia/guardian-schemes
         working-directory: packages/schemes
         run: npm publish --access public
