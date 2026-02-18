@@ -52,8 +52,8 @@ jobs:
         run: npm publish --access public
         continue-on-error: true
 
-      - name: Publish @agentokratia/guardian-cli
-        working-directory: packages/cli
+      - name: Publish @agentokratia/guardian-wallet
+        working-directory: packages/wallet
         run: npm publish --access public
         continue-on-error: true
 
