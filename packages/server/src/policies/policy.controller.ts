@@ -16,7 +16,7 @@ import {
 	UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
-import { EitherAuthGuard } from '../common/either-auth.guard.js';
+import { SessionGuard } from '../common/session.guard.js';
 import { SignerService } from '../signers/signer.service.js';
 import type { CreatePolicyDto } from './dto/create-policy.dto.js';
 import type { SavePolicyDocumentDto } from './dto/save-policy-document.dto.js';
@@ -25,7 +25,7 @@ import { PolicyDocumentService } from './policy-document.service.js';
 import { PolicyService } from './policy.service.js';
 
 @Controller()
-@UseGuards(EitherAuthGuard)
+@UseGuards(SessionGuard)
 export class PolicyController {
 	constructor(
 		@Inject(PolicyService) private readonly policyService: PolicyService,

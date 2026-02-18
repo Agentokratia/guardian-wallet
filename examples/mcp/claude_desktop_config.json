@@ -1,0 +1,14 @@
+{
+	"mcpServers": {
+		"guardian": {
+			"command": "npx",
+			"args": ["-y", "@agentokratia/guardian-wallet"],
+			"env": {
+				"GUARDIAN_API_SECRET": "base64-encoded-key-material",
+				"GUARDIAN_API_KEY": "gw_live_abc123...",
+				"GUARDIAN_SERVER": "http://localhost:8080",
+				"GUARDIAN_NETWORK": "base-sepolia"
+			}
+		}
+	}
+}

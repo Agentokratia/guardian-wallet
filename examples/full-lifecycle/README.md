@@ -6,7 +6,7 @@ End-to-end demonstration of Guardian Wallet: DKG, policies, signing, and audit.
 
 - Docker & Docker Compose
 - Node.js 20+
-- Guardian CLI: `npm install -g @agentokratia/guardian-cli`
+- Guardian CLI: `npm install -g @agentokratia/guardian-wallet`
 
 ## Run
 
@@ -42,19 +42,19 @@ chmod +x demo.sh
 #   - An API key (gw_live_...)
 
 # Configure the CLI
-gw init
+guardian-wallet init
 
 # Send a transaction
-gw send 0.001 ETH to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+guardian-wallet send 0.001 ETH to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
 
 # Sign a message
-gw sign-message "Hello from Guardian"
+guardian-wallet sign-message "Hello from Guardian"
 
 # Check status
-gw status
+guardian-wallet status
 
 # Check balance
-gw balance
+guardian-wallet balance
 ```
 
 ## Policy Enforcement
@@ -69,6 +69,6 @@ curl -X POST "${SERVER}/api/v1/signers/${SIGNER_ID}/policies" \
   -d '{"type": "spending_limit", "config": {"maxAmount": "100000000000000000"}}'
 
 # Now try to send more than 0.1 ETH — it will be blocked with 403
-gw send 0.5 ETH to 0x...
+guardian-wallet send 0.5 ETH to 0x...
 # Error: Policy violation: spending_limit — amount exceeds limit
 ```

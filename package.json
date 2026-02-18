@@ -24,15 +24,20 @@
 		"example:viem": "tsx --env-file=examples/.env examples/viem-client/send.ts",
 		"example:langchain": "tsx --env-file=examples/.env examples/langchain/agent.ts",
 		"example:vercel-ai": "tsx --env-file=examples/.env examples/vercel-ai-sdk/agent.ts",
+		"example:mcp": "tsx --env-file=examples/.env examples/mcp/test-tools.ts",
+		"example:mcp-agent": "tsx --env-file=examples/.env examples/mcp/llm-agent.ts",
 		"prepare": "husky"
 	},
 	"lint-staged": {
 		"*.{ts,tsx,js,jsx,json,css}": ["biome check --fix --no-errors-on-unmatched"]
 	},
 	"devDependencies": {
+		"@anthropic-ai/sdk": "^0.75.0",
 		"@biomejs/biome": "^1.9.0",
+		"@google/generative-ai": "^0.24.1",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.2.7",
+		"openai": "^6.22.0",
 		"tsx": "^4.19.0",
 		"turbo": "^2.3.0",
 		"typescript": "^5.6.0",

@@ -1,0 +1,12 @@
+{
+	"name": "guardian-mcp-example",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.12.0",
+		"@google/generative-ai": "^0.24.1"
+	},
+	"devDependencies": {
+		"tsx": "^4.19.0"
+	}
+}

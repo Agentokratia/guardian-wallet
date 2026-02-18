@@ -22,6 +22,7 @@ import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
 import { hexToBytes } from '../common/encoding.js';
+import { SessionGuard } from '../common/session.guard.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
 import type { Network } from '../networks/network.repository.js';
 import { NetworkService } from '../networks/network.service.js';
@@ -42,7 +43,6 @@ interface BalanceResult {
 const balanceCache = new Map<string, { data: BalanceResult; ts: number }>();
 
 @Controller('signers')
-@UseGuards(EitherAuthGuard)
 export class SignerController {
 	private readonly logger = new Logger(SignerController.name);
 
@@ -71,6 +71,7 @@ export class SignerController {
 	}
 
 	@Post()
+	@UseGuards(SessionGuard)
 	async create(@Body() body: CreateSignerDto, @Req() req: AuthenticatedRequest) {
 		if (!req.sessionUser) {
 			throw new BadRequestException('Signer creation requires wallet authentication');
@@ -83,6 +84,7 @@ export class SignerController {
 	}
 
 	@Get()
+	@UseGuards(EitherAuthGuard)
 	async list(@Req() req: AuthenticatedRequest) {
 		if (req.signerId) {
 			const signer = await this.signerService.get(req.signerId);
@@ -96,11 +98,13 @@ export class SignerController {
 	}
 
 	@Get(':id')
+	@UseGuards(EitherAuthGuard)
 	async get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		return signerToPublic(await this.getOwnedSigner(id, req));
 	}
 
 	@Patch(':id')
+	@UseGuards(SessionGuard)
 	async update(
 		@Param('id') id: string,
 		@Body() body: UpdateSignerDto,
@@ -111,12 +115,14 @@ export class SignerController {
 	}
 
 	@Delete(':id')
+	@UseGuards(SessionGuard)
 	async revoke(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.revoke(id));
 	}
 
 	@Post(':id/regenerate-key')
+	@UseGuards(SessionGuard)
 	async regenerateApiKey(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		const result = await this.signerService.regenerateApiKey(id);
@@ -124,18 +130,21 @@ export class SignerController {
 	}
 
 	@Post(':id/pause')
+	@UseGuards(SessionGuard)
 	async pause(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.pause(id));
 	}
 
 	@Post(':id/resume')
+	@UseGuards(SessionGuard)
 	async resume(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.resume(id));
 	}
 
 	@Get(':id/balance')
+	@UseGuards(EitherAuthGuard)
 	async getBalance(
 		@Param('id') id: string,
 		@Query('network') networkFilter: string | undefined,
@@ -187,6 +196,7 @@ export class SignerController {
 	}
 
 	@Post(':id/simulate')
+	@UseGuards(EitherAuthGuard)
 	async simulate(
 		@Param('id') id: string,
 		@Body() body: SimulateDto,
@@ -222,6 +232,7 @@ export class SignerController {
 	}
 
 	@Post(':id/user-share')
+	@UseGuards(SessionGuard)
 	async storeUserShare(
 		@Param('id') id: string,
 		@Body() body: StoreUserShareDto,
@@ -235,6 +246,7 @@ export class SignerController {
 	}
 
 	@Get(':id/user-share')
+	@UseGuards(SessionGuard)
 	async getUserShare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		try {
@@ -267,6 +279,7 @@ export class SignerController {
 	/* ================================================================ */
 
 	@Get(':id/tokens')
+	@UseGuards(EitherAuthGuard)
 	async listTokens(
 		@Param('id') id: string,
 		@Query('chainId') chainIdParam: string | undefined,
@@ -281,6 +294,7 @@ export class SignerController {
 	}
 
 	@Get(':id/token-balances')
+	@UseGuards(EitherAuthGuard)
 	async getTokenBalances(
 		@Param('id') id: string,
 		@Query('chainId') chainIdParam: string | undefined,
@@ -295,6 +309,7 @@ export class SignerController {
 	}
 
 	@Post(':id/tokens')
+	@UseGuards(SessionGuard)
 	async addToken(
 		@Param('id') id: string,
 		@Body() body: AddTokenDto,
@@ -312,6 +327,7 @@ export class SignerController {
 	}
 
 	@Delete(':id/tokens/:tokenId')
+	@UseGuards(SessionGuard)
 	async removeToken(
 		@Param('id') id: string,
 		@Param('tokenId') tokenId: string,

@@ -31,7 +31,7 @@ async function bootstrap() {
 		credentials: true,
 	});
 
-	app.setGlobalPrefix('api/v1');
+	app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 	await app.listen(config.PORT);
 	logger.log(`Server running on port ${config.PORT} — CORS origins: ${origins.join(', ')}`);
 }

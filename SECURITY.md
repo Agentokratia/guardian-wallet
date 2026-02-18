@@ -20,7 +20,7 @@ Please include as much detail as possible: steps to reproduce, affected versions
 |---------|-------------|
 | `@agentokratia/guardian-server` | Policy server (NestJS API), signing endpoints, auth, Vault integration |
 | `@agentokratia/guardian-signer` | Signer-side SDK (share loading, partial signing, HTTP client) |
-| `@agentokratia/guardian-cli` | `gw` command-line tool |
+| `@agentokratia/guardian-wallet` | CLI + MCP server (`gw` command) |
 | `@agentokratia/guardian-core` | Shared interfaces and types |
 | `@agentokratia/guardian-chains` | Chain-specific transaction logic (Ethereum) |
 | `@agentokratia/guardian-schemes` | Threshold signing implementations (CGGMP24) |

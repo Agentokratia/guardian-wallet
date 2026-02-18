@@ -18,7 +18,7 @@ projects — commercial or otherwise — with no copyleft obligations.
 | `@agentokratia/guardian-schemes`  | public | Signing scheme orchestration                          |
 | `@agentokratia/guardian-chains`   | public | Ethereum chain adapter (viem)                         |
 | `@agentokratia/guardian-signer`   | public | Signer SDK — share loading, signing, viem integration |
-| `@agentokratia/guardian-cli`      | public | `gw` command-line tool                                |
+| `@agentokratia/guardian-wallet`  | public | CLI + MCP server (`gw` command)                       |
 
 These packages are safe to use alongside any license — MIT, Apache 2.0,
 proprietary, etc. Integrate them with LangChain, Vercel AI SDK, ethers.js, or

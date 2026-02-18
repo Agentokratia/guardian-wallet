@@ -137,48 +137,48 @@ Open `http://localhost:3000` to access the dashboard.
 
 ```bash
 # Interactive setup -- configures server URL, API key, network
-gw init
+guardian-wallet init
 
 # Check connection and signer status
-gw status
+guardian-wallet status
 
 # View balance
-gw balance
+guardian-wallet balance
 ```
 
 ---
 
 ## CLI Reference
 
-The `gw` command-line tool provides full signer operations from the terminal.
+The `guardian-wallet` command-line tool provides full signer operations from the terminal (also available as `gw` alias).
 
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `gw init` | Interactive setup wizard | `gw init` |
-| `gw status` | Display signer info and connection status | `gw status` |
-| `gw balance` | Show ETH balance for the configured signer | `gw balance [-n network]` |
-| `gw send` | Send ETH to an address | `gw send <to> <amount> [-n network] [--gas-limit N] [--data 0x...]` |
-| `gw sign-message` | Sign a message using threshold ECDSA | `gw sign-message <message>` |
-| `gw deploy` | Deploy a smart contract | `gw deploy <bytecode> [-n network] [--constructor-args 0x...]` |
-| `gw proxy` | Start a JSON-RPC signing proxy for Foundry/Hardhat | `gw proxy [-p port] [-r rpc-url]` |
+| `guardian-wallet init` | Interactive setup wizard | `guardian-wallet init` |
+| `guardian-wallet status` | Display signer info and connection status | `guardian-wallet status` |
+| `guardian-wallet balance` | Show ETH balance for the configured signer | `guardian-wallet balance [-n network]` |
+| `guardian-wallet send` | Send ETH to an address | `guardian-wallet send <to> <amount> [-n network] [--gas-limit N] [--data 0x...]` |
+| `guardian-wallet sign-message` | Sign a message using threshold ECDSA | `guardian-wallet sign-message <message>` |
+| `guardian-wallet deploy` | Deploy a smart contract | `guardian-wallet deploy <bytecode> [-n network] [--constructor-args 0x...]` |
+| `guardian-wallet proxy` | Start a JSON-RPC signing proxy for Foundry/Hardhat | `guardian-wallet proxy [-p port] [-r rpc-url]` |
 
 ### Examples
 
 ```bash
 # Send 0.01 ETH on Base Sepolia
-gw send 0xRecipient 0.01 --network base-sepolia
+guardian-wallet send 0xRecipient 0.01 --network base-sepolia
 
 # Sign an arbitrary message
-gw sign-message "Hello from Guardian"
+guardian-wallet sign-message "Hello from Guardian"
 
 # Sign a hex message (0x prefix)
-gw sign-message 0xdeadbeef
+guardian-wallet sign-message 0xdeadbeef
 
 # Deploy a contract with constructor arguments
-gw deploy ./MyContract.bin --constructor-args 0x000000000000000000000000...
+guardian-wallet deploy ./MyContract.bin --constructor-args 0x000000000000000000000000...
 
 # Start Foundry-compatible signing proxy on port 8545
-gw proxy --port 8545
+guardian-wallet proxy --port 8545
 
 # Use with Forge
 # GUARDIAN_RPC=http://localhost:8545 forge script Deploy.s.sol --rpc-url $GUARDIAN_RPC --broadcast
@@ -268,11 +268,11 @@ const guardianSignTool = new DynamicStructuredTool({
 
 ### Foundry Proxy
 
-The `gw proxy` command starts a JSON-RPC server that intercepts `eth_sendTransaction` and `eth_signTransaction`, signs them via the Guardian protocol, and forwards everything else to the upstream RPC.
+The `guardian-wallet proxy` command starts a JSON-RPC server that intercepts `eth_sendTransaction` and `eth_signTransaction`, signs them via the Guardian protocol, and forwards everything else to the upstream RPC.
 
 ```bash
 # Start the proxy
-gw proxy --port 8545
+guardian-wallet proxy --port 8545
 
 # Deploy with Forge
 forge script script/Deploy.s.sol \
@@ -310,7 +310,7 @@ Authentication uses email verification + WebAuthn passkeys with PRF-based key de
 | [`@agentokratia/guardian-chains`](packages/chains) | Ethereum chain adapter (viem) |
 | [`@agentokratia/guardian-server`](packages/server) | NestJS policy server (port 8080) |
 | [`@agentokratia/guardian-signer`](packages/signer) | TypeScript SDK (share loading, signing, viem integration) |
-| [`@agentokratia/guardian-cli`](packages/cli) | CLI tool (`gw` command) |
+| [`@agentokratia/guardian-wallet`](packages/wallet) | CLI + MCP server (`guardian-wallet` / `gw`) |
 | [`@agentokratia/guardian-app`](packages/app) | React dashboard (Vite SPA, port 3000) |
 
 ### Dependency Rules

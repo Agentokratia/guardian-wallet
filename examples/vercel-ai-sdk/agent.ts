@@ -1,15 +1,15 @@
 /**
  * Guardian Wallet + Vercel AI SDK
  *
- * An AI agent that signs Ethereum transactions using Guardian's threshold
- * wallet. The full private key never exists — signing is 2-of-3 MPC.
+ * An AI agent that signs Ethereum transactions using Guardian.connect().
+ * The full private key never exists — signing is 2-of-3 MPC.
  *
  * Usage:
  *   pnpm example:vercel-ai
  *   pnpm example:vercel-ai "Check my wallet balance"
  */
 
-import { ThresholdSigner } from '@agentokratia/guardian-signer';
+import { Guardian } from '@agentokratia/guardian-signer';
 import { generateText, tool } from 'ai';
 import { http, createPublicClient, formatEther, parseEther } from 'viem';
 import { baseSepolia } from 'viem/chains';
@@ -24,13 +24,13 @@ const gemini = createOpenAI({
 const model = gemini('gemini-2.0-flash');
 // ─────────────────────────────────────────────────────────────────────
 
-const signer = await ThresholdSigner.fromSecret({
+const gw = await Guardian.connect({
 	apiSecret: process.env.GUARDIAN_API_SECRET as string,
 	serverUrl: process.env.GUARDIAN_SERVER || 'http://localhost:8080',
 	apiKey: process.env.GUARDIAN_API_KEY as string,
 });
 
-const account = signer.toViemAccount();
+const account = gw.toViemAccount();
 const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
 
 const tools = {
@@ -52,7 +52,7 @@ const tools = {
 			value: z.string().describe('Amount in ETH (e.g. "0.001")'),
 		}),
 		execute: async ({ to, value }) => {
-			const result = await signer.signTransaction({
+			const result = await gw.signTransaction({
 				to,
 				value: parseEther(value).toString(),
 				chainId: baseSepolia.id,
@@ -67,7 +67,7 @@ const tools = {
 			message: z.string().describe('Message to sign'),
 		}),
 		execute: async ({ message }) => {
-			const result = await signer.signMessage(message);
+			const result = await gw.signMessage(message);
 			return `Signed! Signature: ${result.signature}`;
 		},
 	}),
@@ -94,4 +94,4 @@ const { text } = await generateText({
 });
 
 console.log(`\n${text}`);
-signer.destroy();
+gw.destroy();

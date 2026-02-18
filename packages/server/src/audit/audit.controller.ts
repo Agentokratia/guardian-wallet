@@ -3,6 +3,7 @@ import { Controller, Get, Inject, Query, Req, Res, UseGuards } from '@nestjs/com
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
+import { SessionGuard } from '../common/session.guard.js';
 import { SigningRequestRepository } from './signing-request.repository.js';
 import type { AuditLogFilters, SigningRequestEntity } from './signing-request.types.js';
 
@@ -21,13 +22,13 @@ function escapeCsvField(value: string): string {
 }
 
 @Controller()
-@UseGuards(EitherAuthGuard)
 export class AuditController {
 	constructor(
 		@Inject(SigningRequestRepository) private readonly signingRequestRepo: SigningRequestRepository,
 	) {}
 
 	@Get('audit-log')
+	@UseGuards(EitherAuthGuard)
 	async list(
 		@Req() req: AuthenticatedRequest,
 		@Query('signerId') signerId?: string,
@@ -69,6 +70,7 @@ export class AuditController {
 	}
 
 	@Get('audit-log/export')
+	@UseGuards(SessionGuard)
 	async exportCsv(
 		@Req() req: AuthenticatedRequest,
 		@Res() res: Response,

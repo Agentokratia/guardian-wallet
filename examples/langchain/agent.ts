@@ -1,7 +1,7 @@
 /**
  * Guardian Wallet + LangChain
  *
- * A LangChain agent with threshold signing tools.
+ * A LangChain agent using Guardian.connect() for threshold signing.
  * The full private key never exists — signing is 2-of-3 MPC.
  *
  * Usage:
@@ -9,7 +9,7 @@
  *   pnpm example:langchain "Check my wallet balance"
  */
 
-import { ThresholdSigner } from '@agentokratia/guardian-signer';
+import { Guardian } from '@agentokratia/guardian-signer';
 import { type BaseMessageLike, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
@@ -28,13 +28,13 @@ const llm = new ChatOpenAI({
 });
 // ─────────────────────────────────────────────────────────────────────
 
-const signer = await ThresholdSigner.fromSecret({
+const gw = await Guardian.connect({
 	apiSecret: process.env.GUARDIAN_API_SECRET as string,
 	serverUrl: process.env.GUARDIAN_SERVER || 'http://localhost:8080',
 	apiKey: process.env.GUARDIAN_API_KEY as string,
 });
 
-const account = signer.toViemAccount();
+const account = gw.toViemAccount();
 const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
 
 // ── Tools ────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const tools = [
 			value: z.string().describe('Amount in ETH (e.g. "0.001")'),
 		}),
 		func: async ({ to, value }) => {
-			const result = await signer.signTransaction({
+			const result = await gw.signTransaction({
 				to,
 				value: parseEther(value).toString(),
 				chainId: baseSepolia.id,
@@ -74,7 +74,7 @@ const tools = [
 			message: z.string().describe('Message to sign'),
 		}),
 		func: async ({ message }) => {
-			const result = await signer.signMessage(message);
+			const result = await gw.signMessage(message);
 			return `Signed! Signature: ${result.signature}`;
 		},
 	}),
@@ -113,4 +113,4 @@ for (let step = 0; step < 5; step++) {
 	}
 }
 
-signer.destroy();
+gw.destroy();

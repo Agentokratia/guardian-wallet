@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
-GW="node ${ROOT_DIR}/packages/cli/dist/cli.js"
+GW="node ${ROOT_DIR}/packages/wallet/dist/index.js"
 PROXY_PORT="${PROXY_PORT:-8545}"
 
 # Load env
