@@ -99,7 +99,7 @@ export const deployCommand = new Command('deploy')
 
 			const txExplorer = await api.getExplorerTxUrl(network, result.txHash);
 
-			if (txExplorer !== result.txHash) {
+			if (txExplorer) {
 				console.log(`  ${chalk.bold('Tx URL:')}   ${chalk.dim(txExplorer)}`);
 			}
 			console.log('');

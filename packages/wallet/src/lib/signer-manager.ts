@@ -31,10 +31,11 @@ export class SignerManager {
 		if (this.signerPromise) return this.signerPromise;
 
 		this.signer = null;
+		const { apiSecret, serverUrl, apiKey } = this.getConfig();
 		this.signerPromise = ThresholdSigner.fromSecret({
-			apiSecret: this.getConfig().apiSecret,
-			serverUrl: this.getConfig().serverUrl,
-			apiKey: this.getConfig().apiKey,
+			apiSecret,
+			serverUrl,
+			apiKey,
 			scheme: new CGGMP24Scheme(),
 		})
 			.then((s) => {
@@ -64,6 +65,7 @@ export class SignerManager {
 		return this.api;
 	}
 
+	/** GUARDIAN_NETWORK — network name matching server's GET /api/v1/networks (e.g. "base-sepolia", "mainnet"). */
 	getNetwork(): string | null {
 		return process.env.GUARDIAN_NETWORK || null;
 	}

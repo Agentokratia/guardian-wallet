@@ -1,36 +1,38 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 import { fetchWithX402 } from '../../lib/x402-client.js';
 
 export function registerX402Fetch(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_x402_fetch',
-		'Fetch a 402-protected resource, automatically paying with the Guardian threshold signer. If the URL returns HTTP 402, signs a payment authorization and retries. The full private key never exists.',
 		{
-			url: z.string().url().describe('URL to fetch (may require x402 payment)'),
-			maxAmount: z
-				.string()
-				.optional()
-				.describe('Maximum amount willing to pay in token units (default: "1000000" = 1 USDC)'),
-			network: z
-				.string()
-				.optional()
-				.describe('Network for payment (e.g. "base-sepolia"). Defaults to GUARDIAN_NETWORK env.'),
+			description:
+				'Fetch a 402-protected resource, automatically paying with the Guardian threshold signer via the x402 exact scheme (ERC-3009/Permit2). The network and asset are auto-detected from the 402 payment requirements. The full private key never exists.',
+			inputSchema: {
+				url: z.string().url().describe('URL to fetch (may require x402 payment)'),
+				maxAmount: z
+					.string()
+					.optional()
+					.describe(
+						'Maximum amount willing to pay in atomic units (e.g., "1000000" = 1 USDC). If omitted, any amount is accepted.',
+					),
+			},
 		},
-		async ({ url, maxAmount, network }) => {
+		async ({ url, maxAmount }) => {
 			try {
 				const signer = await signerManager.getSigner();
-				const targetNetwork = network || signerManager.getNetwork() || 'base-sepolia';
 
 				const result = await fetchWithX402(url, signer, {
 					maxAmount,
-					network: targetNetwork,
 				});
 
 				const lines: string[] = [];
 				if (result.paid) {
-					lines.push(`Fetched with payment (${result.paymentHash})`);
+					lines.push(`Paid via ${result.scheme || 'exact'} scheme`);
+					if (result.transaction) lines.push(`Transaction: ${result.transaction}`);
+					if (result.payer) lines.push(`Payer: ${result.payer}`);
 				} else {
 					lines.push('Fetched (no payment needed)');
 				}
@@ -45,11 +47,7 @@ export function registerX402Fetch(server: McpServer, signerManager: SignerManage
 
 				return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: 'text' as const, text: `x402 fetch failed: ${msg}` }],
-					isError: true,
-				};
+				return formatError(error, 'x402 fetch failed');
 			}
 		},
 	);

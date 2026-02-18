@@ -177,7 +177,7 @@ Built-in support for the [x402 payment protocol](https://www.x402.org/). AI agen
 | `GUARDIAN_API_SECRET` | Base64-encoded key share | Yes |
 | `GUARDIAN_SERVER` | Server URL (e.g. `http://localhost:8080`) | Yes |
 | `GUARDIAN_API_KEY` | API key for authentication | Yes |
-| `GUARDIAN_NETWORK` | Default network (e.g. `base-sepolia`) | No |
+| `GUARDIAN_NETWORK` | Default network name as returned by the server's `GET /api/v1/networks` endpoint (e.g. `base-sepolia`, `mainnet`, `arbitrum`). Must match a `name` field exactly. | No |
 
 ## License
 

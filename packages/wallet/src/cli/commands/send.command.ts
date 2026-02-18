@@ -74,7 +74,7 @@ export const sendCommand = new Command('send')
 
 				console.log('');
 				console.log(`  ${chalk.bold('Tx Hash:')} ${chalk.cyan(result.txHash)}`);
-				if (explorerUrl !== result.txHash) {
+				if (explorerUrl) {
 					console.log(`  ${chalk.bold('Explorer:')} ${chalk.dim(explorerUrl)}`);
 				}
 				console.log('');

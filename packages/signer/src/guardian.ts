@@ -124,7 +124,7 @@ export class Guardian {
 		return this._api.getRpcUrl(network);
 	}
 
-	getExplorerTxUrl(network: string, hash: string): Promise<string> {
+	getExplorerTxUrl(network: string, hash: string): Promise<string | null> {
 		return this._api.getExplorerTxUrl(network, hash);
 	}
 

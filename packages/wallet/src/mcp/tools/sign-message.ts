@@ -1,13 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerSignMessage(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_sign_message',
-		'Sign an arbitrary message using Guardian threshold signing (2-of-3 MPC). Returns an EIP-191 personal signature. No gas is spent.',
 		{
-			message: z.string().min(1).describe('The message to sign (plain text string)'),
+			description:
+				'Sign an arbitrary message using Guardian threshold signing (2-of-3 MPC). Returns an EIP-191 personal signature. No gas is spent.',
+			inputSchema: {
+				message: z.string().min(1).describe('The message to sign (plain text string)'),
+			},
 		},
 		async ({ message }) => {
 			const signer = await signerManager.getSigner();
@@ -28,16 +32,7 @@ export function registerSignMessage(server: McpServer, signerManager: SignerMana
 					],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Message signing failed: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Message signing failed');
 			}
 		},
 	);

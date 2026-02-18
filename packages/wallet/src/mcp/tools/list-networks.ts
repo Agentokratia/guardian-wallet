@@ -1,11 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerListNetworks(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_list_networks',
-		'List all available networks configured on the Guardian server. Shows network name, chain ID, testnet status, and native currency. Use this to discover valid network names for other tools.',
-		{},
+		{
+			description:
+				'List all available networks configured on the Guardian server. Returns network name, CAIP-2 networkId (e.g. "eip155:84532"), chain ID, testnet status, and native currency. Pass the "name" value as the "network" parameter to other tools.',
+		},
 		async () => {
 			const api = signerManager.getApi();
 			const envDefault = signerManager.getNetwork();
@@ -32,6 +35,7 @@ export function registerListNetworks(server: McpServer, signerManager: SignerMan
 					lines.push(
 						`${n.displayName || n.name}${active}${testnet}`,
 						`  Name: ${n.name}`,
+						`  Network ID: ${n.networkId}`,
 						`  Chain ID: ${n.chainId}`,
 						`  Currency: ${n.nativeCurrency}`,
 						'',
@@ -44,16 +48,7 @@ export function registerListNetworks(server: McpServer, signerManager: SignerMan
 					content: [{ type: 'text' as const, text: lines.join('\n') }],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Failed to list networks: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Failed to list networks');
 			}
 		},
 	);

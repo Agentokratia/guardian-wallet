@@ -125,10 +125,10 @@ describe('GuardianApi', () => {
 			expect(url).toBe('https://sepolia.etherscan.io/tx/0xabc');
 		});
 
-		it('returns hash when no explorer configured', async () => {
+		it('returns null when no explorer configured', async () => {
 			vi.mocked(client.get).mockResolvedValueOnce([]);
 			const url = await api.getExplorerTxUrl('unknown', '0xdef');
-			expect(url).toBe('0xdef');
+			expect(url).toBeNull();
 		});
 	});
 

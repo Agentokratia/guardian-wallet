@@ -1,56 +1,33 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { http, createPublicClient, encodeFunctionData, parseUnits } from 'viem';
 import { z } from 'zod';
+import { ERC20_ABI } from '../../lib/erc20-abi.js';
 import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
-const ERC20_ABI = [
-	{
-		name: 'transfer',
-		type: 'function',
-		inputs: [
-			{ name: 'to', type: 'address' },
-			{ name: 'amount', type: 'uint256' },
-		],
-		outputs: [{ type: 'bool' }],
-		stateMutability: 'nonpayable',
-	},
-	{
-		name: 'decimals',
-		type: 'function',
-		inputs: [],
-		outputs: [{ type: 'uint8' }],
-		stateMutability: 'view',
-	},
-	{
-		name: 'symbol',
-		type: 'function',
-		inputs: [],
-		outputs: [{ type: 'string' }],
-		stateMutability: 'view',
-	},
-] as const;
-
 export function registerSendToken(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_send_token',
-		'Send ERC-20 tokens by symbol (e.g. "USDC", "WETH") or contract address. Supports ENS names for recipients. Automatically handles decimal conversion. The full private key never exists.',
 		{
-			token: z
-				.string()
-				.describe(
-					'Token symbol (e.g. "USDC", "WETH") or contract address (0x...). Symbols are resolved from the server\'s tracked token list.',
-				),
-			to: z.string().describe('Recipient — 0x address or ENS name (e.g. "vitalik.eth")'),
-			amount: z
-				.string()
-				.describe('Amount in human-readable units (e.g. "100" for 100 USDC, "0.5" for 0.5 WETH)'),
-			network: z
-				.string()
-				.optional()
-				.describe(
-					'Network to send on (e.g. "base-sepolia", "mainnet"). Call guardian_list_networks to see options.',
-				),
+			description:
+				'Send ERC-20 tokens by symbol (e.g. "USDC", "WETH") or contract address. Supports ENS names for recipients. Automatically handles decimal conversion. The full private key never exists.',
+			inputSchema: {
+				token: z
+					.string()
+					.describe(
+						'Token symbol (e.g. "USDC", "WETH") or contract address (0x...). Symbols are resolved from the server\'s tracked token list.',
+					),
+				to: z.string().describe('Recipient — 0x address or ENS name (e.g. "vitalik.eth")'),
+				amount: z
+					.string()
+					.describe('Amount in human-readable units (e.g. "100" for 100 USDC, "0.5" for 0.5 WETH)'),
+				network: z
+					.string()
+					.optional()
+					.describe(
+						'Network name from guardian_list_networks (e.g. "base-sepolia", "mainnet", "arbitrum"). Required — call guardian_list_networks first if unknown.',
+					),
+			},
 		},
 		async ({ token, to, amount, network }) => {
 			const api = signerManager.getApi();
@@ -130,7 +107,7 @@ export function registerSendToken(server: McpServer, signerManager: SignerManage
 								`Token: ${symbol} (${tokenAddress})`,
 								`Tx Hash: ${result.txHash}`,
 								`Network: ${targetNetwork}`,
-								explorer !== result.txHash ? `Explorer: ${explorer}` : '',
+								explorer ? `Explorer: ${explorer}` : '',
 							]
 								.filter(Boolean)
 								.join('\n'),

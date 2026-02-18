@@ -2,10 +2,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerGetStatus(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_get_status',
-		'Get the Guardian server health status and signer information. Use this to verify the server is running and the signer is configured.',
-		{},
+		{
+			description:
+				'Get the Guardian server health status and signer information. Use this to verify the server is running and the signer is configured.',
+		},
 		async () => {
 			const api = signerManager.getApi();
 			const lines: string[] = [];

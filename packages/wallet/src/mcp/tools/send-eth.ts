@@ -5,18 +5,21 @@ import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerSendEth(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_send_eth',
-		'Send ETH to any address or ENS name (e.g. "vitalik.eth"). Uses Guardian threshold signing — the full private key never exists. Policy-enforced by the server.',
 		{
-			to: z.string().describe('Recipient — 0x address or ENS name (e.g. "vitalik.eth")'),
-			value: z.string().describe('Amount in ETH (e.g. "0.01", "1.5")'),
-			network: z
-				.string()
-				.optional()
-				.describe(
-					'Network to send on (e.g. "base-sepolia", "mainnet"). Call guardian_list_networks to see options.',
-				),
+			description:
+				'Send ETH to any address or ENS name (e.g. "vitalik.eth"). Uses Guardian threshold signing — the full private key never exists. Policy-enforced by the server.',
+			inputSchema: {
+				to: z.string().describe('Recipient — 0x address or ENS name (e.g. "vitalik.eth")'),
+				value: z.string().describe('Amount in ETH (e.g. "0.01", "1.5")'),
+				network: z
+					.string()
+					.optional()
+					.describe(
+						'Network name from guardian_list_networks (e.g. "base-sepolia", "mainnet", "arbitrum"). Required — call guardian_list_networks first if unknown.',
+					),
+			},
 		},
 		async ({ to, value, network }) => {
 			const api = signerManager.getApi();
@@ -46,7 +49,7 @@ export function registerSendEth(server: McpServer, signerManager: SignerManager)
 								`To: ${recipientDisplay}`,
 								`Tx Hash: ${result.txHash}`,
 								`Network: ${targetNetwork}`,
-								explorer !== result.txHash ? `Explorer: ${explorer}` : '',
+								explorer ? `Explorer: ${explorer}` : '',
 							]
 								.filter(Boolean)
 								.join('\n'),

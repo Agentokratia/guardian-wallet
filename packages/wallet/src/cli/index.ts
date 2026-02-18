@@ -7,7 +7,7 @@ import { sendCommand } from './commands/send.command.js';
 import { signMessageCommand } from './commands/sign.command.js';
 import { statusCommand } from './commands/status.command.js';
 
-export function runCli(): void {
+export async function runCli(): Promise<void> {
 	const program = new Command();
 
 	program
@@ -23,5 +23,5 @@ export function runCli(): void {
 	program.addCommand(deployCommand);
 	program.addCommand(proxyCommand);
 
-	program.parse();
+	await program.parseAsync();
 }

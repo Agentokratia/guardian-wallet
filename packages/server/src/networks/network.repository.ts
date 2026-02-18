@@ -20,6 +20,8 @@ export interface Network {
 	name: string;
 	displayName: string;
 	chainId: number;
+	/** CAIP-2 network identifier, e.g. "eip155:84532" */
+	networkId: string;
 	rpcUrl: string;
 	explorerUrl: string | null;
 	nativeCurrency: string;
@@ -33,6 +35,7 @@ function rowToDomain(row: NetworkRow): Network {
 		name: row.name,
 		displayName: row.display_name,
 		chainId: row.chain_id,
+		networkId: `eip155:${row.chain_id}`,
 		rpcUrl: row.rpc_url,
 		explorerUrl: row.explorer_url,
 		nativeCurrency: row.native_currency,

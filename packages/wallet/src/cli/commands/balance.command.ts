@@ -53,7 +53,7 @@ export const balanceCommand = new Command('balance')
 			);
 
 			const explorerUrl = await api.getExplorerTxUrl(network, signer.ethAddress);
-			if (explorerUrl !== signer.ethAddress) {
+			if (explorerUrl) {
 				console.log(`  Explorer: ${chalk.dim(explorerUrl)}`);
 			}
 			console.log('');

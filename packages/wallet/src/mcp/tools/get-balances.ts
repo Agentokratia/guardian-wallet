@@ -1,47 +1,30 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { http, createPublicClient, formatUnits } from 'viem';
 import { z } from 'zod';
+import { ERC20_ABI } from '../../lib/erc20-abi.js';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
-const ERC20_READ_ABI = [
-	{
-		name: 'balanceOf',
-		type: 'function',
-		inputs: [{ name: 'account', type: 'address' }],
-		outputs: [{ type: 'uint256' }],
-		stateMutability: 'view',
-	},
-	{
-		name: 'decimals',
-		type: 'function',
-		inputs: [],
-		outputs: [{ type: 'uint8' }],
-		stateMutability: 'view',
-	},
-	{
-		name: 'symbol',
-		type: 'function',
-		inputs: [],
-		outputs: [{ type: 'string' }],
-		stateMutability: 'view',
-	},
-] as const;
-
 export function registerGetBalances(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_get_balances',
-		'Get the ETH balance and optionally ERC-20 token balances of the Guardian threshold wallet. Returns balances across all configured networks.',
 		{
-			tokens: z
-				.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/))
-				.optional()
-				.describe(
-					'Optional list of ERC-20 token addresses to check (0x...). If omitted, returns ETH balance only.',
-				),
-			network: z
-				.string()
-				.optional()
-				.describe("Network (defaults to the signer's configured network)"),
+			description:
+				'Get the ETH balance and optionally ERC-20 token balances of the Guardian threshold wallet. Returns balances across all configured networks.',
+			inputSchema: {
+				tokens: z
+					.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/))
+					.optional()
+					.describe(
+						'Optional list of ERC-20 token addresses to check (0x...). If omitted, returns ETH balance only.',
+					),
+				network: z
+					.string()
+					.optional()
+					.describe(
+						'Network name from guardian_list_networks (e.g. "base-sepolia", "mainnet", "arbitrum"). Required — call guardian_list_networks first if unknown.',
+					),
+			},
 		},
 		async ({ tokens, network }) => {
 			const api = signerManager.getApi();
@@ -79,19 +62,19 @@ export function registerGetBalances(server: McpServer, signerManager: SignerMana
 							const [bal, decimals, symbol] = await Promise.all([
 								publicClient.readContract({
 									address: typedAddr,
-									abi: ERC20_READ_ABI,
+									abi: ERC20_ABI,
 									functionName: 'balanceOf',
 									args: [signerAddress],
 								}),
 								publicClient.readContract({
 									address: typedAddr,
-									abi: ERC20_READ_ABI,
+									abi: ERC20_ABI,
 									functionName: 'decimals',
 								}),
 								publicClient
 									.readContract({
 										address: typedAddr,
-										abi: ERC20_READ_ABI,
+										abi: ERC20_ABI,
 										functionName: 'symbol',
 									})
 									.catch(() => tokenAddr.slice(0, 10)),
@@ -107,16 +90,7 @@ export function registerGetBalances(server: McpServer, signerManager: SignerMana
 					content: [{ type: 'text' as const, text: lines.join('\n') }],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Balance check failed: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Balance check failed');
 			}
 		},
 	);

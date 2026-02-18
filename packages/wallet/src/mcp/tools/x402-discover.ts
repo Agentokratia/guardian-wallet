@@ -1,15 +1,19 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import { discoverX402 } from '../../lib/x402-client.js';
 
 export function registerX402Discover(server: McpServer) {
-	server.tool(
+	server.registerTool(
 		'guardian_x402_discover',
-		'Discover x402-protected endpoints on a domain. Probes common paths and the .well-known/x402 endpoint to find paid resources.',
 		{
-			domain: z
-				.string()
-				.describe('Domain to probe (e.g. "api.example.com" or "https://api.example.com")'),
+			description:
+				'Discover x402-protected endpoints on a domain. Probes common paths and the .well-known/x402 endpoint to find paid resources. Returns scheme, network, amount, and asset for each endpoint.',
+			inputSchema: {
+				domain: z
+					.string()
+					.describe('Domain to probe (e.g., "api.example.com" or "https://api.example.com")'),
+			},
 		},
 		async ({ domain }) => {
 			try {
@@ -24,18 +28,17 @@ export function registerX402Discover(server: McpServer) {
 				const lines = [`Found ${result.endpoints.length} x402 endpoint(s) on ${domain}:`, ''];
 				for (const ep of result.endpoints) {
 					lines.push(`${ep.method} ${ep.path}`);
-					lines.push(`  Scheme: ${ep.scheme}  Amount: ${ep.maxAmount}`);
+					if (ep.scheme) lines.push(`  Scheme: ${ep.scheme}`);
+					if (ep.network) lines.push(`  Network: ${ep.network}`);
+					if (ep.amount) lines.push(`  Amount: ${ep.amount}`);
+					if (ep.asset) lines.push(`  Asset: ${ep.asset}`);
 					if (ep.description) lines.push(`  ${ep.description}`);
 					lines.push('');
 				}
 
 				return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: 'text' as const, text: `x402 discovery failed: ${msg}` }],
-					isError: true,
-				};
+				return formatError(error, 'x402 discovery failed');
 			}
 		},
 	);

@@ -5,6 +5,7 @@ interface PolicyViolation {
 	reason: string;
 }
 
+/** Matches MCP SDK's CallToolResult — index signature required by the Zod schema. */
 interface ToolResult {
 	[key: string]: unknown;
 	content: Array<{ type: 'text'; text: string }>;

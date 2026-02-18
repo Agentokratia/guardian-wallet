@@ -1,11 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerListSigners(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_list_signers',
-		'List all signers accessible with the current API key. Shows name, ID, address, chain, network, and status.',
-		{},
+		{
+			description:
+				'List all signers accessible with the current API key. Shows name, ID, address, chain, network, and status.',
+		},
 		async () => {
 			const api = signerManager.getApi();
 
@@ -38,16 +41,7 @@ export function registerListSigners(server: McpServer, signerManager: SignerMana
 					],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Failed to list signers: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Failed to list signers');
 			}
 		},
 	);

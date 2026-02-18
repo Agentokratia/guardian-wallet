@@ -1,13 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerResolveAddress(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_resolve_address',
-		'Resolve an ENS name (e.g. "vitalik.eth") to an Ethereum address. Useful before sending transactions to human-readable names.',
 		{
-			addressOrEns: z.string().describe('ENS name (e.g. "vitalik.eth") or 0x address to resolve'),
+			description:
+				'Resolve an ENS name (e.g. "vitalik.eth") to an Ethereum address. Useful before sending transactions to human-readable names.',
+			inputSchema: {
+				addressOrEns: z.string().describe('ENS name (e.g. "vitalik.eth") or 0x address to resolve'),
+			},
 		},
 		async ({ addressOrEns }) => {
 			const api = signerManager.getApi();
@@ -35,16 +39,7 @@ export function registerResolveAddress(server: McpServer, signerManager: SignerM
 					],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Address resolution failed: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Address resolution failed');
 			}
 		},
 	);

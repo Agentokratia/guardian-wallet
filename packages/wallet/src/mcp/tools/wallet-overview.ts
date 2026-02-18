@@ -1,19 +1,23 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatUnits } from 'viem';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerWalletOverview(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_wallet_overview',
-		'Get a complete overview of the Guardian wallet — address, balances, tracked token balances, and recent transactions. This is the best starting tool for any conversation about the wallet. Requires a network to show balances.',
 		{
-			network: z
-				.string()
-				.optional()
-				.describe(
-					'Network to show balances for (e.g. "base-sepolia", "mainnet"). If not set, call guardian_list_networks first.',
-				),
+			description:
+				'Get a complete overview of the Guardian wallet — address, balances, tracked token balances, and recent transactions. This is the best starting tool for any conversation about the wallet. Requires a network to show balances.',
+			inputSchema: {
+				network: z
+					.string()
+					.optional()
+					.describe(
+						'Network name from guardian_list_networks (e.g. "base-sepolia", "mainnet", "arbitrum"). Required to show balances — call guardian_list_networks first if unknown.',
+					),
+			},
 		},
 		async ({ network }) => {
 			const api = signerManager.getApi();
@@ -34,7 +38,8 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 					};
 				}
 
-				const signer = signers[0] as (typeof signers)[0];
+				// Safe — guarded by !signers.length above
+				const signer = signers[0]!;
 
 				lines.push(`Wallet: ${signer.name || 'Guardian Wallet'}`);
 				lines.push(`Address: ${signer.ethAddress}`);
@@ -52,7 +57,10 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 					};
 				}
 
-				lines.push(`Network: ${targetNetwork}`);
+				const chainId = await api.getChainId(targetNetwork);
+				lines.push(
+					chainId ? `Network: ${targetNetwork} (eip155:${chainId})` : `Network: ${targetNetwork}`,
+				);
 				lines.push('');
 
 				// ETH balance
@@ -72,8 +80,6 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 
 				// Token balances from server's tracked tokens
 				try {
-					const chainId = await api.getChainId(targetNetwork);
-
 					if (chainId) {
 						const tokenBalances = await api.getTokenBalances(signer.id, chainId);
 
@@ -117,11 +123,7 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 					content: [{ type: 'text' as const, text: lines.join('\n') }],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: 'text' as const, text: `Wallet overview failed: ${msg}` }],
-					isError: true,
-				};
+				return formatError(error, 'Wallet overview failed');
 			}
 		},
 	);

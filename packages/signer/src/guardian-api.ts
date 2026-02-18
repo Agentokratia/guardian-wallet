@@ -50,6 +50,8 @@ export interface NetworkInfo {
 	name: string;
 	displayName: string;
 	chainId: number;
+	/** CAIP-2 network identifier, e.g. "eip155:84532" */
+	networkId: string;
 	rpcUrl: string;
 	explorerUrl: string | null;
 	nativeCurrency: string;
@@ -233,11 +235,11 @@ export class GuardianApi {
 		);
 	}
 
-	async getExplorerTxUrl(network: string, hash: string): Promise<string> {
+	async getExplorerTxUrl(network: string, hash: string): Promise<string | null> {
 		const networks = await this.listNetworks();
 		const match = networks.find((n) => n.name === network);
 		if (match?.explorerUrl) return `${match.explorerUrl}/tx/${hash}`;
-		return hash;
+		return null;
 	}
 
 	// -- Tokens ---------------------------------------------------------------

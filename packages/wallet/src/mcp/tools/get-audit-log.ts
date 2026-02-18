@@ -1,35 +1,39 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatUnits } from 'viem';
 import { z } from 'zod';
+import { formatError } from '../../lib/errors.js';
 import type { SignerManager } from '../../lib/signer-manager.js';
 
 export function registerGetAuditLog(server: McpServer, signerManager: SignerManager) {
-	server.tool(
+	server.registerTool(
 		'guardian_get_audit_log',
-		'Get recent signing activity from the Guardian audit log. Shows past transactions, policy evaluations, decoded function calls, and gas costs. Use this to check spending history or verify past actions.',
 		{
-			limit: z
-				.number()
-				.int()
-				.min(1)
-				.max(100)
-				.optional()
-				.default(20)
-				.describe('Number of entries to return (default: 20, max: 100)'),
-			status: z
-				.enum(['all', 'completed', 'blocked', 'failed'])
-				.optional()
-				.default('all')
-				.describe(
-					'Filter by status: "all", "completed", "blocked" (policy violation), or "failed"',
-				),
-			page: z
-				.number()
-				.int()
-				.min(1)
-				.optional()
-				.default(1)
-				.describe('Page number for pagination (default: 1)'),
+			description:
+				'Get recent signing activity from the Guardian audit log. Shows past transactions, policy evaluations, decoded function calls, and gas costs. Use this to check spending history or verify past actions.',
+			inputSchema: {
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(100)
+					.optional()
+					.default(20)
+					.describe('Number of entries to return (default: 20, max: 100)'),
+				status: z
+					.enum(['all', 'completed', 'blocked', 'failed'])
+					.optional()
+					.default('all')
+					.describe(
+						'Filter by status: "all", "completed", "blocked" (policy violation), or "failed"',
+					),
+				page: z
+					.number()
+					.int()
+					.min(1)
+					.optional()
+					.default(1)
+					.describe('Page number for pagination (default: 1)'),
+			},
 		},
 		async ({ limit, status, page }) => {
 			const api = signerManager.getApi();
@@ -88,16 +92,7 @@ export function registerGetAuditLog(server: McpServer, signerManager: SignerMana
 					content: [{ type: 'text' as const, text: lines.join('\n\n') }],
 				};
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: `Audit log fetch failed: ${msg}`,
-						},
-					],
-					isError: true,
-				};
+				return formatError(error, 'Audit log fetch failed');
 			}
 		},
 	);

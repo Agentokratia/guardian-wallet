@@ -69,6 +69,7 @@ export async function runMcp() {
 	// Management & Audit
 	registerGetStatus(server, signerManager);
 	registerGetAuditLog(server, signerManager);
+
 	// x402 payment tools
 	registerX402Check(server);
 	registerX402Discover(server);
