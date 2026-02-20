@@ -21,7 +21,7 @@ export const infoCommand = new Command('info')
 			console.log(`  ${brand('●')} ${brandBold(config.signerName)}`);
 			console.log('');
 			console.log(`  ${dim('Address')}    ${config.ethAddress}`);
-			console.log(`  ${dim('API Key')}    ${config.apiKey}`);
+			console.log(`  ${dim('API Key')}    ${config.apiKey.slice(0, 12)}…`);
 			console.log(`  ${dim('Policy')}     ${config.serverUrl}`);
 			if (config.signerId) {
 				console.log(`  ${dim('Signer ID')}  ${config.signerId}`);

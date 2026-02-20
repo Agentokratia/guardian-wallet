@@ -209,6 +209,10 @@ async function handleCreate(): Promise<void> {
 	spinner.succeed('Wallet created');
 
 	// ── Save everything ───────────────────────────────────────────────────
+	// Store user share FIRST — if this fails, we haven't written config yet.
+	// Once config is saved, the signer is "registered" locally.
+	await storeUserShare(name, result.userShare, storage);
+
 	const config: SignerConfig = {
 		version: 1,
 		serverUrl,
@@ -220,7 +224,6 @@ async function handleCreate(): Promise<void> {
 		createdAt: new Date().toISOString(),
 	};
 	saveSignerConfig(name, config);
-	await storeUserShare(name, result.userShare, storage);
 	setDefaultSigner(name);
 
 	// ── Summary ───────────────────────────────────────────────────────────

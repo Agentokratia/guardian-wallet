@@ -41,8 +41,9 @@ export class EitherAdminGuard implements CanActivate {
 		if (token) {
 			try {
 				return await this.sessionGuard.canActivate(context);
-			} catch {
-				// Session auth failed — fall through to anon auth
+			} catch (err) {
+				// Only swallow auth errors — re-throw infrastructure failures
+				if (!(err instanceof UnauthorizedException)) throw err;
 			}
 		}
 
@@ -51,8 +52,8 @@ export class EitherAdminGuard implements CanActivate {
 		if (adminToken) {
 			try {
 				return await this.anonGuard.canActivate(context);
-			} catch {
-				// Anon auth failed — fall through to error
+			} catch (err) {
+				if (!(err instanceof UnauthorizedException)) throw err;
 			}
 		}
 

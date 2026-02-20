@@ -100,7 +100,7 @@ export class SignerController {
 	/**
 	 * Public signer creation — no auth required.
 	 * Creates signer + runs DKG atomically. Returns all credentials.
-	 * Rate-limited to 3 per IP per hour. Optional bootstrap token.
+	 * Rate-limited per IP per hour (configurable via PUBLIC_CREATE_LIMIT).
 	 */
 	@Post('public')
 	async createPublic(@Body() body: CreatePublicSignerDto, @Req() req: AuthenticatedRequest) {

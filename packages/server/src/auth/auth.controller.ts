@@ -3,7 +3,6 @@ import {
 	Controller,
 	Get,
 	Inject,
-	NotFoundException,
 	Post,
 	Req,
 	Res,
@@ -110,11 +109,8 @@ export class AuthController {
 		const doubleHash = hashApiKey(body.adminToken);
 		const signer = await this.signerRepo.findById(body.signerId);
 
-		if (!signer) {
-			throw new NotFoundException();
-		}
-
-		if (!timingSafeCompare(signer.ownerAddress, `sha256:${doubleHash}`)) {
+		// Same error for missing signer and wrong credential — don't leak signer existence
+		if (!signer || !timingSafeCompare(signer.ownerAddress, `sha256:${doubleHash}`)) {
 			throw new UnauthorizedException('Invalid credential');
 		}
 
