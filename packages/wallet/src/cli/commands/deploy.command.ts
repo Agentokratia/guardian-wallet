@@ -1,9 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { ThresholdSigner } from '@agentokratia/guardian-signer';
 import chalk from 'chalk';
-import { Command } from 'commander';
+import { Command, type Command as CommandType } from 'commander';
 import ora from 'ora';
-import { createClientFromConfig, createSignerFromConfig, loadConfig } from '../../lib/config.js';
+import {
+	type SignerConfig,
+	createClientFromConfig,
+	createSignerFromConfig,
+	loadSignerConfig,
+} from '../../lib/config.js';
+import { brand, danger, dim } from '../theme.js';
 
 function isHexString(value: string): boolean {
 	const clean = value.startsWith('0x') ? value.slice(2) : value;
@@ -33,81 +39,92 @@ export const deployCommand = new Command('deploy')
 	.argument('<bytecode>', 'Contract bytecode (hex string or file path)')
 	.option('-n, --network <network>', 'Override default network')
 	.option('--constructor-args <args>', 'ABI-encoded constructor arguments (hex)')
-	.action(async (bytecodeArg: string, options: { network?: string; constructorArgs?: string }) => {
-		let config: ReturnType<typeof loadConfig> | undefined;
-		try {
-			config = loadConfig();
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			console.error(chalk.red(`\n  Error: ${message}\n`));
-			process.exitCode = 1;
-			return;
-		}
+	.action(
+		async (
+			bytecodeArg: string,
+			options: { network?: string; constructorArgs?: string },
+			command: CommandType,
+		) => {
+			let config: SignerConfig;
+			try {
+				config = loadSignerConfig(command.optsWithGlobals().signer);
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				console.error(danger(`\n  Error: ${message}\n`));
+				process.exitCode = 1;
+				return;
+			}
 
-		let bytecode: string;
-		try {
-			bytecode = loadBytecode(bytecodeArg);
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			console.error(chalk.red(`\n  Error: ${message}\n`));
-			process.exitCode = 1;
-			return;
-		}
+			let bytecode: string;
+			try {
+				bytecode = loadBytecode(bytecodeArg);
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				console.error(danger(`\n  Error: ${message}\n`));
+				process.exitCode = 1;
+				return;
+			}
 
-		if (options.constructorArgs) {
-			const args = options.constructorArgs.startsWith('0x')
-				? options.constructorArgs.slice(2)
-				: options.constructorArgs;
-			bytecode = `${bytecode}${args}`;
-		}
+			if (options.constructorArgs) {
+				const args = options.constructorArgs.startsWith('0x')
+					? options.constructorArgs.slice(2)
+					: options.constructorArgs;
+				bytecode = `${bytecode}${args}`;
+			}
 
-		const network = options.network ?? config.network;
-		const { api } = createClientFromConfig(config);
+			const network = options.network ?? config.network;
+			if (!network) {
+				console.error(danger('\n  Error: No network specified. Use --network <name>.\n'));
+				process.exitCode = 1;
+				return;
+			}
+			const { api } = createClientFromConfig(config);
 
-		console.log(chalk.bold('\n  Contract Deployment'));
-		console.log(chalk.dim(`  ${'-'.repeat(40)}`));
-		console.log(`  Network:  ${network}`);
-		console.log(
-			`  Bytecode: ${chalk.dim(bytecode.slice(0, 24))}...${chalk.dim(`(${bytecode.length} chars)`)}`,
-		);
-		if (options.constructorArgs) {
-			console.log(`  Args:     ${chalk.dim(options.constructorArgs.slice(0, 24))}...`);
-		}
-		console.log('');
-
-		const spinner = ora({ text: 'Loading keyshare...', indent: 2 }).start();
-
-		let signer: ThresholdSigner | undefined;
-
-		try {
-			signer = await createSignerFromConfig(config);
-			spinner.text = 'Deploying contract (threshold ECDSA)...';
-
-			const transaction: Record<string, unknown> = {
-				to: null,
-				data: bytecode,
-				value: '0',
-				network,
-			};
-
-			const result = await signer.signTransaction(transaction);
-
-			spinner.succeed('Contract deployed successfully');
-
-			console.log('');
-			console.log(`  ${chalk.bold('Tx Hash:')}  ${chalk.cyan(result.txHash)}`);
-
-			const txExplorer = await api.getExplorerTxUrl(network, result.txHash);
-
-			if (txExplorer) {
-				console.log(`  ${chalk.bold('Tx URL:')}   ${chalk.dim(txExplorer)}`);
+			console.log(chalk.bold('\n  Contract Deployment'));
+			console.log(dim(`  ${'-'.repeat(40)}`));
+			console.log(`  Network:  ${network}`);
+			console.log(
+				`  Bytecode: ${dim(bytecode.slice(0, 24))}...${dim(`(${bytecode.length} chars)`)}`,
+			);
+			if (options.constructorArgs) {
+				console.log(`  Args:     ${dim(options.constructorArgs.slice(0, 24))}...`);
 			}
 			console.log('');
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			spinner.fail(`Deployment failed: ${message}`);
-			process.exitCode = 1;
-		} finally {
-			signer?.destroy();
-		}
-	});
+
+			const spinner = ora({ text: 'Loading keyshare...', indent: 2 }).start();
+
+			let signer: ThresholdSigner | undefined;
+
+			try {
+				signer = await createSignerFromConfig(config);
+				spinner.text = 'Deploying contract (threshold ECDSA)...';
+
+				const transaction: Record<string, unknown> = {
+					to: null,
+					data: bytecode,
+					value: '0',
+					network,
+				};
+
+				const result = await signer.signTransaction(transaction);
+
+				spinner.succeed('Contract deployed successfully');
+
+				console.log('');
+				console.log(`  ${chalk.bold('Tx Hash:')}  ${brand(result.txHash)}`);
+
+				const txExplorer = await api.getExplorerTxUrl(network, result.txHash);
+
+				if (txExplorer) {
+					console.log(`  ${chalk.bold('Tx URL:')}   ${dim(txExplorer)}`);
+				}
+				console.log('');
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				spinner.fail(`Deployment failed: ${message}`);
+				process.exitCode = 1;
+			} finally {
+				signer?.destroy();
+			}
+		},
+	);

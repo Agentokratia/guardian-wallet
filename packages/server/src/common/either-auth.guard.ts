@@ -8,6 +8,7 @@ import {
 import { SessionService } from '../auth/session.service.js';
 import type { AuthenticatedRequest } from './authenticated-request.js';
 import { hashApiKey } from './crypto-utils.js';
+import { extractBearerToken } from './extract-bearer-token.js';
 import { SupabaseService } from './supabase.service.js';
 
 /**
@@ -25,8 +26,7 @@ export class EitherAuthGuard implements CanActivate {
 		const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
 		// Try session auth first (dashboard)
-		const token =
-			request.cookies?.session || this.extractBearerToken(request.headers.authorization);
+		const token = request.cookies?.session || extractBearerToken(request.headers.authorization);
 		if (token) {
 			const payload = this.sessionService.validateToken(token);
 			if (payload) {
@@ -57,10 +57,5 @@ export class EitherAuthGuard implements CanActivate {
 		}
 
 		throw new UnauthorizedException('Missing or invalid authentication');
-	}
-
-	private extractBearerToken(header: string | undefined): string | undefined {
-		if (!header?.startsWith('Bearer ')) return undefined;
-		return header.slice(7);
 	}
 }

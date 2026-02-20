@@ -1,4 +1,9 @@
-import type { IShareStore } from '@agentokratia/guardian-core';
+import {
+	ChainName,
+	type IShareStore,
+	type SchemeName,
+	type SignerType,
+} from '@agentokratia/guardian-core';
 import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import {
 	BadRequestException,
@@ -6,11 +11,13 @@ import {
 	Injectable,
 	Logger,
 	NotFoundException,
+	type OnModuleDestroy,
 	type OnModuleInit,
 } from '@nestjs/common';
-import { wipeBuffer } from '../common/crypto-utils.js';
+import { hashApiKey, wipeBuffer } from '../common/crypto-utils.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
 import { SignerRepository } from '../signers/signer.repository.js';
+import { SignerService } from '../signers/signer.service.js';
 import { AuxInfoPoolService } from './aux-info-pool.service.js';
 
 export interface InitDKGInput {
@@ -51,20 +58,22 @@ export interface FinalizeDKGOutput {
  * - Share[2] (user): returned to client for wallet encryption
  */
 @Injectable()
-export class DKGService implements OnModuleInit {
+export class DKGService implements OnModuleInit, OnModuleDestroy {
 	private readonly logger = new Logger(DKGService.name);
 	private readonly scheme = new CGGMP24Scheme();
 
 	// Track pending DKG sessions (validated signer IDs awaiting finalization)
 	private readonly pendingSessions = new Map<string, { signerId: string; createdAt: number }>();
+	private cleanupTimer: ReturnType<typeof setInterval>;
 
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
+		@Inject(SignerService) private readonly signerService: SignerService,
 		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(AuxInfoPoolService) private readonly auxInfoPool: AuxInfoPoolService,
 	) {
 		// Cleanup expired sessions every 30s
-		setInterval(() => {
+		this.cleanupTimer = setInterval(() => {
 			const now = Date.now();
 			for (const [id, entry] of this.pendingSessions) {
 				if (now - entry.createdAt > 180_000) {
@@ -72,6 +81,11 @@ export class DKGService implements OnModuleInit {
 				}
 			}
 		}, 30_000);
+	}
+
+	onModuleDestroy(): void {
+		clearInterval(this.cleanupTimer);
+		this.pendingSessions.clear();
 	}
 
 	/**
@@ -168,21 +182,13 @@ export class DKGService implements OnModuleInit {
 		}
 
 		// Bundle each party's key material: { coreShare: base64, auxInfo: base64 }
-		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
-		const signerKeyMaterial = bundleKeyMaterial(
-			dkgResult.shares[0]!.coreShare,
-			dkgResult.shares[0]!.auxInfo,
-		);
-		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
-		const serverKeyMaterial = bundleKeyMaterial(
-			dkgResult.shares[1]!.coreShare,
-			dkgResult.shares[1]!.auxInfo,
-		);
-		// biome-ignore lint/style/noNonNullAssertion: DKG produces exactly 3 shares
-		const userKeyMaterial = bundleKeyMaterial(
-			dkgResult.shares[2]!.coreShare,
-			dkgResult.shares[2]!.auxInfo,
-		);
+		const [share0, share1, share2] = dkgResult.shares;
+		if (!share0 || !share1 || !share2) {
+			throw new BadRequestException(`Expected 3 shares, got ${dkgResult.shares.length}`);
+		}
+		const signerKeyMaterial = bundleKeyMaterial(share0.coreShare, share0.auxInfo);
+		const serverKeyMaterial = bundleKeyMaterial(share1.coreShare, share1.auxInfo);
+		const userKeyMaterial = bundleKeyMaterial(share2.coreShare, share2.auxInfo);
 
 		try {
 			// Derive Ethereum address from shared public key
@@ -220,6 +226,71 @@ export class DKGService implements OnModuleInit {
 			}
 			wipeBuffer(dkgResult.publicKey);
 			this.logger.debug('All key material buffers wiped');
+		}
+	}
+
+	/**
+	 * Atomic create + DKG for public (anonymous) signer creation.
+	 *
+	 * 1. Creates signer record with ownerAddress = 'pending'
+	 * 2. Runs full DKG ceremony
+	 * 3. Computes double-hash of userShare → sets ownerAddress = 'sha256:<hash>'
+	 * 4. Returns all credentials (signerId, ethAddress, apiKey, signerShare, userShare)
+	 *
+	 * On DKG failure, the signer record is cleaned up.
+	 */
+	async createWithDKG(input: {
+		name: string;
+		type: SignerType;
+		scheme: SchemeName;
+		network: string;
+	}): Promise<{
+		signerId: string;
+		ethAddress: string;
+		apiKey: string;
+		signerShare: string;
+		userShare: string;
+	}> {
+		const { signer, apiKey } = await this.signerService.create({
+			name: input.name,
+			type: input.type,
+			chain: ChainName.ETHEREUM,
+			scheme: input.scheme,
+			network: input.network,
+			ownerAddress: 'pending',
+		});
+
+		try {
+			// Init + finalize DKG
+			const { sessionId } = await this.init({ signerId: signer.id });
+			const result = await this.finalize({ sessionId, signerId: signer.id });
+
+			// Compute admin credential (Bitwarden double-hash model)
+			// Server has userShare transiently during DKG — compute before returning
+			const singleHash = hashApiKey(result.userShare); // SHA256(base64 string)
+			const doubleHash = hashApiKey(singleHash); // SHA256(SHA256(...))
+			await this.signerRepo.update(signer.id, {
+				ownerAddress: `sha256:${doubleHash}`,
+			});
+
+			return {
+				signerId: signer.id,
+				ethAddress: result.ethAddress,
+				apiKey,
+				signerShare: result.signerShare,
+				userShare: result.userShare,
+			};
+		} catch (error) {
+			// Cleanup: delete signer record on DKG failure
+			this.logger.error(
+				`createWithDKG failed for "${input.name}", cleaning up signer ${signer.id}`,
+			);
+			try {
+				await this.signerRepo.update(signer.id, { status: 'revoked' } as never);
+			} catch {
+				this.logger.error(`Failed to cleanup signer ${signer.id} after DKG failure`);
+			}
+			throw error;
 		}
 	}
 }

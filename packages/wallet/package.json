@@ -17,7 +17,7 @@
 		"guardian-wallet": "./dist/index.js",
 		"gw": "./dist/index.js"
 	},
-	"files": ["dist", "!dist/__tests__"],
+	"files": ["dist", "!dist/__tests__", "scripts"],
 	"engines": {
 		"node": ">=20.0.0"
 	},
@@ -25,6 +25,7 @@
 		"access": "public"
 	},
 	"scripts": {
+		"postinstall": "node scripts/postinstall.js || true",
 		"build": "tsc",
 		"dev": "tsx src/index.ts",
 		"lint": "biome check src/",
@@ -35,6 +36,7 @@
 	"dependencies": {
 		"@agentokratia/guardian-schemes": "workspace:*",
 		"@agentokratia/guardian-signer": "workspace:*",
+		"@inquirer/prompts": "^8.2.1",
 		"@modelcontextprotocol/sdk": "^1.12.0",
 		"@x402/core": "^2.2.0",
 		"@x402/evm": "^2.2.0",

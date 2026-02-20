@@ -1,4 +1,4 @@
-import type { IShareStore } from '@agentokratia/guardian-core';
+import { type IShareStore, SchemeName, SignerType } from '@agentokratia/guardian-core';
 import {
 	BadRequestException,
 	Body,
@@ -20,14 +20,18 @@ import {
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
+import { APP_CONFIG, type AppConfig } from '../common/config.js';
+import { EitherAdminGuard } from '../common/either-admin.guard.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
 import { hexToBytes } from '../common/encoding.js';
 import { SessionGuard } from '../common/session.guard.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
+import { DKGService } from '../dkg/dkg.service.js';
 import type { Network } from '../networks/network.repository.js';
 import { NetworkService } from '../networks/network.service.js';
 import type { AddTokenDto } from '../tokens/dto/add-token.dto.js';
 import { TokenService } from '../tokens/token.service.js';
+import type { CreatePublicSignerDto } from './dto/create-public-signer.dto.js';
 import type { CreateSignerDto } from './dto/create-signer.dto.js';
 import type { SimulateDto } from './dto/simulate.dto.js';
 import type { StoreUserShareDto } from './dto/store-user-share.dto.js';
@@ -35,6 +39,7 @@ import type { UpdateSignerDto } from './dto/update-signer.dto.js';
 import { SignerService } from './signer.service.js';
 import { signerToPublic } from './signer.types.js';
 
+const PUBLIC_CREATE_WINDOW_MS = 3_600_000; // 1 hour
 const BALANCE_CACHE_TTL = 15_000;
 interface BalanceResult {
 	address: string;
@@ -46,12 +51,18 @@ const balanceCache = new Map<string, { data: BalanceResult; ts: number }>();
 export class SignerController {
 	private readonly logger = new Logger(SignerController.name);
 
+	// Rate limit: N public creations per IP per hour
+	private readonly publicCreateLimits = new Map<string, { count: number; resetAt: number }>();
+	private publicCreateLastCleanup = 0;
+
 	constructor(
 		@Inject(SignerService) private readonly signerService: SignerService,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
 		@Inject(NetworkService) private readonly networkService: NetworkService,
 		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
 		@Inject(TokenService) private readonly tokenService: TokenService,
+		@Inject(DKGService) private readonly dkgService: DKGService,
+		@Inject(APP_CONFIG) private readonly config: AppConfig,
 	) {}
 
 	/**
@@ -60,6 +71,9 @@ export class SignerController {
 	 * - Session auth: signer.ownerAddress must match req.sessionUser.
 	 */
 	private async getOwnedSigner(id: string, req: AuthenticatedRequest) {
+		if (!req.signerId && !req.sessionUser) {
+			throw new ForbiddenException('No authenticated identity');
+		}
 		if (req.signerId && req.signerId !== id) {
 			throw new ForbiddenException('API key does not match this signer');
 		}
@@ -83,6 +97,48 @@ export class SignerController {
 		return { signer: signerToPublic(result.signer), apiKey: result.apiKey };
 	}
 
+	/**
+	 * Public signer creation — no auth required.
+	 * Creates signer + runs DKG atomically. Returns all credentials.
+	 * Rate-limited per IP per hour (configurable via PUBLIC_CREATE_LIMIT).
+	 */
+	@Post('public')
+	async createPublic(@Body() body: CreatePublicSignerDto, @Req() req: AuthenticatedRequest) {
+		// Rate limit per IP per hour (with periodic cleanup)
+		const maxPerHour = this.config.PUBLIC_CREATE_LIMIT;
+		const ip = req.ip ?? 'unknown';
+		const now = Date.now();
+		if (now - this.publicCreateLastCleanup > PUBLIC_CREATE_WINDOW_MS) {
+			for (const [key, entry] of this.publicCreateLimits) {
+				if (now >= entry.resetAt) this.publicCreateLimits.delete(key);
+			}
+			this.publicCreateLastCleanup = now;
+		}
+		const limit = this.publicCreateLimits.get(ip);
+		if (limit && now < limit.resetAt) {
+			if (limit.count >= maxPerHour) {
+				throw new HttpException(
+					`Rate limit exceeded (${maxPerHour} signers/hour)`,
+					HttpStatus.TOO_MANY_REQUESTS,
+				);
+			}
+			limit.count++;
+		} else {
+			this.publicCreateLimits.set(ip, { count: 1, resetAt: now + PUBLIC_CREATE_WINDOW_MS });
+		}
+
+		const result = await this.dkgService.createWithDKG({
+			name: body.name,
+			type: body.type ?? SignerType.AI_AGENT,
+			scheme: body.scheme ?? SchemeName.CGGMP24,
+			network: body.network ?? 'base-sepolia',
+		});
+
+		this.logger.log(`Public signer created: ${result.signerId} (${result.ethAddress})`);
+
+		return result;
+	}
+
 	@Get()
 	@UseGuards(EitherAuthGuard)
 	async list(@Req() req: AuthenticatedRequest) {
@@ -104,7 +160,7 @@ export class SignerController {
 	}
 
 	@Patch(':id')
-	@UseGuards(SessionGuard)
+	@UseGuards(EitherAdminGuard)
 	async update(
 		@Param('id') id: string,
 		@Body() body: UpdateSignerDto,
@@ -115,14 +171,14 @@ export class SignerController {
 	}
 
 	@Delete(':id')
-	@UseGuards(SessionGuard)
+	@UseGuards(EitherAdminGuard)
 	async revoke(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.revoke(id));
 	}
 
 	@Post(':id/regenerate-key')
-	@UseGuards(SessionGuard)
+	@UseGuards(EitherAdminGuard)
 	async regenerateApiKey(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		const result = await this.signerService.regenerateApiKey(id);
@@ -130,14 +186,14 @@ export class SignerController {
 	}
 
 	@Post(':id/pause')
-	@UseGuards(SessionGuard)
+	@UseGuards(EitherAdminGuard)
 	async pause(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.pause(id));
 	}
 
 	@Post(':id/resume')
-	@UseGuards(SessionGuard)
+	@UseGuards(EitherAdminGuard)
 	async resume(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.resume(id));
@@ -184,7 +240,7 @@ export class SignerController {
 
 		const balances = results.map((r, i) => {
 			if (r.status === 'fulfilled') return r.value;
-			const n = networks[i]!;
+			const n = networks[i] ?? { name: 'unknown', chainId: 0 };
 			const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
 			this.logger.warn(`RPC failed for ${n.name} (chainId=${n.chainId}): ${reason}`);
 			return { network: n.name, chainId: n.chainId, balance: '0', rpcError: true };

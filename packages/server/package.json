@@ -16,7 +16,9 @@
 	"main": "./dist/main.js",
 	"types": "./dist/main.d.ts",
 	"files": ["dist"],
-	"engines": { "node": ">=20.0.0" },
+	"engines": {
+		"node": ">=20.0.0"
+	},
 	"private": true,
 	"scripts": {
 		"build": "tsc",
@@ -28,18 +30,19 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
+		"@agentokratia/guardian-auth": "workspace:*",
+		"@agentokratia/guardian-chains": "workspace:*",
+		"@agentokratia/guardian-core": "workspace:*",
+		"@agentokratia/guardian-schemes": "workspace:*",
 		"@nestjs/common": "^10.4.0",
 		"@nestjs/core": "^10.4.0",
 		"@nestjs/platform-express": "^10.4.0",
 		"@noble/curves": "^2.0.1",
 		"@supabase/supabase-js": "^2.45.0",
-		"@agentokratia/guardian-auth": "workspace:*",
-		"@agentokratia/guardian-chains": "workspace:*",
-		"@agentokratia/guardian-core": "workspace:*",
-		"@agentokratia/guardian-schemes": "workspace:*",
 		"class-transformer": "^0.5.1",
 		"class-validator": "^0.14.3",
 		"cookie-parser": "^1.4.6",
+		"helmet": "^8.1.0",
 		"node-vault": "^0.10.2",
 		"reflect-metadata": "^0.2.0",
 		"rxjs": "^7.8.0",

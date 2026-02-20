@@ -3,6 +3,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { APP_CONFIG, type AppConfig } from './common/config.js';
 
@@ -12,7 +13,16 @@ async function bootstrap() {
 
 	const config = app.get<AppConfig>(APP_CONFIG);
 
-	app.useBodyParser('json', { limit: '2mb' });
+	// Wipe key material from signing sessions on SIGTERM/SIGINT
+	app.enableShutdownHooks();
+
+	// Trust first proxy (nginx, Caddy, ALB) for correct req.ip in rate limiting and audit logs
+	app.set('trust proxy', 1);
+
+	// HTTP security headers
+	app.use(helmet({ contentSecurityPolicy: false }));
+
+	app.useBodyParser('json', { limit: '512kb' });
 	app.use(cookieParser());
 
 	app.useGlobalPipes(
@@ -23,17 +33,16 @@ async function bootstrap() {
 		}),
 	);
 
-	const origins = process.env.ALLOWED_ORIGINS?.split(',')
-		.map((s) => s.trim())
-		.filter(Boolean) || ['http://localhost:3000'];
 	app.enableCors({
-		origin: origins,
+		origin: config.ALLOWED_ORIGINS,
 		credentials: true,
 	});
 
 	app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 	await app.listen(config.PORT);
-	logger.log(`Server running on port ${config.PORT} — CORS origins: ${origins.join(', ')}`);
+	logger.log(
+		`Server running on port ${config.PORT} — CORS origins: ${config.ALLOWED_ORIGINS.join(', ')}`,
+	);
 }
 
 bootstrap();

@@ -16,7 +16,7 @@ import {
 	UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
-import { SessionGuard } from '../common/session.guard.js';
+import { EitherAdminGuard } from '../common/either-admin.guard.js';
 import { SignerService } from '../signers/signer.service.js';
 import type { CreatePolicyDto } from './dto/create-policy.dto.js';
 import type { SavePolicyDocumentDto } from './dto/save-policy-document.dto.js';
@@ -25,7 +25,7 @@ import { PolicyDocumentService } from './policy-document.service.js';
 import { PolicyService } from './policy.service.js';
 
 @Controller()
-@UseGuards(SessionGuard)
+@UseGuards(EitherAdminGuard)
 export class PolicyController {
 	constructor(
 		@Inject(PolicyService) private readonly policyService: PolicyService,
@@ -34,6 +34,9 @@ export class PolicyController {
 	) {}
 
 	private async verifySignerOwnership(signerId: string, req: AuthenticatedRequest) {
+		if (!req.signerId && !req.sessionUser) {
+			throw new ForbiddenException('No authenticated identity');
+		}
 		if (req.signerId && req.signerId !== signerId) {
 			throw new ForbiddenException('API key does not match this signer');
 		}

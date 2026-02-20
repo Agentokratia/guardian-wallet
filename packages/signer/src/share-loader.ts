@@ -124,9 +124,14 @@ export async function saveShareToFile(
 // ---------------------------------------------------------------------------
 
 /**
- * Read a share file from disk, either:
- * - Encrypted `.enc` binary (salt + iv + ciphertext + authTag) — requires passphrase
- * - Raw base64 string (as downloaded from the dashboard UI) — no passphrase needed
+ * Load a share from file. Supports two formats:
+ *
+ * 1. Plain base64 JSON: { coreShare, auxInfo } — preferred for all new files.
+ * 2. Encrypted binary: [salt 16B][iv 12B][ciphertext][authTag 16B] — legacy format,
+ *    encrypted with scrypt + AES-256-GCM. Requires passphrase.
+ *
+ * New share files should always use plain base64 format.
+ * Encrypted files are supported for backward compatibility only.
  */
 export async function loadShareFromFile(path: string, passphrase: string): Promise<Share> {
 	const fileBuffer = await readFile(path);

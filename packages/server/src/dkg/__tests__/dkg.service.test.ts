@@ -132,6 +132,7 @@ describe('DKGService', () => {
 
 		service = new DKGService(
 			mocks.signerRepo as unknown as SignerRepository,
+			{} as any, // SignerService (only used by createWithDKG)
 			mocks.vault as unknown as IShareStore,
 			mocks.auxInfoPool as unknown as AuxInfoPoolService,
 		);

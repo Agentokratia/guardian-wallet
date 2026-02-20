@@ -1,9 +1,15 @@
 import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
 import type { ThresholdSigner } from '@agentokratia/guardian-signer';
 import chalk from 'chalk';
-import { Command } from 'commander';
+import { Command, type Command as CommandType } from 'commander';
 import ora from 'ora';
-import { createClientFromConfig, createSignerFromConfig, loadConfig } from '../../lib/config.js';
+import {
+	type SignerConfig,
+	createClientFromConfig,
+	createSignerFromConfig,
+	loadSignerConfig,
+} from '../../lib/config.js';
+import { brand, danger, dim, success, warn } from '../theme.js';
 
 interface JsonRpcRequest {
 	readonly jsonrpc: '2.0';
@@ -118,26 +124,26 @@ export const proxyCommand = new Command('proxy')
 	.description('Start a network-agnostic JSON-RPC signing proxy for Foundry/Hardhat')
 	.option('-p, --port <port>', 'Port to listen on', '8545')
 	.option('-r, --rpc-url <url>', 'Override upstream RPC URL (default: auto-detected from server)')
-	.action(async (options: { port: string; rpcUrl?: string }) => {
-		let config: ReturnType<typeof loadConfig> | undefined;
+	.action(async (options: { port: string; rpcUrl?: string }, command: CommandType) => {
+		let config: SignerConfig;
 		try {
-			config = loadConfig();
+			config = loadSignerConfig(command.optsWithGlobals().signer);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : 'Unknown error';
-			console.error(chalk.red(`\n  Error: ${message}\n`));
+			console.error(danger(`\n  Error: ${message}\n`));
 			process.exitCode = 1;
 			return;
 		}
 
 		const port = Number.parseInt(options.port, 10);
 		if (Number.isNaN(port) || port < 1 || port > 65535) {
-			console.error(chalk.red('\n  Error: Port must be a number between 1 and 65535.\n'));
+			console.error(danger('\n  Error: Port must be a number between 1 and 65535.\n'));
 			process.exitCode = 1;
 			return;
 		}
 
 		console.log(chalk.bold('\n  Guardian Wallet RPC Proxy'));
-		console.log(chalk.dim(`  ${'-'.repeat(40)}`));
+		console.log(dim(`  ${'-'.repeat(40)}`));
 
 		const { api } = createClientFromConfig(config);
 
@@ -149,17 +155,22 @@ export const proxyCommand = new Command('proxy')
 		try {
 			if (options.rpcUrl) {
 				rpcUrl = options.rpcUrl;
-				networkName = config.network;
+				networkName = config.network ?? '';
 				networkSpinner.succeed('Using custom RPC URL');
-				console.log(chalk.dim(`  Network: ${networkName} (RPC override)`));
+				console.log(dim(`  Network: ${networkName} (RPC override)`));
 			} else {
 				const networks = await api.listNetworks();
 				networkSpinner.succeed(`Loaded ${networks.length} networks from server`);
 
-				const matched = networks.find((n) => n.name === config?.network);
+				if (!config.network) {
+					networkSpinner.fail('No network specified. Use --rpc-url or set network in config.');
+					process.exitCode = 1;
+					return;
+				}
+				const matched = networks.find((n) => n.name === config.network);
 				if (!matched) {
-					console.error(chalk.red(`\n  Error: Network "${config.network}" not found on server.`));
-					console.error(chalk.dim(`  Available: ${networks.map((n) => n.name).join(', ')}\n`));
+					console.error(danger(`\n  Error: Network "${config.network}" not found on server.`));
+					console.error(dim(`  Available: ${networks.map((n) => n.name).join(', ')}\n`));
 					process.exitCode = 1;
 					return;
 				}
@@ -224,21 +235,19 @@ export const proxyCommand = new Command('proxy')
 				const method = rpcRequest.method;
 
 				if (ACCOUNT_METHODS.has(method)) {
-					console.log(chalk.dim(`  #${reqNum} ${method} -> [${signer.address}]`));
+					console.log(dim(`  #${reqNum} ${method} -> [${signer.address}]`));
 					sendJsonResponse(res, { jsonrpc: '2.0', id: rpcRequest.id, result: [signer.address] });
 				} else if (SIGNING_METHODS.has(method)) {
-					console.log(
-						`${chalk.yellow(`  #${reqNum}`)}${chalk.dim(` ${method} `)}${chalk.yellow('(signing)')}`,
-					);
+					console.log(`${warn(`  #${reqNum}`)}${dim(` ${method} `)}${warn('(signing)')}`);
 					const response = await handleSigningRequest(rpcRequest, signer);
 					sendJsonResponse(res, response);
 					if (response.error) {
-						console.log(chalk.red(`  #${reqNum} error: ${response.error.message}`));
+						console.log(danger(`  #${reqNum} error: ${response.error.message}`));
 					} else {
-						console.log(chalk.green(`  #${reqNum} done`));
+						console.log(success(`  #${reqNum} done`));
 					}
 				} else {
-					console.log(chalk.dim(`  #${reqNum} ${method} -> RPC`));
+					console.log(dim(`  #${reqNum} ${method} -> RPC`));
 					const response = await forwardToRpc(rpcUrl, rpcRequest);
 					sendJsonResponse(res, response);
 				}
@@ -249,15 +258,15 @@ export const proxyCommand = new Command('proxy')
 		});
 
 		const shutdown = (): void => {
-			console.log(chalk.dim('\n  Shutting down proxy...'));
+			console.log(dim('\n  Shutting down proxy...'));
 			try {
 				signer.destroy();
-				console.log(chalk.dim('  Share wiped from memory.'));
+				console.log(dim('  Share wiped from memory.'));
 			} catch {
 				// ignore destroy errors
 			}
 			server.close(() => {
-				console.log(chalk.dim('  Proxy stopped.\n'));
+				console.log(dim('  Proxy stopped.\n'));
 				process.exit(0);
 			});
 		};
@@ -267,13 +276,13 @@ export const proxyCommand = new Command('proxy')
 
 		server.listen(port, () => {
 			console.log('');
-			console.log(`${chalk.green('  Proxy running on ')}${chalk.bold(`http://localhost:${port}`)}`);
+			console.log(`${success('  Proxy running on ')}${chalk.bold(`http://localhost:${port}`)}`);
 			console.log('');
-			console.log(chalk.dim('  Usage with Foundry:'));
-			console.log(chalk.dim(`    forge script Script.s.sol --rpc-url http://localhost:${port}`));
-			console.log(chalk.dim('  Usage with cast:'));
-			console.log(chalk.dim(`    cast send <to> --rpc-url http://localhost:${port}`));
+			console.log(dim('  Usage with Foundry:'));
+			console.log(dim(`    forge script Script.s.sol --rpc-url http://localhost:${port}`));
+			console.log(dim('  Usage with cast:'));
+			console.log(dim(`    cast send <to> --rpc-url http://localhost:${port}`));
 			console.log('');
-			console.log(chalk.dim('  Press Ctrl+C to stop.\n'));
+			console.log(dim('  Press Ctrl+C to stop.\n'));
 		});
 	});

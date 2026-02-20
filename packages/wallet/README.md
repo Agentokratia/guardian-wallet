@@ -16,9 +16,26 @@ npm install -g @agentokratia/guardian-wallet
 npx @agentokratia/guardian-wallet --help
 ```
 
-## CLI
+## Quick Start
 
-When invoked with arguments, runs as a command-line tool:
+```bash
+# Create a new signer (no dashboard required)
+gw init
+
+# Check status
+gw status
+
+# Send ETH
+gw send 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 0.001
+
+# Manage policies
+gw admin unlock
+gw admin policies
+```
+
+`gw init` walks you through everything interactively -- create a new signer on the server, or import an existing one from the dashboard.
+
+## CLI
 
 ```bash
 gw --help
@@ -28,32 +45,72 @@ gw --help
 
 | Command | Description |
 |---------|-------------|
-| `gw init` | Initialize config (`~/.gw/config.json`) |
-| `gw status` | Show signer info and server health |
+| `gw init` | Create a new signer or import an existing one |
+| `gw status` | Show signer info, server health, and balances |
+| `gw info` | Show raw signer config (debug) |
 | `gw balance` | Show ETH and token balances |
 | `gw send <to> <amount>` | Send ETH to an address |
 | `gw sign-message <message>` | Sign a message (EIP-191) |
 | `gw deploy <bytecode>` | Deploy a contract |
 | `gw proxy` | Start a JSON-RPC signing proxy for Foundry/Hardhat |
+| `gw admin` | Admin commands (policies, pause/resume, audit) |
 
-### Examples
+### Multi-Signer
+
+Each signer gets its own config file under `~/.guardian-wallet/signers/`.
 
 ```bash
-# Initialize your config
-gw init
+# Create multiple signers
+gw init               # creates "my-agent"
+gw init               # creates "trading-bot"
 
-# Check signer status
-gw status
+# Use a specific signer
+gw --signer trading-bot send 0x... 0.01
+gw --signer my-agent balance
 
-# Send ETH
-gw send 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 0.001 --network base-sepolia
+# Default signer is auto-detected (single signer) or set during init
+```
 
-# Sign a message
-gw sign-message "Hello Guardian"
+### Admin Commands
 
-# Start RPC proxy for Foundry
-gw proxy --port 8545
-forge script Script.s.sol --rpc-url http://localhost:8545
+Manage policies, pause/resume, and view audit logs for your signers. Requires an admin unlock (user share from OS keychain).
+
+```bash
+# Unlock admin access (retrieves user share from keychain, computes auth token)
+gw admin unlock
+
+# Policy management
+gw admin policies                    # list policies
+gw admin policies add                # interactive policy creation
+gw admin policies remove <id>        # remove a policy
+gw admin policies toggle <id>        # enable/disable a policy
+
+# Signer control
+gw admin pause                       # pause signer (blocks all signing)
+gw admin resume                      # resume signer
+
+# Audit log
+gw admin audit                       # last 20 signing requests
+gw admin audit --limit 50            # more results
+gw admin audit --status blocked      # filter by status
+
+# Lock admin (remove token from disk)
+gw admin lock
+```
+
+### Config Layout
+
+```
+~/.guardian-wallet/
+  signers/
+    my-agent.json           # { serverUrl, apiKey, apiSecret, network, ... }
+    trading-bot.json
+  admin/
+    my-agent.token          # SHA-256(userShare) -- admin auth credential
+  .default                  # default signer name
+
+OS Keychain (service: guardian-wallet):
+  my-agent/user-share       # user share for admin auth + backup signing
 ```
 
 ## MCP Server
@@ -172,12 +229,23 @@ Built-in support for the [x402 payment protocol](https://www.x402.org/). AI agen
 
 ## Environment Variables
 
+Environment variables are an alternative to file-based config. Useful for CI/CD, Docker, or MCP server mode.
+
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GUARDIAN_API_SECRET` | Base64-encoded key share | Yes |
+| `GUARDIAN_API_SECRET` | Base64-encoded signer key share | Yes |
 | `GUARDIAN_SERVER` | Server URL (e.g. `http://localhost:8080`) | Yes |
 | `GUARDIAN_API_KEY` | API key for authentication | Yes |
-| `GUARDIAN_NETWORK` | Default network name as returned by the server's `GET /api/v1/networks` endpoint (e.g. `base-sepolia`, `mainnet`, `arbitrum`). Must match a `name` field exactly. | No |
+| `GUARDIAN_NETWORK` | Default network name (e.g. `base-sepolia`, `mainnet`) | No |
+
+## Security
+
+- The full private key **never exists** -- not in memory, not on disk, not ever
+- Signing is a distributed MPC protocol between your signer share and the server share
+- Signer share stored in config file (`chmod 600`)
+- User share stored in OS keychain (macOS Keychain, Windows Credential Manager, Linux libsecret)
+- Admin auth uses a Bitwarden-model double hash -- server never stores raw credentials
+- Server shares wiped from memory after every operation
 
 ## License
 

@@ -74,6 +74,8 @@ describe('SignerController — user share endpoints', () => {
 			mocks.networkService as any,
 			mocks.shareStore,
 			{} as any,
+			{} as any, // DKGService
+			{ PUBLIC_CREATE_LIMIT: 20 } as any, // AppConfig
 		);
 	});
 

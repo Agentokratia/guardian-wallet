@@ -6,6 +6,7 @@ export interface JwtPayload {
 	sub: string;
 	address?: string;
 	email?: string;
+	type?: string;
 	iat: number;
 	exp: number;
 }
@@ -73,6 +74,42 @@ export class SessionService {
 		} catch {
 			return null;
 		}
+	}
+
+	/**
+	 * Issue a short-lived admin JWT (5 min) for anonymous CLI signers.
+	 * The CLI exchanges its X-Admin-Token (singleHash) for this JWT,
+	 * then uses the JWT for subsequent admin requests — limits replay window.
+	 */
+	createAdminToken(signerId: string, ttlSeconds?: number): { token: string; expiresIn: number } {
+		const MAX_ADMIN_TTL = 86_400; // 24 hours
+		const DEFAULT_ADMIN_TTL = 300; // 5 minutes
+		const raw = Number(ttlSeconds);
+		const ttl = Math.min(
+			Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_ADMIN_TTL,
+			MAX_ADMIN_TTL,
+		);
+		const now = Math.floor(Date.now() / 1000);
+
+		const header = { alg: 'HS256', typ: 'JWT' };
+		const payload: JwtPayload = {
+			sub: signerId,
+			type: 'anon-admin',
+			iat: now,
+			exp: now + ttl,
+		};
+
+		const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+		const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+
+		const signature = createHmac('sha256', this.config.JWT_SECRET)
+			.update(`${headerB64}.${payloadB64}`)
+			.digest('base64url');
+
+		return {
+			token: `${headerB64}.${payloadB64}.${signature}`,
+			expiresIn: ttl,
+		};
 	}
 
 	getExpirySeconds(): number {

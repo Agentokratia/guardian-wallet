@@ -182,6 +182,8 @@ describe('Guardian API Integration Tests', () => {
 			mockNetworkService as any,
 			vault,
 			{} as any,
+			{} as any, // DKGService
+			{ PUBLIC_CREATE_LIMIT: 20 } as any, // AppConfig
 		);
 	});
 
@@ -556,6 +558,7 @@ describe('Guardian API Integration Tests', () => {
 			};
 			const dkgService = new DKGService(
 				signerRepo as unknown as SignerRepository,
+				{} as any, // SignerService (only used by createWithDKG)
 				dkgVault,
 				mockAuxInfoPool as unknown as AuxInfoPoolService,
 			);

@@ -39,6 +39,9 @@ export interface AppConfig {
 	readonly EMAIL_PROVIDER: 'console' | 'resend';
 	readonly RESEND_API_KEY: string;
 
+	// Public signer creation rate limit (per IP per hour)
+	readonly PUBLIC_CREATE_LIMIT: number;
+
 	// AuxInfo Pool
 	readonly AUXINFO_POOL_TARGET: number;
 	readonly AUXINFO_POOL_LOW_WATERMARK: number;
@@ -131,6 +134,8 @@ export function parseConfig(): AppConfig {
 
 		EMAIL_PROVIDER: optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend',
 		RESEND_API_KEY: optionalEnv('RESEND_API_KEY', ''),
+
+		PUBLIC_CREATE_LIMIT: parsePoolInt('PUBLIC_CREATE_LIMIT', '20'),
 
 		AUXINFO_POOL_TARGET: poolTarget,
 		AUXINFO_POOL_LOW_WATERMARK: poolLowWatermark,
