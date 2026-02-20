@@ -1,9 +1,15 @@
 import type { ThresholdSigner } from '@agentokratia/guardian-signer';
 import chalk from 'chalk';
-import { Command } from 'commander';
+import { Command, type Command as CommandType } from 'commander';
 import ora from 'ora';
 import { parseEther } from 'viem';
-import { createClientFromConfig, createSignerFromConfig, loadConfig } from '../../lib/config.js';
+import {
+	type SignerConfig,
+	createClientFromConfig,
+	createSignerFromConfig,
+	loadSignerConfig,
+} from '../../lib/config.js';
+import { brand, danger, dim } from '../theme.js';
 
 export const sendCommand = new Command('send')
 	.description('Send ETH to an address')
@@ -17,37 +23,43 @@ export const sendCommand = new Command('send')
 			to: string,
 			amount: string,
 			options: { network?: string; gasLimit?: string; data?: string },
+			command: CommandType,
 		) => {
 			if (!/^0x[0-9a-fA-F]{40}$/.test(to)) {
-				console.error(chalk.red('\n  Error: Invalid Ethereum address format.\n'));
+				console.error(danger('\n  Error: Invalid Ethereum address format.\n'));
 				process.exitCode = 1;
 				return;
 			}
 
 			const amountFloat = Number.parseFloat(amount);
 			if (Number.isNaN(amountFloat) || amountFloat <= 0) {
-				console.error(chalk.red('\n  Error: Amount must be a positive number.\n'));
+				console.error(danger('\n  Error: Amount must be a positive number.\n'));
 				process.exitCode = 1;
 				return;
 			}
 
-			let config: ReturnType<typeof loadConfig> | undefined;
+			let config: SignerConfig;
 			try {
-				config = loadConfig();
+				config = loadSignerConfig(command.optsWithGlobals().signer);
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : 'Unknown error';
-				console.error(chalk.red(`\n  Error: ${message}\n`));
+				console.error(danger(`\n  Error: ${message}\n`));
 				process.exitCode = 1;
 				return;
 			}
 
 			const network = options.network ?? config.network;
+			if (!network) {
+				console.error(danger('\n  Error: No network specified. Use --network <name>.\n'));
+				process.exitCode = 1;
+				return;
+			}
 			const valueWei = parseEther(amount).toString();
 			const { api } = createClientFromConfig(config);
 
 			console.log(chalk.bold('\n  Transaction Details'));
-			console.log(chalk.dim(`  ${'-'.repeat(40)}`));
-			console.log(`  To:      ${chalk.cyan(to)}`);
+			console.log(dim(`  ${'-'.repeat(40)}`));
+			console.log(`  To:      ${brand(to)}`);
 			console.log(`  Amount:  ${chalk.bold(amount)} ETH (${valueWei} wei)`);
 			console.log(`  Network: ${network}`);
 			if (options.gasLimit) console.log(`  Gas:     ${options.gasLimit}`);
@@ -73,9 +85,9 @@ export const sendCommand = new Command('send')
 				const explorerUrl = await api.getExplorerTxUrl(network, result.txHash);
 
 				console.log('');
-				console.log(`  ${chalk.bold('Tx Hash:')} ${chalk.cyan(result.txHash)}`);
+				console.log(`  ${chalk.bold('Tx Hash:')} ${brand(result.txHash)}`);
 				if (explorerUrl) {
-					console.log(`  ${chalk.bold('Explorer:')} ${chalk.dim(explorerUrl)}`);
+					console.log(`  ${chalk.bold('Explorer:')} ${dim(explorerUrl)}`);
 				}
 				console.log('');
 			} catch (error: unknown) {

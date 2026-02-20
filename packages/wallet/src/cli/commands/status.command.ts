@@ -2,94 +2,144 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import ora from 'ora';
 import { formatUnits } from 'viem';
-import { createClientFromConfig, loadConfig } from '../../lib/config.js';
+import {
+	type SignerConfig,
+	createClientFromConfig,
+	getDefaultSignerName,
+	listSigners,
+	loadSignerConfig,
+} from '../../lib/config.js';
+import { brand, brandBold, brandDot, dim, statusColor } from '../theme.js';
 
-function statusColor(status: string): string {
-	switch (status) {
-		case 'active':
-			return chalk.green(status);
-		case 'paused':
-			return chalk.yellow(status);
-		case 'revoked':
-			return chalk.red(status);
-		default:
-			return chalk.dim(status);
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping is intentional
+const ANSI_RE = /\u001B\[[0-9;]*m/g;
+
+function pad(str: string, width: number): string {
+	const visible = str.replace(ANSI_RE, '');
+	return str + ' '.repeat(Math.max(0, width - visible.length));
+}
+
+function fmtAddr(address: string): string {
+	if (!address || address.length < 10) return dim('—');
+	return dim(`${address.slice(0, 6)}…${address.slice(-4)}`);
+}
+
+function fmtBal(weiStr: string | undefined): string {
+	if (!weiStr || weiStr === '0') return dim('0 ETH');
+	const eth = formatUnits(BigInt(weiStr), 18);
+	const clean = eth.includes('.') ? eth.replace(/\.?0+$/, '') : eth;
+	return `${clean} ETH`;
+}
+
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
+
+interface WalletInfo {
+	name: string;
+	address: string;
+	status: string;
+	balance: string | undefined;
+	policies: number | undefined;
+	isDefault: boolean;
+}
+
+async function fetchInfo(name: string, config: SignerConfig): Promise<WalletInfo> {
+	const info: WalletInfo = {
+		name,
+		address: config.ethAddress || '',
+		status: 'unknown',
+		balance: undefined,
+		policies: undefined,
+		isDefault: false,
+	};
+
+	try {
+		const { api } = createClientFromConfig(config);
+		const signers = await api.listSigners();
+		const [s] = signers;
+		if (s) {
+			info.status = s.status;
+			info.balance = s.balance;
+			info.policies = s.policyCount;
+			if (s.ethAddress) info.address = s.ethAddress;
+		}
+	} catch {
+		info.status = 'offline';
 	}
+
+	return info;
 }
 
-function formatAddress(address: string): string {
-	if (address.length <= 12) return address;
-	return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function formatBalance(weiStr: string | undefined): string {
-	if (!weiStr) return chalk.dim('--');
-	return `${formatUnits(BigInt(weiStr), 18)} ETH`;
-}
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
 
 export const statusCommand = new Command('status')
-	.description('Display signer info and connection status')
+	.description('Show all your wallets')
 	.action(async () => {
-		const spinner = ora({ text: 'Loading configuration...', indent: 2 }).start();
+		const names = listSigners();
 
-		let config: ReturnType<typeof loadConfig> | undefined;
-		try {
-			config = loadConfig();
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			spinner.fail(message);
-			process.exitCode = 1;
+		if (names.length === 0) {
+			console.log(chalk.yellow('\n  No wallets found. Run `gw init` to create one.\n'));
 			return;
 		}
 
-		spinner.text = 'Connecting to server...';
+		const defaultName = getDefaultSignerName();
+		const spinner = ora({
+			text: `Checking ${names.length} wallet${names.length > 1 ? 's' : ''}…`,
+			indent: 2,
+		}).start();
 
-		const { api } = createClientFromConfig(config);
+		const wallets: WalletInfo[] = await Promise.all(
+			names.map(async (name) => {
+				try {
+					const config = loadSignerConfig(name);
+					const info = await fetchInfo(name, config);
+					info.isDefault = name === defaultName;
+					return info;
+				} catch {
+					return {
+						name,
+						address: '',
+						status: 'error',
+						balance: undefined,
+						policies: undefined,
+						isDefault: name === defaultName,
+					};
+				}
+			}),
+		);
 
-		try {
-			const signers = await api.listSigners();
+		spinner.stop();
 
-			spinner.succeed(`Connected to ${config.serverUrl}`);
-			console.log('');
+		const nw = Math.max(4, ...wallets.map((w) => w.name.length)) + 3;
+		const aw = 15;
+		const sw = 10;
 
-			if (signers.length === 0) {
-				console.log(chalk.dim('  No signers found. Create one from the dashboard.\n'));
-				return;
-			}
+		console.log('');
 
-			const header = [
-				chalk.bold('  Name'.padEnd(18)),
-				chalk.bold('Address'.padEnd(14)),
-				chalk.bold('Chain'.padEnd(12)),
-				chalk.bold('Network'.padEnd(14)),
-				chalk.bold('Status'.padEnd(12)),
-				chalk.bold('Balance'.padEnd(16)),
-				chalk.bold('Policies'),
-			].join('');
+		for (const w of wallets) {
+			const dot = brandDot(w.isDefault);
+			const name = w.isDefault ? brandBold(w.name) : w.name;
+			const addr = fmtAddr(w.address);
+			const status = statusColor(w.status);
+			const pol = w.policies != null ? dim(`${w.policies} pol`) : '';
 
-			console.log(header);
-			console.log(chalk.dim(`  ${'-'.repeat(96)}`));
-
-			for (const signer of signers) {
-				const row = [
-					`  ${signer.name}`.padEnd(18),
-					formatAddress(signer.ethAddress).padEnd(14),
-					signer.chain.padEnd(12),
-					signer.network.padEnd(14),
-					statusColor(signer.status).padEnd(12 + 10),
-					formatBalance(signer.balance).padEnd(16 + 10),
-					String(signer.policyCount ?? '--'),
-				].join('');
-
-				console.log(row);
-			}
-
-			console.log('');
-			console.log(chalk.dim(`  ${signers.length} signer(s) total`));
-			console.log(chalk.dim(`  Network: ${config.network}\n`));
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			spinner.fail(`Failed to connect: ${message}`);
-			process.exitCode = 1;
+			console.log(`  ${dot} ${pad(name, nw)} ${pad(addr, aw)} ${pad(status, sw)} ${pol}`);
 		}
+
+		console.log('');
+		const activeLabel = defaultName ? brand(defaultName) : dim('none');
+		console.log(
+			dim('  Active: ') +
+				activeLabel +
+				dim(` · ${wallets.length} wallet${wallets.length > 1 ? 's' : ''}`),
+		);
+		console.log(dim(`  Run ${chalk.reset('gw info <name>')} for full details`));
+		console.log('');
 	});

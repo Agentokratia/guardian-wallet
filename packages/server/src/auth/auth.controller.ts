@@ -1,8 +1,21 @@
-import { Body, Controller, Get, Inject, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+	Body,
+	Controller,
+	Get,
+	Inject,
+	NotFoundException,
+	Post,
+	Req,
+	Res,
+	UnauthorizedException,
+	UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
+import { hashApiKey, timingSafeCompare } from '../common/crypto-utils.js';
 import { SessionGuard } from '../common/session.guard.js';
+import { SignerRepository } from '../signers/signer.repository.js';
 import { AuthService } from './auth.service.js';
 import { RateLimitGuard } from './rate-limit.guard.js';
 import { SessionService } from './session.service.js';
@@ -14,6 +27,7 @@ export class AuthController {
 		@Inject(APP_CONFIG) private readonly config: AppConfig,
 		@Inject(AuthService) private readonly authService: AuthService,
 		@Inject(SessionService) private readonly sessionService: SessionService,
+		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
 	) {}
 
 	/**
@@ -81,6 +95,30 @@ export class AuthController {
 		this.setSessionCookie(res, result.token);
 
 		return { email: result.email, address: result.address, userId: result.userId };
+	}
+
+	/**
+	 * Exchange X-Admin-Token (singleHash) for a short-lived admin JWT (5 min).
+	 * Limits replay window — the raw hash is only sent once per session.
+	 */
+	@Post('admin-token')
+	async adminToken(@Body() body: { signerId: string; adminToken: string; ttl?: number }) {
+		if (!body.signerId || !body.adminToken) {
+			throw new UnauthorizedException('Missing signerId or adminToken');
+		}
+
+		const doubleHash = hashApiKey(body.adminToken);
+		const signer = await this.signerRepo.findById(body.signerId);
+
+		if (!signer) {
+			throw new NotFoundException();
+		}
+
+		if (!timingSafeCompare(signer.ownerAddress, `sha256:${doubleHash}`)) {
+			throw new UnauthorizedException('Invalid credential');
+		}
+
+		return this.sessionService.createAdminToken(signer.id, body.ttl);
 	}
 
 	@Post('logout')

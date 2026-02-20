@@ -35,6 +35,7 @@ function makeConfig(): AppConfig {
 		ALLOWED_ORIGINS: ['http://localhost:3000'],
 		EMAIL_PROVIDER: 'console' as const,
 		RESEND_API_KEY: '',
+		PUBLIC_CREATE_LIMIT: 20,
 	};
 }
 
