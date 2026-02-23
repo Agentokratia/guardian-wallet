@@ -33,6 +33,7 @@ export class SigningRequestRepository {
 			policies_evaluated: dto.policiesEvaluated ?? 0,
 			evaluation_time_ms: dto.evaluationTimeMs ?? null,
 			owner_address: dto.ownerAddress ?? '0x0000000000000000000000000000000000000000',
+			value_usd: dto.valueUsd ?? null,
 		};
 
 		const { data, error } = await this.supabase.client
@@ -97,7 +98,7 @@ export class SigningRequestRepository {
 			.from(this.tableName)
 			.select('id', { count: 'exact', head: true })
 			.eq('signer_id', signerId)
-			.eq('status', 'approved')
+			.in('status', ['approved', 'broadcast', 'completed'])
 			.gte('created_at', windowStart.toISOString());
 
 		if (error) {
@@ -126,7 +127,7 @@ export class SigningRequestRepository {
 			.from(this.tableName)
 			.select('value_wei')
 			.eq('signer_id', signerId)
-			.in('status', ['approved', 'broadcast'])
+			.in('status', ['approved', 'broadcast', 'completed'])
 			.gte('created_at', windowStart.toISOString());
 
 		if (error) {
@@ -138,6 +139,41 @@ export class SigningRequestRepository {
 			const val = (row as { value_wei: string | null }).value_wei;
 			if (val != null) {
 				total += BigInt(val);
+			}
+		}
+		return total;
+	}
+
+	async sumUsdBySignerInWindow(signerId: string, windowStart: Date): Promise<number> {
+		const { data: rpcResult, error: rpcError } = await this.supabase.client.rpc(
+			'sum_usd_by_signer_in_window',
+			{
+				p_signer_id: signerId,
+				p_window_start: windowStart.toISOString(),
+			},
+		);
+
+		if (!rpcError && rpcResult != null) {
+			return Number(rpcResult);
+		}
+
+		// Fallback: client-side aggregation
+		const { data, error } = await this.supabase.client
+			.from(this.tableName)
+			.select('value_usd')
+			.eq('signer_id', signerId)
+			.in('status', ['approved', 'broadcast', 'completed'])
+			.gte('created_at', windowStart.toISOString());
+
+		if (error) {
+			throw new Error(`Failed to sum USD values: ${error.message}`);
+		}
+
+		let total = 0;
+		for (const row of data ?? []) {
+			const val = (row as { value_usd: number | null }).value_usd;
+			if (val != null) {
+				total += val;
 			}
 		}
 		return total;
@@ -160,6 +196,7 @@ export class SigningRequestRepository {
 			policyViolations: (row.policy_violations ?? []) as unknown as readonly PolicyViolation[],
 			policiesEvaluated: row.policies_evaluated,
 			evaluationTimeMs: row.evaluation_time_ms,
+			valueUsd: row.value_usd,
 			createdAt: new Date(row.created_at),
 		};
 	}

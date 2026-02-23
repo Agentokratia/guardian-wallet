@@ -21,6 +21,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SigningRequestRepository } from '../../audit/signing-request.repository.js';
 import type { ChainRegistryService } from '../../common/chain.module.js';
 import * as cryptoUtils from '../../common/crypto-utils.js';
+import type { PriceOracleService } from '../../common/price-oracle.service.js';
+import type { TransferDecoderService } from '../../common/transfer-decoder.service.js';
 import type { PolicyDocumentRepository } from '../../policies/policy-document.repository.js';
 import type { PolicyRepository } from '../../policies/policy.repository.js';
 import type { SignerRepository } from '../../signers/signer.repository.js';
@@ -130,6 +132,7 @@ function createMocks() {
 		create: vi.fn().mockResolvedValue(undefined),
 		countBySignerInWindow: vi.fn().mockResolvedValue(0),
 		sumValueBySignerInWindow: vi.fn().mockResolvedValue(0n),
+		sumUsdBySignerInWindow: vi.fn().mockResolvedValue(0),
 	};
 
 	const policyRepo = {
@@ -190,6 +193,17 @@ function createMocks() {
 		upsert: vi.fn(),
 	};
 
+	const priceOracle = {
+		getNativePrice: vi.fn().mockResolvedValue(2000),
+		getTokenPrice: vi.fn().mockResolvedValue(null),
+	};
+
+	const transferDecoder = {
+		decode: vi.fn().mockResolvedValue({ outflows: [], totalUsd: 0 }),
+		isInfiniteApproval: vi.fn().mockReturnValue(false),
+		isZeroSlippageSwap: vi.fn().mockReturnValue(false),
+	};
+
 	return {
 		signerRepo,
 		signingRequestRepo,
@@ -200,6 +214,8 @@ function createMocks() {
 		chain,
 		chainRegistry,
 		vault,
+		priceOracle,
+		transferDecoder,
 	};
 }
 
@@ -226,6 +242,8 @@ describe('InteractiveSignService', () => {
 			mocks.policyDocRepo as unknown as PolicyDocumentRepository,
 			mocks.chainRegistry as unknown as ChainRegistryService,
 			mocks.vault as unknown as IShareStore,
+			mocks.priceOracle as unknown as PriceOracleService,
+			mocks.transferDecoder as unknown as TransferDecoderService,
 		);
 	});
 

@@ -15,6 +15,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 	catch(exception: unknown, host: ArgumentsHost): void {
 		const ctx = host.switchToHttp();
 		const response = ctx.getResponse<Response>();
+		const request = ctx.getRequest<{ method?: string; url?: string; ip?: string }>();
+		const reqTag = `${request.method ?? '?'} ${request.url ?? '?'}`;
 
 		let status = HttpStatus.INTERNAL_SERVER_ERROR;
 		let message = 'Internal server error';
@@ -34,10 +36,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 					violations = body.violations as unknown[];
 				}
 			}
+
+			// Log 4xx/5xx with request context for debugging
+			if (status >= 400) {
+				const level = status >= 500 ? 'error' : 'warn';
+				this.logger[level](`[${reqTag}] ${status} ${message}`);
+			}
 		} else if (exception instanceof Error) {
-			this.logger.error(exception.message, exception.stack);
+			this.logger.error(`[${reqTag}] Unhandled: ${exception.message}`, exception.stack);
 		} else {
-			this.logger.error(`Non-Error exception caught: ${String(exception)}`);
+			this.logger.error(`[${reqTag}] Non-Error exception: ${String(exception)}`);
 		}
 
 		const responseBody: Record<string, unknown> = {

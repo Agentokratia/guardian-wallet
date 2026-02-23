@@ -20,15 +20,23 @@ const CHAIN_LOGOS: Record<string, string> = {
 	'base-sepolia': `${TW}/base/info/logo.png`,
 	arbitrum: `${TW}/arbitrum/info/logo.png`,
 	'arbitrum-sepolia': `${TW}/arbitrum/info/logo.png`,
+	optimism: `${TW}/optimism/info/logo.png`,
+	'optimism-sepolia': `${TW}/optimism/info/logo.png`,
+	polygon: `${TW}/polygon/info/logo.png`,
+	'polygon-amoy': `${TW}/polygon/info/logo.png`,
 };
 
 const FALLBACK_COLORS: Record<string, { bg: string; text: string; letter: string }> = {
 	mainnet: { bg: 'bg-[#627EEA]/12', text: 'text-[#627EEA]', letter: 'E' },
-	sepolia: { bg: 'bg-[#627EEA]/12', text: 'text-[#627EEA]', letter: 'E' },
+	sepolia: { bg: 'bg-[#627EEA]/12', text: 'text-[#627EEA]', letter: 'S' },
 	base: { bg: 'bg-[#0052FF]/12', text: 'text-[#0052FF]', letter: 'B' },
 	'base-sepolia': { bg: 'bg-[#0052FF]/12', text: 'text-[#0052FF]', letter: 'B' },
 	arbitrum: { bg: 'bg-[#28A0F0]/12', text: 'text-[#28A0F0]', letter: 'A' },
 	'arbitrum-sepolia': { bg: 'bg-[#28A0F0]/12', text: 'text-[#28A0F0]', letter: 'A' },
+	optimism: { bg: 'bg-[#FF0420]/12', text: 'text-[#FF0420]', letter: 'O' },
+	'optimism-sepolia': { bg: 'bg-[#FF0420]/12', text: 'text-[#FF0420]', letter: 'O' },
+	polygon: { bg: 'bg-[#8247E5]/12', text: 'text-[#8247E5]', letter: 'P' },
+	'polygon-amoy': { bg: 'bg-[#8247E5]/12', text: 'text-[#8247E5]', letter: 'P' },
 };
 
 const DEFAULT_FALLBACK = { bg: 'bg-stone-500/10', text: 'text-stone-500', letter: '?' };

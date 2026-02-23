@@ -34,6 +34,7 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
+		"@agentokratia/guardian-core": "workspace:*",
 		"@agentokratia/guardian-schemes": "workspace:*",
 		"@agentokratia/guardian-signer": "workspace:*",
 		"@inquirer/prompts": "^8.2.1",

@@ -1,8 +1,9 @@
-import { IsString, Matches, MaxLength } from 'class-validator';
+import { IsString, MaxLength, Validate } from 'class-validator';
+import { IsEvmAddress } from '../../common/validators.js';
 
 export class StoreUserShareDto {
 	@IsString()
-	@Matches(/^0x[0-9a-fA-F]{40}$/, { message: 'walletAddress must be a valid Ethereum address' })
+	@Validate(IsEvmAddress)
 	walletAddress!: string;
 
 	@IsString()

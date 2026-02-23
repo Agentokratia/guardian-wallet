@@ -54,7 +54,7 @@ export function SettingsPage() {
 												Vault: {vaultConnected ? 'Connected' : 'Disconnected'}
 											</span>
 											<p className="text-[11px] text-text-dim mt-0.5">
-												Stores encrypted key shares
+												Secure storage for signing keys
 											</p>
 										</div>
 									</div>

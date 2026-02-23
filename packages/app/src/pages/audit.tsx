@@ -67,12 +67,12 @@ function formatFullTimestamp(date: string): string {
 function exportCsv(data: SigningRequest[]) {
 	const headers = [
 		'Timestamp',
-		'Signer ID',
+		'Account ID',
 		'Path',
 		'Type',
 		'Action',
 		'To',
-		'Value (wei)',
+		'Value (ETH, raw)',
 		'Status',
 		'Tx Hash',
 		'Policies Evaluated',

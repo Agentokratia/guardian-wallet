@@ -1,4 +1,5 @@
 import { NetworkIcon } from '@/components/network-icon';
+import { TokenLogo } from '@/components/token-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -34,9 +35,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { parseEther } from 'viem';
-
-const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
+import { isAddress, parseEther } from 'viem';
 
 interface SimulationResult {
 	estimatedGas: string;
@@ -57,30 +56,13 @@ interface EncryptedShareResponse {
 }
 
 /* ========================================================================== */
-/*  Token color helpers                                                        */
-/* ========================================================================== */
-
-const TOKEN_COLORS: Record<string, string> = {
-	ETH: 'bg-[#627EEA]/12 text-[#627EEA]',
-	USDC: 'bg-[#2775CA]/12 text-[#2775CA]',
-	USDT: 'bg-[#26A17B]/12 text-[#26A17B]',
-	WETH: 'bg-[#627EEA]/12 text-[#627EEA]',
-	DAI: 'bg-[#F5AC37]/12 text-[#F5AC37]',
-	WBTC: 'bg-[#F09242]/12 text-[#F09242]',
-};
-
-function getTokenColor(symbol: string): string {
-	return TOKEN_COLORS[symbol.toUpperCase()] ?? 'bg-stone-500/10 text-stone-500';
-}
-
-/* ========================================================================== */
 /*  Signing status messages                                                    */
 /* ========================================================================== */
 
 const SIGNING_STEPS = [
-	{ key: 'decrypt', label: 'Authenticating with passkey', icon: Shield },
-	{ key: 'fetch', label: 'Retrieving & decrypting share', icon: Lock },
-	{ key: 'signing', label: 'Threshold signing in progress', icon: Zap },
+	{ key: 'decrypt', label: 'Verifying your identity', icon: Shield },
+	{ key: 'fetch', label: 'Unlocking your signing key', icon: Lock },
+	{ key: 'signing', label: 'Authorizing transaction', icon: Zap },
 ] as const;
 
 type SigningStepKey = (typeof SIGNING_STEPS)[number]['key'];
@@ -97,7 +79,7 @@ function SigningProgress({ currentStep }: { currentStep: SigningStepKey }) {
 					<div
 						key={step.key}
 						className={cn(
-							'flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all text-sm',
+							'flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors text-sm',
 							isActive && 'bg-accent/[0.06] text-text',
 							isComplete && 'text-success',
 							!isActive && !isComplete && 'text-text-dim/40',
@@ -189,16 +171,14 @@ export function SignPage() {
 	const [amountTouched, setAmountTouched] = useState(false);
 
 	const addressError =
-		addressTouched && toAddress && !ETH_ADDRESS_REGEX.test(toAddress)
-			? 'Enter a valid Ethereum address'
-			: null;
+		addressTouched && toAddress && !isAddress(toAddress) ? 'Enter a valid Ethereum address' : null;
 	const amountError =
 		amountTouched && value && (Number.isNaN(Number(value)) || Number(value) <= 0)
 			? 'Enter a valid amount'
 			: null;
 
 	const isFormValid =
-		ETH_ADDRESS_REGEX.test(toAddress) &&
+		isAddress(toAddress) &&
 		value.length > 0 &&
 		!Number.isNaN(Number(value)) &&
 		Number(value) > 0 &&
@@ -247,9 +227,7 @@ export function SignPage() {
 				console.log('[sign] Step 1 OK: Got PRF, length:', prfOutput.length);
 			} catch (err) {
 				console.error('[sign] Step 1 FAILED:', err);
-				throw new Error(
-					`Passkey authentication failed: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				throw new Error('Failed to verify your identity. Please try again.');
 			}
 
 			// Log PRF fingerprint for debugging
@@ -277,7 +255,7 @@ export function SignPage() {
 				console.error('[sign] Step 2a FAILED: Fetch error:', err);
 				wipePRF(prfOutput);
 				throw new Error(
-					`Failed to fetch user share: ${err instanceof Error ? err.message : String(err)}`,
+					'Could not retrieve your signing key. Check your connection and try again.',
 				);
 			}
 
@@ -290,7 +268,7 @@ export function SignPage() {
 				console.error('[sign] Step 2b FAILED: AES-GCM error:', err);
 				wipePRF(prfOutput);
 				throw new Error(
-					`Share decryption failed (AES-GCM): ${err instanceof Error ? err.message : String(err)}`,
+					'Failed to unlock your signing key. Your passkey may have changed — try again or re-register.',
 				);
 			}
 			wipePRF(prfOutput);
@@ -368,7 +346,7 @@ export function SignPage() {
 
 					<h2 className="text-xl font-bold text-text">Transaction Sent</h2>
 					<p className="text-sm text-text-dim mt-1.5">
-						Your transaction has been signed and broadcast to the network.
+						Your transaction has been signed and submitted to the network.
 					</p>
 
 					{/* Tx details card */}
@@ -427,7 +405,7 @@ export function SignPage() {
 					{/* Security footer */}
 					<div className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-text-dim">
 						<Lock className="h-3 w-3" />
-						<span>Signed with threshold cryptography. Private key never existed.</span>
+						<span>Signed with split-key security. No single device ever held the full key.</span>
 					</div>
 				</div>
 			</div>
@@ -464,8 +442,8 @@ export function SignPage() {
 						<div className="mt-5 rounded-lg bg-accent/[0.04] border border-accent/10 px-4 py-3">
 							<p className="text-[12px] text-text-dim leading-relaxed">
 								<Shield className="h-3 w-3 inline mr-1.5 text-accent" />
-								Your private key is never reconstructed. Two shares sign independently using
-								threshold cryptography.
+								Your private key never exists in one place. Two independent devices authorize every
+								transaction.
 							</p>
 						</div>
 					</div>
@@ -601,14 +579,7 @@ export function SignPage() {
 								// For now, ETH only. Token selector could expand later.
 							}}
 						>
-							<div
-								className={cn(
-									'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
-									getTokenColor(selectedToken),
-								)}
-							>
-								{selectedToken.slice(0, 2)}
-							</div>
+							<TokenLogo symbol={selectedToken} />
 							<div className="flex-1 min-w-0">
 								<div className="text-sm font-semibold text-text">{selectedToken}</div>
 								<div className="text-[12px] text-text-dim">
@@ -710,7 +681,7 @@ export function SignPage() {
 									htmlFor="send-calldata"
 									className="text-[11px] font-medium uppercase tracking-wider text-text-dim mb-2 block"
 								>
-									Calldata
+									Contract data
 								</label>
 								<Input
 									id="send-calldata"
@@ -720,7 +691,7 @@ export function SignPage() {
 									onChange={(e) => setCalldata(e.target.value)}
 								/>
 								<p className="text-[10px] text-text-dim mt-1">
-									Raw hex data for contract interactions
+									For smart contract calls — leave empty for simple transfers
 								</p>
 							</div>
 						)}
@@ -765,14 +736,14 @@ export function SignPage() {
 							variant="outline"
 							className="w-full h-11"
 							onClick={() => simulateMutation.mutate()}
-							disabled={!ETH_ADDRESS_REGEX.test(toAddress) || simulateMutation.isPending}
+							disabled={!isAddress(toAddress) || simulateMutation.isPending}
 						>
 							{simulateMutation.isPending ? (
 								<Loader2 className="h-4 w-4 animate-spin" />
 							) : (
 								<Zap className="h-4 w-4" />
 							)}
-							{simulateMutation.isPending ? 'Estimating gas...' : 'Preview Gas Cost'}
+							{simulateMutation.isPending ? 'Estimating gas...' : 'Estimate Gas'}
 						</Button>
 
 						{/* Send button (primary) */}
@@ -791,8 +762,8 @@ export function SignPage() {
 
 						{!isAuthenticated && (
 							<p className="text-[11px] text-center text-warning">
-								Sign in with your passkey to unlock sending. Your key share is encrypted on the
-								server and can only be decrypted by your device.
+								Sign in with your passkey to unlock sending. Your signing key is secured on the
+								server and can only be accessed by your device.
 							</p>
 						)}
 					</div>
@@ -802,7 +773,7 @@ export function SignPage() {
 			{/* Trust footer */}
 			<div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-text-dim">
 				<Lock className="h-3 w-3" />
-				<span>Protected by 2-of-3 threshold cryptography</span>
+				<span>Protected by split-key security — no single point of failure</span>
 			</div>
 		</div>
 	);

@@ -30,20 +30,26 @@ const NETWORK_COLORS: Record<string, string> = {
 
 const TYPE_COLORS: Record<string, string> = {
 	ai_agent: '#818cf8',
-	deploy_script: '#22c55e',
-	backend_service: '#f59e0b',
+	defi_manager: '#22c55e',
+	payment_bot: '#f59e0b',
 	team_member: '#6366f1',
 	trading_bot: '#ec4899',
 	custom: '#8b5cf6',
+	// Legacy values (existing signers in DB may still have these)
+	deploy_script: '#22c55e',
+	backend_service: '#f59e0b',
 };
 
 const TYPE_LABELS: Record<string, string> = {
 	ai_agent: 'AI Agent',
-	deploy_script: 'Deploy',
-	backend_service: 'Backend',
+	defi_manager: 'DeFi',
+	payment_bot: 'Payments',
 	team_member: 'Team',
 	trading_bot: 'Trading',
 	custom: 'Custom',
+	// Legacy values
+	deploy_script: 'Deploy',
+	backend_service: 'Backend',
 	agent: 'Agent',
 	bot: 'Bot',
 	script: 'Script',
@@ -201,7 +207,7 @@ function NetworkDonut({
 					transform="rotate(-90 50 50)"
 					strokeLinecap="round"
 					opacity={hasValue ? 0.85 : 0.2}
-					className="transition-all duration-700"
+					className="transition-[stroke-dashoffset,opacity] duration-700"
 				/>
 			))}
 
@@ -258,7 +264,7 @@ function AccountRow({ signer, balance, policyCount, lastAction }: AccountRowProp
 		<Link
 			to={`/signers/${signer.id}`}
 			className={cn(
-				'group relative flex items-center gap-4 rounded-lg border border-transparent px-4 py-3 transition-all hover:border-border hover:bg-surface-hover/50',
+				'group relative flex items-center gap-4 rounded-lg border border-transparent px-4 py-3 transition-[border-color,background-color] hover:border-border hover:bg-surface-hover/50',
 				signer.status === 'revoked' && 'opacity-40',
 			)}
 		>
@@ -679,8 +685,8 @@ export function SignersPage() {
 						</div>
 						<h3 className="mt-5 text-base font-semibold text-text">Create Your First Account</h3>
 						<p className="mt-1.5 max-w-sm text-sm text-text-muted">
-							Each account is protected by threshold cryptography. The private key is split into 3
-							shares — no single device ever holds the full key.
+							Each account is protected by split-key security. Your signing key is distributed
+							across 3 independent devices — no single device ever holds the full key.
 						</p>
 						<Button asChild className="mt-5">
 							<Link to="/signers/new">

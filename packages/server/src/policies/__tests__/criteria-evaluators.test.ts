@@ -144,13 +144,26 @@ describe('evaluateEvmAddress', () => {
 		).toBe(true);
 	});
 
-	it('blocks deploy (no toAddress) without allowDeploy', () => {
+	it('passes deploy when allowlist is empty (no restriction)', () => {
 		expect(
 			evaluateEvmAddress(
 				{
 					type: 'evmAddress',
 					operator: 'in',
 					addresses: [],
+				},
+				makeContext({ toAddress: undefined }),
+			),
+		).toBe(true);
+	});
+
+	it('blocks deploy (no toAddress) without allowDeploy when allowlist is non-empty', () => {
+		expect(
+			evaluateEvmAddress(
+				{
+					type: 'evmAddress',
+					operator: 'in',
+					addresses: ['0x1234567890123456789012345678901234567890'],
 				},
 				makeContext({ toAddress: undefined }),
 			),

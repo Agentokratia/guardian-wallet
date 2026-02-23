@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
+import { PriceOracleService } from '../common/price-oracle.service.js';
+import { TransferDecoderService } from '../common/transfer-decoder.service.js';
 import { PolicyEngineProvider } from '../policies/policy-engine.provider.js';
 import { PolicyModule } from '../policies/policy.module.js';
 import { RulesEngineProvider } from '../policies/rules-engine.provider.js';
@@ -12,6 +14,8 @@ import { SigningController } from './signing.controller.js';
 	controllers: [SigningController],
 	providers: [
 		InteractiveSignService,
+		PriceOracleService,
+		TransferDecoderService,
 		{
 			provide: 'POLICY_ENGINE',
 			useExisting: PolicyEngineProvider,

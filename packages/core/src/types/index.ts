@@ -17,15 +17,21 @@ export type { SigningRequest } from './signing-request.js';
 export type { DKGState } from './dkg.js';
 export type { EncryptedEnvelope } from './encrypted-envelope.js';
 export type {
+	BlockInfiniteApprovalsCriterion,
 	ComparisonOperator,
 	Criterion,
 	DailyLimitCriterion,
+	DailyLimitUsdCriterion,
 	EthValueCriterion,
 	EvmAddressCriterion,
 	EvmFunctionCriterion,
 	EvmNetworkCriterion,
 	IpAddressCriterion,
+	MaxPerTxUsdCriterion,
+	MaxSlippageCriterion,
+	MevProtectionCriterion,
 	MonthlyLimitCriterion,
+	MonthlyLimitUsdCriterion,
 	PolicyDocument,
 	PolicyRule,
 	RateLimitCriterion,

@@ -13,6 +13,7 @@ import type {
 import { RequestStatus, RequestType, SigningPath } from '@agentokratia/guardian-core';
 import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import {
+	BadRequestException,
 	ForbiddenException,
 	Inject,
 	Injectable,
@@ -24,7 +25,10 @@ import { hexToBytes, keccak256, toHex } from 'viem';
 import { SigningRequestRepository } from '../audit/signing-request.repository.js';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { wipeBuffer } from '../common/crypto-utils.js';
+import { PriceOracleService } from '../common/price-oracle.service.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
+import { TransferDecoderService } from '../common/transfer-decoder.service.js';
+import { runAlwaysOnChecks } from '../policies/always-on-checks.js';
 import { PolicyDocumentRepository } from '../policies/policy-document.repository.js';
 import { PolicyRepository } from '../policies/policy.repository.js';
 import { SignerRepository } from '../signers/signer.repository.js';
@@ -140,6 +144,8 @@ export class InteractiveSignService implements OnModuleDestroy {
 		@Inject(PolicyDocumentRepository) private readonly policyDocRepo: PolicyDocumentRepository,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
 		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
+		@Inject(PriceOracleService) private readonly priceOracle: PriceOracleService,
+		@Inject(TransferDecoderService) private readonly transferDecoder: TransferDecoderService,
 	) {
 		this.scheme = new CGGMP24Scheme();
 		this.cleanupTimer = setInterval(() => this.cleanupExpiredSessions(), CLEANUP_INTERVAL_MS);
@@ -154,12 +160,16 @@ export class InteractiveSignService implements OnModuleDestroy {
 	}
 
 	async createSession(input: CreateSessionInput): Promise<CreateSessionOutput> {
+		const t0 = Date.now();
+		const tag = `sign:tx:${input.signerId.slice(0, 8)}`;
+
 		if (this.sessions.size >= MAX_CONCURRENT_SESSIONS) {
 			throw new ForbiddenException('Too many concurrent signing sessions. Try again later.');
 		}
 		const signingPath = input.signingPath ?? SigningPath.SIGNER_SERVER;
 
 		// Step 1: Verify signer
+		this.logger.log(`[${tag}] Step 1/8: Verifying signer`);
 		const signer = await this.signerRepo.findById(input.signerId);
 		if (!signer) {
 			throw new NotFoundException('Signer not found');
@@ -169,6 +179,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 		}
 
 		// Step 2: Resolve chain and populate transaction
+		this.logger.log(
+			`[${tag}] Step 2/8: Resolving chain ${input.transaction.chainId} and populating tx`,
+		);
 		if (!input.transaction.chainId || input.transaction.chainId === 0) {
 			throw new ForbiddenException('chainId is required in transaction');
 		}
@@ -176,22 +189,52 @@ export class InteractiveSignService implements OnModuleDestroy {
 		const populatedTx = await this.populateTransaction(input.transaction, signer.ethAddress, chain);
 
 		// Step 2c: Decode transaction
+		this.logger.log(
+			`[${tag}] Step 2c: Decoding tx → to=${populatedTx.to ?? 'contract-create'}, value=${populatedTx.value ?? 0}`,
+		);
 		const txBytes = await chain.buildTransaction(populatedTx);
 		const decoded = chain.decodeTransaction(txBytes);
 
 		// Step 3: Build policy context
+		this.logger.log(`[${tag}] Step 3/8: Building policy context (rolling spend lookups)`);
 		const now = new Date();
 		const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 		const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 		const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-		const [rollingDailySpend, rollingMonthlySpend, requestsLastHour, requestsToday] =
-			await Promise.all([
-				this.signingRequestRepo.sumValueBySignerInWindow(signer.id, dayAgo),
-				this.signingRequestRepo.sumValueBySignerInWindow(signer.id, monthAgo),
-				this.signingRequestRepo.countBySignerInWindow(signer.id, hourAgo),
-				this.signingRequestRepo.countBySignerInWindow(signer.id, dayAgo),
-			]);
+		const [
+			rollingDailySpend,
+			rollingMonthlySpend,
+			requestsLastHour,
+			requestsToday,
+			rollingDailyUsd,
+			rollingMonthlyUsd,
+		] = await Promise.all([
+			this.signingRequestRepo.sumValueBySignerInWindow(signer.id, dayAgo),
+			this.signingRequestRepo.sumValueBySignerInWindow(signer.id, monthAgo),
+			this.signingRequestRepo.countBySignerInWindow(signer.id, hourAgo),
+			this.signingRequestRepo.countBySignerInWindow(signer.id, dayAgo),
+			this.signingRequestRepo.sumUsdBySignerInWindow(signer.id, dayAgo),
+			this.signingRequestRepo.sumUsdBySignerInWindow(signer.id, monthAgo),
+		]);
+
+		// Compute USD value of this transaction
+		const txDataHex = populatedTx.data ? toHex(populatedTx.data) : undefined;
+		let valueUsd: number | undefined;
+		try {
+			const outflows = await this.transferDecoder.decode(
+				{
+					value: populatedTx.value,
+					data: txDataHex,
+					to: decoded.to,
+					chainId: populatedTx.chainId,
+				},
+				this.priceOracle,
+			);
+			valueUsd = outflows.totalUsd;
+		} catch (err) {
+			this.logger.warn(`Failed to compute USD value: ${String(err)}`);
+		}
 
 		const policyContext: PolicyContext = {
 			signerAddress: signer.ethAddress,
@@ -205,11 +248,46 @@ export class InteractiveSignService implements OnModuleDestroy {
 			requestCountToday: requestsToday,
 			currentHourUtc: now.getUTCHours(),
 			timestamp: now,
-			txData: populatedTx.data ? toHex(populatedTx.data) : undefined,
+			txData: txDataHex,
 			callerIp: input.callerIp,
+			valueUsd,
+			rollingDailySpendUsd: rollingDailyUsd,
+			rollingMonthlySpendUsd: rollingMonthlyUsd,
 		};
 
+		// Step 3b: Always-on security checks (run before policy engine, cannot be disabled)
+		this.logger.log(`[${tag}] Step 3b/8: Running always-on security checks`);
+		const alwaysOnViolations = runAlwaysOnChecks(policyContext, this.transferDecoder);
+		if (alwaysOnViolations.length > 0) {
+			await this.signingRequestRepo
+				.create({
+					signerId: signer.id,
+					ownerAddress: signer.ownerAddress,
+					requestType: RequestType.SIGN_TX,
+					signingPath,
+					status: RequestStatus.BLOCKED,
+					toAddress: decoded.to,
+					valueWei: populatedTx.value?.toString(),
+					chainId: populatedTx.chainId,
+					decodedAction: decoded.functionName,
+					policyViolations: alwaysOnViolations as unknown as Record<string, unknown>[],
+					policiesEvaluated: 0,
+					evaluationTimeMs: 0,
+					valueUsd,
+				})
+				.catch((err) => this.logger.error(`Failed to write always-on blocked audit log: ${err}`));
+
+			throw new ForbiddenException({
+				message: 'Transaction blocked by security check',
+				violations: alwaysOnViolations.map(({ type, reason }) => ({
+					type,
+					reason: signingPath === SigningPath.SIGNER_SERVER ? 'Security check failed' : reason,
+				})),
+			});
+		}
+
 		// Step 4: Evaluate policies
+		this.logger.log(`[${tag}] Step 4/8: Evaluating policies`);
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
 		let policyResult: PolicyResult;
 
@@ -229,7 +307,13 @@ export class InteractiveSignService implements OnModuleDestroy {
 		}
 
 		// Step 5: If blocked, log and throw
+		this.logger.log(
+			`[${tag}] Step 5/8: Policy result → allowed=${policyResult.allowed}, evaluated=${policyResult.evaluatedCount}, ${policyResult.evaluationTimeMs}ms`,
+		);
 		if (!policyResult.allowed) {
+			this.logger.warn(
+				`[${tag}] BLOCKED by policy: ${policyResult.violations.map((v) => v.reason).join('; ')}`,
+			);
 			await this.signingRequestRepo
 				.create({
 					signerId: signer.id,
@@ -247,13 +331,23 @@ export class InteractiveSignService implements OnModuleDestroy {
 				})
 				.catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
 
+			// API key paths get short reason (no thresholds/addresses leaked)
+			// Dashboard users (session auth) get full diagnostics
+			const redact = signingPath === SigningPath.SIGNER_SERVER;
 			throw new ForbiddenException({
 				message: 'Transaction blocked by policy',
-				violations: policyResult.violations.map(({ type, reason }) => ({ type, reason })),
+				violations: policyResult.violations.map(({ type, reason, config }) => ({
+					type,
+					reason: redact
+						? (((config as Record<string, unknown>)?.shortReason as string) ??
+							'Policy check failed')
+						: reason,
+				})),
 			});
 		}
 
 		// Step 6: Compute messageHash BEFORE signing starts (CGGMP24 requirement)
+		this.logger.log(`[${tag}] Step 6/8: Computing message hash`);
 		const messageHash = new Uint8Array(hexToBytes(keccak256(toHex(txBytes))));
 
 		// Step 6b: Generate execution ID and determine party config
@@ -262,6 +356,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 			this.getPartyConfig(signingPath);
 
 		// Step 7: Fetch server key material from share store
+		this.logger.log(
+			`[${tag}] Step 7/8: Loading server share from vault (${signer.vaultSharePath})`,
+		);
 		let serverKeyMaterialBytes: Uint8Array | null = null;
 		try {
 			serverKeyMaterialBytes = await this.shareStore.getShare(signer.vaultSharePath);
@@ -280,6 +377,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 			}
 
 			// Step 8: Create server sign session with hash + party config
+			this.logger.log(
+				`[${tag}] Step 8/8: Creating CGGMP24 sign session (path=${signingPath}, server=${serverPartyIndex}, client=${clientPartyIndex})`,
+			);
 			// User+Server path: force WASM backend so both sides (browser + server)
 			// use the same num-bigint backend. Native GMP (rug) protocol messages
 			// are incompatible with browser WASM (num-bigint).
@@ -318,6 +418,10 @@ export class InteractiveSignService implements OnModuleDestroy {
 				createdAt: Date.now(),
 			});
 
+			this.logger.log(
+				`[${tag}] Session created in ${Date.now() - t0}ms → sessionId=${sessionId.slice(0, 8)}`,
+			);
+
 			return {
 				sessionId,
 				serverFirstMessages: firstMessages,
@@ -327,6 +431,9 @@ export class InteractiveSignService implements OnModuleDestroy {
 				roundsRemaining: 4,
 			};
 		} catch (error) {
+			this.logger.error(
+				`[${tag}] FAILED at step 7-8 (share/MPC): ${error instanceof Error ? error.message : String(error)}`,
+			);
 			if (serverKeyMaterialBytes) {
 				wipeBuffer(serverKeyMaterialBytes);
 			}
@@ -385,6 +492,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 	}
 
 	async completeSign(input: CompleteSignInput): Promise<CompleteSignOutput> {
+		const tag = `sign:complete:${input.sessionId.slice(0, 8)}`;
 		const state = this.getValidSession(input.sessionId);
 		if (state.signerId !== input.signerId) {
 			throw new ForbiddenException('Session does not belong to this signer');
@@ -404,14 +512,34 @@ export class InteractiveSignService implements OnModuleDestroy {
 		let signatureHex: { r: string; s: string; v: number } | undefined;
 		try {
 			// Extract signature from completed session (no lastMessage step)
+			this.logger.log(`[${tag}] Extracting signature from MPC session`);
 			const { r, s, v } = await this.scheme.finalizeSign(state.schemeSessionId);
 			signatureHex = { r: toHex(r), s: toHex(s), v };
+			this.logger.log(`[${tag}] Signature produced (v=${v}), broadcasting tx`);
 
 			// Broadcast the signed transaction
 			const chain = await this.chainRegistry.getChain(state.transaction.chainId);
 			const txBytes = await chain.buildTransaction(state.transaction);
 			const signedTxBytes = chain.serializeSignedTransaction(txBytes, { r, s, v });
 			const txHash = await chain.broadcastTransaction(signedTxBytes);
+			this.logger.log(`[${tag}] Broadcast success → txHash=${txHash}`);
+
+			// Compute USD value for audit log
+			let txValueUsd: number | undefined;
+			try {
+				const outflows = await this.transferDecoder.decode(
+					{
+						value: state.transaction.value,
+						data: state.transaction.data ? toHex(state.transaction.data) : undefined,
+						to: state.decodedTo,
+						chainId: state.transaction.chainId,
+					},
+					this.priceOracle,
+				);
+				if (outflows.totalUsd > 0) txValueUsd = outflows.totalUsd;
+			} catch {
+				// Non-fatal — USD tracking is best-effort
+			}
 
 			// Log success to audit
 			await this.signingRequestRepo.create({
@@ -427,6 +555,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 				decodedAction: state.decodedFunctionName,
 				policiesEvaluated: state.policyResult.evaluatedCount,
 				evaluationTimeMs: state.policyResult.evaluationTimeMs,
+				valueUsd: txValueUsd,
 			});
 
 			return { txHash, signature: signatureHex };
@@ -527,7 +656,14 @@ export class InteractiveSignService implements OnModuleDestroy {
 
 			throw new ForbiddenException({
 				message: 'Message signing blocked by policy',
-				violations: policyResult.violations.map(({ type, reason }) => ({ type, reason })),
+				violations: policyResult.violations.map(({ type, reason, config }) => ({
+					type,
+					reason:
+						signingPath === SigningPath.SIGNER_SERVER
+							? (((config as Record<string, unknown>)?.shortReason as string) ??
+								'Policy check failed')
+							: reason,
+				})),
 			});
 		}
 
@@ -693,24 +829,49 @@ export class InteractiveSignService implements OnModuleDestroy {
 		chain: IChain,
 	): Promise<TransactionRequest> {
 		const chainId = tx.chainId || chain.chainId;
-		const nonce = tx.nonce ?? (await chain.getNonce(signerAddress));
+
+		let nonce: number;
+		try {
+			nonce = tx.nonce ?? (await chain.getNonce(signerAddress));
+		} catch (err) {
+			throw new BadRequestException(
+				`Failed to fetch nonce: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
 
 		let gasLimit = tx.gasLimit;
 		if (!gasLimit) {
-			const estimated = await chain.estimateGas({
-				from: signerAddress,
-				to: tx.to,
-				value: tx.value,
-				data: tx.data,
-			});
-			gasLimit = (estimated * InteractiveSignService.GAS_LIMIT_BUFFER) / 100n;
+			try {
+				const estimated = await chain.estimateGas({
+					from: signerAddress,
+					to: tx.to,
+					value: tx.value,
+					data: tx.data,
+				});
+				gasLimit = (estimated * InteractiveSignService.GAS_LIMIT_BUFFER) / 100n;
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				if (msg.includes('exceeds the balance')) {
+					throw new BadRequestException('Insufficient balance to cover gas + value');
+				}
+				if (msg.includes('execution reverted')) {
+					throw new BadRequestException(`Transaction would revert: ${msg.slice(0, 200)}`);
+				}
+				throw new BadRequestException(`Gas estimation failed: ${msg.slice(0, 200)}`);
+			}
 		}
 
 		let { maxFeePerGas, maxPriorityFeePerGas, gasPrice } = tx;
 		if (!maxFeePerGas && !gasPrice) {
-			const fees = await chain.estimateFeesPerGas();
-			maxFeePerGas = fees.maxFeePerGas;
-			maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+			try {
+				const fees = await chain.estimateFeesPerGas();
+				maxFeePerGas = fees.maxFeePerGas;
+				maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+			} catch (err) {
+				throw new BadRequestException(
+					`Failed to estimate gas fees: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
 		}
 
 		return { ...tx, chainId, nonce, gasLimit, maxFeePerGas, maxPriorityFeePerGas, gasPrice };

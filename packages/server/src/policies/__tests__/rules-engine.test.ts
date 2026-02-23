@@ -42,10 +42,10 @@ describe('RulesEngineProvider', () => {
 		expect(result.violations[0]?.type).toBe(PolicyType.DEFAULT_DENY);
 	});
 
-	it('default-denies when document has no rules', async () => {
+	it('allows all when document has empty rules (explicit unrestricted)', async () => {
 		const result = await engine.evaluate(makeDoc({ rules: [] }), makeContext());
-		expect(result.allowed).toBe(false);
-		expect(result.violations[0]?.type).toBe(PolicyType.DEFAULT_DENY);
+		expect(result.allowed).toBe(true);
+		expect(result.violations).toHaveLength(0);
 	});
 
 	// ─── First-match-wins ────────────────────────────────────────────────────

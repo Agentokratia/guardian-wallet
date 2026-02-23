@@ -30,6 +30,72 @@ export function useSavePolicy() {
 	});
 }
 
+// ─── Draft / Activate / Backtest ─────────────────────────────────────────────
+
+export function usePolicyDraft(signerId: string) {
+	return useQuery({
+		queryKey: ['policy-draft', signerId],
+		queryFn: () => api.get<PolicyDocumentResponse>(`/signers/${signerId}/policy/draft`),
+		enabled: !!signerId,
+	});
+}
+
+export function useSavePolicyDraft() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			signerId,
+			rules,
+			description,
+		}: {
+			signerId: string;
+			rules: Record<string, unknown>[];
+			description?: string;
+		}) =>
+			api.put<PolicyDocumentResponse>(`/signers/${signerId}/policy/draft`, {
+				rules,
+				description,
+			}),
+		onSuccess: (_data, variables) => {
+			qc.invalidateQueries({ queryKey: ['policy-draft', variables.signerId] });
+		},
+	});
+}
+
+export function useActivatePolicy() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: (signerId: string) =>
+			api.post<PolicyDocumentResponse>(`/signers/${signerId}/policy/activate`, {}),
+		onSuccess: (_data, signerId) => {
+			qc.invalidateQueries({ queryKey: ['policy-document', signerId] });
+			qc.invalidateQueries({ queryKey: ['policy-draft', signerId] });
+		},
+	});
+}
+
+export interface BacktestResult {
+	totalAnalyzed: number;
+	wouldPass: number;
+	wouldBlock: number;
+	blockedRequests: {
+		requestId: string;
+		toAddress: string | null;
+		valueWei: string | null;
+		valueUsd: number | null;
+		decodedAction: string | null;
+		createdAt: string;
+		reasons: string[];
+	}[];
+}
+
+export function useBacktestPolicy() {
+	return useMutation({
+		mutationFn: (signerId: string) =>
+			api.post<BacktestResult>(`/signers/${signerId}/policy/backtest`, {}),
+	});
+}
+
 // ─── Legacy CRUD (kept for backward compatibility) ──────────────────────────
 
 export function usePolicies(signerId: string) {

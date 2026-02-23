@@ -1,14 +1,16 @@
-import { Bot, Code, Cpu, Globe, Key, Shield } from 'lucide-react';
+import { Bot, Code, Cpu, Globe, Key, Shield, TrendingUp, Zap } from 'lucide-react';
 
 export function getTypeIcon(type: string, className = 'h-5 w-5'): React.ReactNode {
 	const icons: Record<string, React.ReactNode> = {
 		ai_agent: <Bot className={className} />,
-		deploy_script: <Code className={className} />,
-		backend_service: <Globe className={className} />,
-		team_member: <Shield className={className} />,
 		trading_bot: <Cpu className={className} />,
+		defi_manager: <TrendingUp className={className} />,
+		payment_bot: <Zap className={className} />,
+		team_member: <Shield className={className} />,
 		custom: <Key className={className} />,
 		// Legacy type IDs for backward compatibility
+		deploy_script: <Code className={className} />,
+		backend_service: <Globe className={className} />,
 		agent: <Bot className={className} />,
 		bot: <Cpu className={className} />,
 		script: <Code className={className} />,

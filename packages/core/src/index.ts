@@ -15,10 +15,12 @@ export type {
 	AllowedContractsConfig,
 	AllowedFunctionsConfig,
 	BlockedAddressesConfig,
+	BlockInfiniteApprovalsCriterion,
 	ComparisonOperator,
 	Criterion,
 	DailyLimitConfig,
 	DailyLimitCriterion,
+	DailyLimitUsdCriterion,
 	DKGState,
 	EncryptedEnvelope,
 	EthValueCriterion,
@@ -27,8 +29,12 @@ export type {
 	EvmNetworkCriterion,
 	IpAddressCriterion,
 	KeyMaterial,
+	MaxPerTxUsdCriterion,
+	MaxSlippageCriterion,
+	MevProtectionCriterion,
 	MonthlyLimitConfig,
 	MonthlyLimitCriterion,
+	MonthlyLimitUsdCriterion,
 	Policy,
 	PolicyConfig,
 	PolicyDocument,
@@ -45,6 +51,15 @@ export type {
 	TimeWindowConfig,
 	TimeWindowCriterion,
 } from './types/index.js';
+
+export type {
+	CriterionCategory,
+	CriterionMeta,
+	FieldMeta,
+	FieldType,
+} from './criteria/index.js';
+
+export { CRITERION_CATALOG } from './criteria/index.js';
 
 export type {
 	AuxInfoRoundResult,

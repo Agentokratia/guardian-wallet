@@ -31,6 +31,12 @@ export interface PolicyContext {
 	readonly txData?: string;
 	/** Request IP for ipAddress criterion. */
 	readonly callerIp?: string;
+	/** Total outgoing USD value of this transaction (native + ERC-20 + swap). */
+	readonly valueUsd?: number;
+	/** Rolling 24h spend in USD. */
+	readonly rollingDailySpendUsd?: number;
+	/** Rolling 30-day spend in USD. */
+	readonly rollingMonthlySpendUsd?: number;
 }
 
 export interface IPolicyEngine {

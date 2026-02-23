@@ -21,6 +21,7 @@ export interface SigningRequestEntity {
 	readonly policyViolations: readonly PolicyViolation[];
 	readonly policiesEvaluated: number;
 	readonly evaluationTimeMs: number | null;
+	readonly valueUsd: number | null;
 	readonly createdAt: Date;
 }
 
@@ -40,6 +41,7 @@ export interface SigningRequestRow {
 	policy_violations: Record<string, unknown>[] | null;
 	policies_evaluated: number;
 	evaluation_time_ms: number | null;
+	value_usd: number | null;
 	created_at: string;
 }
 
@@ -80,4 +82,5 @@ export interface CreateSigningRequestDto {
 	readonly policiesEvaluated?: number;
 	readonly evaluationTimeMs?: number;
 	readonly ownerAddress?: string;
+	readonly valueUsd?: number;
 }

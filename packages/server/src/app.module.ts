@@ -7,12 +7,14 @@ import { ConfigModule } from './common/config.module.js';
 import { GlobalExceptionFilter } from './common/global-exception.filter.js';
 import { ShareStoreModule } from './common/share-store.module.js';
 import { SupabaseModule } from './common/supabase.module.js';
+import { KnownContractModule } from './contracts/known-contract.module.js';
 import { DKGModule } from './dkg/dkg.module.js';
 import { HealthController } from './health.controller.js';
 import { NetworkModule } from './networks/network.module.js';
 import { PolicyModule } from './policies/policy.module.js';
 import { SignerModule } from './signers/signer.module.js';
 import { SigningModule } from './signing/signing.module.js';
+import { PolicyTemplateModule } from './templates/policy-template.module.js';
 import { TokenModule } from './tokens/token.module.js';
 
 @Module({
@@ -29,6 +31,8 @@ import { TokenModule } from './tokens/token.module.js';
 		AuditModule,
 		SigningModule,
 		TokenModule,
+		KnownContractModule,
+		PolicyTemplateModule,
 	],
 	controllers: [HealthController],
 	providers: [
