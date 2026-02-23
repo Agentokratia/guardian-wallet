@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
+import { CRITERION_CATALOG } from '@agentokratia/guardian-core';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { Command, type Command as CommandType } from 'commander';
 import ora from 'ora';
-import { formatEther, parseEther } from 'viem';
+import { formatEther } from 'viem';
 import {
 	type SignerConfig,
 	deleteAdminToken,
@@ -12,15 +13,17 @@ import {
 	saveAdminToken,
 } from '../../lib/config.js';
 import { getUserShare } from '../../lib/keychain.js';
+import { buildRules, parseFormValues } from '../../lib/policy-conversions.js';
 import { brand, danger, dim, failMark, promptTheme, success, warn } from '../theme.js';
 
 // ---------------------------------------------------------------------------
 // Error handler (clean output, no stack traces)
 // ---------------------------------------------------------------------------
 
-// biome-ignore lint/suspicious/noExplicitAny: commander action callbacks use any[]
 function withErrorHandler(
+	// biome-ignore lint/suspicious/noExplicitAny: commander action callbacks use any[]
 	fn: (...args: any[]) => Promise<void>,
+	// biome-ignore lint/suspicious/noExplicitAny: commander action callbacks use any[]
 ): (...args: any[]) => Promise<void> {
 	// biome-ignore lint/suspicious/noExplicitAny: commander action callbacks use any[]
 	return async (...args: any[]) => {
@@ -49,15 +52,11 @@ interface AdminContext {
 	headers: Record<string, string>;
 }
 
-interface LegacyPolicy {
-	id: string;
-	signerId: string;
-	type: string;
-	config: Record<string, unknown>;
-	enabled: boolean;
-	appliesTo?: string[];
-	timesTriggered?: number;
-	createdAt?: string;
+interface PolicyDocument {
+	rules: Record<string, unknown>[];
+	status?: 'draft' | 'active';
+	activatedAt?: string;
+	version?: number;
 }
 
 interface AuditEntry {
@@ -205,38 +204,46 @@ function fmtId(id: string): string {
 	return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
-function fmtConfig(type: string, config: Record<string, unknown>): string {
+function fmtCriterion(type: string, criterion: Record<string, unknown>): string {
 	switch (type) {
-		case 'spending_limit': {
-			const wei = config.maxAmount as string;
-			return `max: ${formatWei(wei)} ETH`;
+		case 'evmAddress': {
+			const op = criterion.operator as string;
+			const addrs = (criterion.addresses as string[]) ?? [];
+			const label = op === 'not_in' ? 'Blocked' : 'Approved';
+			return `${label}: ${addrs.map(fmtAddr).join(', ') || dim('none')}`;
 		}
-		case 'daily_limit': {
-			const wei = config.maxDailyAmount as string;
-			return `max/day: ${formatWei(wei)} ETH`;
+		case 'maxPerTxUsd':
+			return `Max/tx: $${criterion.maxUsd}`;
+		case 'dailyLimitUsd':
+			return `Daily: $${criterion.maxUsd}`;
+		case 'monthlyLimitUsd':
+			return `Monthly: $${criterion.maxUsd}`;
+		case 'ethValue':
+			return `ETH value ${criterion.operator ?? '<='} ${criterion.value}`;
+		case 'rateLimit':
+			return `Rate: ${criterion.maxPerHour}/hr`;
+		case 'timeWindow':
+			return `Hours: ${criterion.startHour}:00–${criterion.endHour}:00 UTC`;
+		case 'evmNetwork': {
+			const ids = (criterion.chainIds as number[]) ?? [];
+			return `Chains: ${ids.join(', ')}`;
 		}
-		case 'monthly_limit': {
-			const wei = config.maxMonthlyAmount as string;
-			return `max/month: ${formatWei(wei)} ETH`;
+		case 'evmFunction': {
+			const sels = (criterion.selectors as string[]) ?? [];
+			return `Functions: ${sels.join(', ') || dim('any')}`;
 		}
-		case 'rate_limit':
-			return `${config.maxRequests} req / ${config.windowSeconds}s`;
-		case 'allowed_contracts': {
-			const addrs = (config.addresses as string[]) || [];
-			return addrs.map(fmtAddr).join(', ');
+		case 'ipAddress': {
+			const ips = (criterion.ips as string[]) ?? [];
+			return `IPs: ${ips.join(', ')}`;
 		}
-		case 'allowed_functions': {
-			const sels = (config.selectors as string[]) || [];
-			return sels.join(', ');
-		}
-		case 'blocked_addresses': {
-			const addrs = (config.addresses as string[]) || [];
-			return addrs.map(fmtAddr).join(', ');
-		}
-		case 'time_window':
-			return `${config.startHour}:00–${config.endHour}:00 ${config.timezone || 'UTC'}`;
+		case 'blockInfiniteApprovals':
+			return 'Block infinite approvals';
+		case 'maxSlippage':
+			return `Max slippage: ${criterion.maxPercent}%`;
+		case 'mevProtection':
+			return `MEV protection ${dim('(advisory)')}`;
 		default:
-			return JSON.stringify(config);
+			return `${type}: ${JSON.stringify(criterion)}`;
 	}
 }
 
@@ -258,158 +265,6 @@ function pad(str: string, width: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Policy config builders (interactive)
-// ---------------------------------------------------------------------------
-
-type PolicyConfig = Record<string, unknown>;
-
-const POLICY_TYPES = [
-	'spending_limit',
-	'daily_limit',
-	'monthly_limit',
-	'allowed_contracts',
-	'allowed_functions',
-	'blocked_addresses',
-	'rate_limit',
-	'time_window',
-] as const;
-
-async function buildPolicyConfigInteractive(type: string): Promise<PolicyConfig> {
-	switch (type) {
-		case 'spending_limit': {
-			const max = await input({ message: 'Max amount (ETH)', theme: promptTheme });
-			return { maxAmount: parseEther(max).toString() };
-		}
-		case 'daily_limit': {
-			const max = await input({ message: 'Max daily amount (ETH)', theme: promptTheme });
-			return { maxDailyAmount: parseEther(max).toString() };
-		}
-		case 'monthly_limit': {
-			const max = await input({ message: 'Max monthly amount (ETH)', theme: promptTheme });
-			return { maxMonthlyAmount: parseEther(max).toString() };
-		}
-		case 'allowed_contracts': {
-			const addrs = await input({
-				message: 'Contract addresses (comma-separated)',
-				theme: promptTheme,
-			});
-			return {
-				addresses: addrs
-					.split(',')
-					.map((a) => a.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'allowed_functions': {
-			const sigs = await input({
-				message: 'Function selectors (comma-separated)',
-				theme: promptTheme,
-			});
-			return {
-				selectors: sigs
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'blocked_addresses': {
-			const addrs = await input({
-				message: 'Blocked addresses (comma-separated)',
-				theme: promptTheme,
-			});
-			return {
-				addresses: addrs
-					.split(',')
-					.map((a) => a.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'rate_limit': {
-			const max = await input({ message: 'Max requests', theme: promptTheme });
-			const window = await input({ message: 'Window (seconds)', theme: promptTheme });
-			return { maxRequests: Number.parseInt(max, 10), windowSeconds: Number.parseInt(window, 10) };
-		}
-		case 'time_window': {
-			const start = await input({ message: 'Start hour (0-23)', theme: promptTheme });
-			const end = await input({ message: 'End hour (0-23)', theme: promptTheme });
-			const tz = await input({ message: 'Timezone', default: 'UTC', theme: promptTheme });
-			return {
-				startHour: Number.parseInt(start, 10),
-				endHour: Number.parseInt(end, 10),
-				timezone: tz,
-			};
-		}
-		default:
-			throw new Error(`Unknown policy type: ${type}`);
-	}
-}
-
-function buildPolicyConfigFromFlags(
-	type: string,
-	opts: Record<string, string | undefined>,
-): PolicyConfig {
-	switch (type) {
-		case 'spending_limit': {
-			if (!opts.max) throw new Error('--max <eth> is required for spending_limit');
-			return { maxAmount: parseEther(opts.max).toString() };
-		}
-		case 'daily_limit': {
-			if (!opts.max) throw new Error('--max <eth> is required for daily_limit');
-			return { maxDailyAmount: parseEther(opts.max).toString() };
-		}
-		case 'monthly_limit': {
-			if (!opts.max) throw new Error('--max <eth> is required for monthly_limit');
-			return { maxMonthlyAmount: parseEther(opts.max).toString() };
-		}
-		case 'allowed_contracts': {
-			if (!opts.addresses) throw new Error('--addresses <addrs> is required for allowed_contracts');
-			return {
-				addresses: opts.addresses
-					.split(',')
-					.map((a) => a.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'allowed_functions': {
-			if (!opts.selectors) throw new Error('--selectors <sigs> is required for allowed_functions');
-			return {
-				selectors: opts.selectors
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'blocked_addresses': {
-			if (!opts.addresses) throw new Error('--addresses <addrs> is required for blocked_addresses');
-			return {
-				addresses: opts.addresses
-					.split(',')
-					.map((a) => a.trim())
-					.filter(Boolean),
-			};
-		}
-		case 'rate_limit': {
-			if (!opts.maxRequests || !opts.window)
-				throw new Error('--max-requests <n> and --window <secs> are required for rate_limit');
-			return {
-				maxRequests: Number.parseInt(opts.maxRequests, 10),
-				windowSeconds: Number.parseInt(opts.window, 10),
-			};
-		}
-		case 'time_window': {
-			if (!opts.start || !opts.end)
-				throw new Error('--start <h> and --end <h> are required for time_window');
-			return {
-				startHour: Number.parseInt(opts.start, 10),
-				endHour: Number.parseInt(opts.end, 10),
-				timezone: opts.timezone || 'UTC',
-			};
-		}
-		default:
-			throw new Error(`Unknown policy type: ${type}`);
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
@@ -477,204 +332,235 @@ const lockCommand = new Command('lock').description('Revoke admin access (delete
 
 async function handlePoliciesList(command: CommandType): Promise<void> {
 	const ctx = await getAdminContext(command);
-	const spinner = ora({ text: 'Fetching policies…', indent: 2 }).start();
+	const spinner = ora({ text: 'Fetching policy\u2026', indent: 2 }).start();
 
-	const policies = await adminFetch<LegacyPolicy[]>(
-		ctx.config.serverUrl,
-		`/signers/${ctx.signerId}/policies`,
-		ctx.headers,
-	);
+	let doc: PolicyDocument | null = null;
+	try {
+		doc = await adminFetch<PolicyDocument>(
+			ctx.config.serverUrl,
+			`/signers/${ctx.signerId}/policy`,
+			ctx.headers,
+		);
+	} catch {
+		// No active policy
+	}
 
 	spinner.stop();
 
 	console.log('');
 	console.log(
-		`  Policies for ${chalk.bold(ctx.signerName)} ${dim(`(${fmtAddr(ctx.config.ethAddress)})`)}`,
+		`  Policy for ${chalk.bold(ctx.signerName)} ${dim(`(${fmtAddr(ctx.config.ethAddress)})`)}`,
 	);
 	console.log('');
 
-	if (policies.length === 0) {
-		console.log(dim('  No policies configured.'));
-		console.log(dim(`  Run ${chalk.reset('gw admin policies add')} to create one.`));
+	if (!doc || !doc.rules || doc.rules.length === 0) {
+		console.log(dim('  No policy configured.'));
+		console.log(dim(`  Run ${chalk.reset('gw admin policies edit')} to create one.`));
 	} else {
-		const tw = 18;
-		const cw = 34;
-
 		console.log(
-			`  ${pad(dim('ID'), 10)}  ${pad(dim('Type'), tw)}  ${pad(dim('Config'), cw)}  ${dim('Enabled')}`,
+			`  ${dim('Status:')} ${doc.status === 'active' ? success('active') : warn('draft')}`,
 		);
-		console.log(dim(`  ${'─'.repeat(10)}  ${'─'.repeat(tw)}  ${'─'.repeat(cw)}  ${'─'.repeat(7)}`));
+		if (doc.version) console.log(`  ${dim('Version:')} ${doc.version}`);
+		console.log('');
 
-		for (const p of policies) {
-			const id = fmtId(p.id);
-			const type = pad(p.type, tw);
-			const cfg = pad(fmtConfig(p.type, p.config), cw);
-			const enabled = p.enabled ? success('Yes') : dim('No');
-			console.log(`  ${pad(id, 10)}  ${type}  ${cfg}  ${enabled}`);
+		for (const rule of doc.rules) {
+			const action = (rule as { action?: string }).action ?? 'accept';
+			const criteria = (rule as { criteria?: Record<string, unknown>[] }).criteria ?? [];
+			const actionLabel = action === 'reject' ? danger('REJECT') : success('ACCEPT');
+
+			console.log(`  ${actionLabel} if:`);
+			for (const criterion of criteria) {
+				const type = criterion.type as string;
+				console.log(`    ${fmtCriterion(type, criterion)}`);
+			}
+			console.log('');
 		}
 
-		const enabledCount = policies.filter((p) => p.enabled).length;
-		console.log('');
-		console.log(dim(`  ${policies.length} policies (${enabledCount} enabled)`));
+		console.log(dim('  Always-on: Scam blacklist, Contract scanner'));
 	}
 	console.log('');
 }
 
-const policiesAddCommand = new Command('add')
-	.description('Add a policy')
-	.option('--type <type>', 'Policy type (non-interactive mode)')
-	.option('--max <eth>', 'Max amount in ETH (spending/daily/monthly limit)')
-	.option('--addresses <addrs>', 'Comma-separated addresses')
-	.option('--selectors <sigs>', 'Comma-separated function selectors')
-	.option('--max-requests <n>', 'Max requests (rate_limit)')
-	.option('--window <secs>', 'Window in seconds (rate_limit)')
-	.option('--start <hour>', 'Start hour 0-23 (time_window)')
-	.option('--end <hour>', 'End hour 0-23 (time_window)')
-	.option('--timezone <tz>', 'Timezone (time_window)')
+const policiesEditCommand = new Command('edit')
+	.description('Edit policy rules interactively')
 	.action(
-		withErrorHandler(async (opts: Record<string, string | undefined>, command: CommandType) => {
+		withErrorHandler(async (_opts: unknown, command: CommandType) => {
 			const ctx = await getAdminContext(command);
-			let type: string;
-			let config: PolicyConfig;
+			const spinner = ora({ text: 'Fetching current policy\u2026', indent: 2 }).start();
 
-			if (opts.type) {
-				// Non-interactive
-				type = opts.type;
-				if (!POLICY_TYPES.includes(type as (typeof POLICY_TYPES)[number])) {
-					throw new Error(`Unknown policy type: ${type}. Valid: ${POLICY_TYPES.join(', ')}`);
-				}
-				config = buildPolicyConfigFromFlags(type, opts);
-			} else {
-				// Interactive
-				type = await select({
-					message: 'Policy type',
-					choices: POLICY_TYPES.map((t) => ({ name: t, value: t })),
-					loop: false,
-					theme: promptTheme,
-				});
-				config = await buildPolicyConfigInteractive(type);
-
-				console.log('');
-				console.log(`  ${dim('Type:')}   ${type}`);
-				console.log(`  ${dim('Config:')} ${fmtConfig(type, config)}`);
-				console.log('');
-
-				const ok = await confirm({
-					message: 'Create this policy?',
-					default: true,
-					theme: promptTheme,
-				});
-				if (!ok) {
-					console.log(dim('\n  Cancelled.\n'));
-					return;
-				}
+			let currentRules: Record<string, unknown>[] = [];
+			try {
+				const doc = await adminFetch<PolicyDocument>(
+					ctx.config.serverUrl,
+					`/signers/${ctx.signerId}/policy`,
+					ctx.headers,
+				);
+				currentRules = doc.rules ?? [];
+			} catch {
+				// No active policy
 			}
 
-			const spinner = ora({ text: 'Creating policy…', indent: 2 }).start();
+			// Also check for draft
+			try {
+				const draft = await adminFetch<PolicyDocument>(
+					ctx.config.serverUrl,
+					`/signers/${ctx.signerId}/policy/draft`,
+					ctx.headers,
+				);
+				if (draft.rules && draft.rules.length > 0) {
+					currentRules = draft.rules;
+				}
+			} catch {
+				// No draft
+			}
 
-			const policy = await adminFetch<LegacyPolicy>(
-				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policies`,
-				ctx.headers,
-				'POST',
-				{ type, config, enabled: true },
-			);
+			spinner.stop();
+			const { values, enabled } = parseFormValues(currentRules);
+			const newEnabled: Record<string, boolean> = { ...enabled };
+			const newValues: Record<string, Record<string, unknown>> = { ...values };
 
-			spinner.succeed(`Policy created: ${dim(policy.id)}`);
+			const editableCriteria = CRITERION_CATALOG.filter((m) => !m.alwaysOn);
+
 			console.log('');
-		}),
-	);
+			console.log(brand('  Configure policy rules'));
+			console.log(dim('  Toggle rules on/off, then set values for enabled rules.'));
+			console.log('');
 
-const policiesRemoveCommand = new Command('remove')
-	.description('Remove a policy')
-	.argument('<id>', 'Policy ID')
-	.action(
-		withErrorHandler(async (idArg: string, _opts: unknown, command: CommandType) => {
-			const ctx = await getAdminContext(command);
-
-			// Fetch policy details first
-			const policies = await adminFetch<LegacyPolicy[]>(
-				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policies`,
-				ctx.headers,
-			);
-			if (idArg.length < 4)
-				throw new Error(
-					'Policy ID must be at least 4 characters (use `gw admin policies` to list IDs).',
-				);
-			const matches = policies.filter((p) => p.id === idArg || p.id.startsWith(idArg));
-			if (matches.length > 1)
-				throw new Error(
-					`Ambiguous prefix "${idArg}" matches ${matches.length} policies. Use a longer ID.`,
-				);
-			const policy = matches[0];
-			let resolvedId = idArg;
-
-			if (policy) {
-				console.log('');
-				console.log(`  ${dim('Type:')}   ${policy.type}`);
-				console.log(`  ${dim('Config:')} ${fmtConfig(policy.type, policy.config)}`);
-				console.log('');
-
-				const ok = await confirm({
-					message: 'Remove this policy?',
-					default: false,
+			for (const meta of editableCriteria) {
+				const isEnabled = newEnabled[meta.type] ?? false;
+				const shouldEnable = await confirm({
+					message: `${meta.label} \u2014 ${meta.description}`,
+					default: isEnabled,
 					theme: promptTheme,
 				});
-				if (!ok) {
-					console.log(dim('\n  Cancelled.\n'));
-					return;
+
+				newEnabled[meta.type] = shouldEnable;
+
+				if (shouldEnable && meta.fields.length > 0) {
+					const fieldValues = newValues[meta.type] ?? meta.fromCriterion({});
+
+					for (const field of meta.fields) {
+						const currentVal = fieldValues[field.key];
+
+						if (field.type === 'toggle') {
+							fieldValues[field.key] = await confirm({
+								message: `  ${field.label}`,
+								default: currentVal !== false,
+								theme: promptTheme,
+							});
+						} else if (
+							field.type === 'addresses' ||
+							field.type === 'selectors' ||
+							field.type === 'ips'
+						) {
+							const current = (currentVal as string[]) ?? [];
+							const answer = await input({
+								message: `  ${field.label} (comma-separated)`,
+								default: current.join(', '),
+								theme: promptTheme,
+							});
+							fieldValues[field.key] = answer
+								.split(',')
+								.map((s) => s.trim())
+								.filter(Boolean);
+						} else if (field.type === 'chains') {
+							const current = (currentVal as number[]) ?? [];
+							const answer = await input({
+								message: `  ${field.label} (chain IDs, comma-separated)`,
+								default: current.join(', '),
+								theme: promptTheme,
+							});
+							fieldValues[field.key] = answer
+								.split(',')
+								.map((s) => Number(s.trim()))
+								.filter((n) => !Number.isNaN(n));
+						} else {
+							const suffix = field.unit ? ` (${field.unit})` : '';
+							const answer = await input({
+								message: `  ${field.label}${suffix}`,
+								default: currentVal !== undefined ? String(currentVal) : undefined,
+								theme: promptTheme,
+							});
+							fieldValues[field.key] = answer === '' ? undefined : Number(answer);
+						}
+					}
+
+					newValues[meta.type] = fieldValues;
 				}
-				resolvedId = policy.id;
 			}
 
-			const spinner = ora({ text: 'Removing policy…', indent: 2 }).start();
+			// Build rules
+			const rules = buildRules(newValues, newEnabled);
+			const enabledCount = Object.values(newEnabled).filter(Boolean).length;
+
+			console.log('');
+			console.log(`  ${enabledCount} rule${enabledCount !== 1 ? 's' : ''} configured.`);
+
+			if (rules.length === 0) {
+				console.log(warn('  No rules \u2014 all transactions will use default deny.'));
+			}
+
+			const ok = await confirm({
+				message: 'Save and activate this policy?',
+				default: true,
+				theme: promptTheme,
+			});
+
+			if (!ok) {
+				console.log(dim('\n  Cancelled.\n'));
+				return;
+			}
+
+			const saveSpinner = ora({ text: 'Saving policy\u2026', indent: 2 }).start();
 
 			await adminFetch<void>(
 				ctx.config.serverUrl,
-				`/policies/${resolvedId}`,
+				`/signers/${ctx.signerId}/policy/draft`,
 				ctx.headers,
-				'DELETE',
+				'PUT',
+				{ rules },
 			);
 
-			spinner.succeed('Policy removed');
+			await adminFetch<void>(
+				ctx.config.serverUrl,
+				`/signers/${ctx.signerId}/policy/activate`,
+				ctx.headers,
+				'POST',
+			);
+
+			saveSpinner.succeed(`Policy activated (${enabledCount} rules)`);
 			console.log('');
 		}),
 	);
 
-const policiesToggleCommand = new Command('toggle')
-	.description('Enable or disable a policy')
-	.argument('<id>', 'Policy ID')
+const policiesActivateCommand = new Command('activate')
+	.description('Activate the draft policy')
 	.action(
-		withErrorHandler(async (idArg: string, _opts: unknown, command: CommandType) => {
+		withErrorHandler(async (_opts: unknown, command: CommandType) => {
 			const ctx = await getAdminContext(command);
 
-			// Fetch to find current state
-			const policies = await adminFetch<LegacyPolicy[]>(
-				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policies`,
-				ctx.headers,
-			);
-			if (idArg.length < 4) throw new Error('Policy ID must be at least 4 characters.');
-			const matches = policies.filter((p) => p.id === idArg || p.id.startsWith(idArg));
-			if (matches.length > 1)
-				throw new Error(
-					`Ambiguous prefix "${idArg}" matches ${matches.length} policies. Use a longer ID.`,
-				);
-			const policy = matches[0];
-			if (!policy) throw new Error(`Policy not found: ${idArg}`);
+			const ok = await confirm({
+				message: 'Activate draft policy? This replaces the current active policy.',
+				default: true,
+				theme: promptTheme,
+			});
 
-			const newEnabled = !policy.enabled;
-			await adminFetch<LegacyPolicy>(
+			if (!ok) {
+				console.log(dim('\n  Cancelled.\n'));
+				return;
+			}
+
+			const spinner = ora({ text: 'Activating\u2026', indent: 2 }).start();
+
+			await adminFetch<void>(
 				ctx.config.serverUrl,
-				`/policies/${policy.id}`,
+				`/signers/${ctx.signerId}/policy/activate`,
 				ctx.headers,
-				'PATCH',
-				{ enabled: newEnabled },
+				'POST',
 			);
 
-			const label = newEnabled ? success('Enabled') : dim('Disabled');
-			console.log(`\n  ${policy.type}: ${label}\n`);
+			spinner.succeed('Policy activated');
+			console.log('');
 		}),
 	);
 
@@ -836,9 +722,8 @@ const policiesCommand = new Command('policies').description('Manage signing poli
 	}),
 );
 
-policiesCommand.addCommand(policiesAddCommand);
-policiesCommand.addCommand(policiesRemoveCommand);
-policiesCommand.addCommand(policiesToggleCommand);
+policiesCommand.addCommand(policiesEditCommand);
+policiesCommand.addCommand(policiesActivateCommand);
 
 export const adminCommand = new Command('admin')
 	.description('Admin operations (policies, pause/resume, audit)')

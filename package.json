@@ -26,6 +26,7 @@
 		"example:vercel-ai": "tsx --env-file=examples/.env examples/vercel-ai-sdk/agent.ts",
 		"example:mcp": "tsx --env-file=examples/.env examples/mcp/test-tools.ts",
 		"example:mcp-agent": "tsx --env-file=examples/.env examples/mcp/llm-agent.ts",
+		"example:claude-agent": "tsx --env-file=examples/.env examples/claude-agent-sdk/agent.ts",
 		"prepare": "husky"
 	},
 	"lint-staged": {

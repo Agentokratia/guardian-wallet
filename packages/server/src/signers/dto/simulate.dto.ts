@@ -1,7 +1,9 @@
-import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, Validate } from 'class-validator';
+import { IsEvmAddress } from '../../common/validators.js';
 
 export class SimulateDto {
-	@Matches(/^0x[0-9a-fA-F]{40}$/, { message: 'to must be a valid Ethereum address' })
+	@IsString()
+	@Validate(IsEvmAddress)
 	to!: string;
 
 	@IsOptional()

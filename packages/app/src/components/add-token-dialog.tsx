@@ -14,7 +14,15 @@ import { useAddToken } from '@/hooks/use-tokens';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { http, type Address, createPublicClient, defineChain, erc20Abi, getAddress } from 'viem';
+import {
+	http,
+	type Address,
+	createPublicClient,
+	defineChain,
+	erc20Abi,
+	getAddress,
+	isAddress,
+} from 'viem';
 
 function getPublicClient(chainId: number, rpcUrl: string) {
 	return createPublicClient({
@@ -38,8 +46,6 @@ interface AddTokenDialogProps {
 	signerId: string;
 	chainId: number;
 }
-
-const ETH_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 export function AddTokenDialog({
 	open,
@@ -68,7 +74,7 @@ export function AddTokenDialog({
 
 	const selectedNetwork = enabledNetworks.find((n) => n.chainId === selectedChainId);
 
-	const isValidAddress = ETH_ADDRESS_RE.test(address);
+	const isValidAddress = isAddress(address);
 	const canSubmit = isValidAddress && symbol.trim().length > 0 && name.trim().length > 0;
 
 	const resetForm = useCallback(() => {
@@ -120,7 +126,7 @@ export function AddTokenDialog({
 				setFetchError(null);
 			} catch {
 				if (cancelled || fetchRef.current !== id) return;
-				setFetchError('Not a valid ERC-20 on this network');
+				setFetchError('Not a valid token on this network');
 				setAutoFilled(false);
 			} finally {
 				if (!cancelled && fetchRef.current === id) {
@@ -265,7 +271,7 @@ export function AddTokenDialog({
 							)}
 						</div>
 						{address.length > 0 && !isValidAddress && (
-							<p className="text-xs text-danger">Enter a valid ERC-20 contract address</p>
+							<p className="text-xs text-danger">Enter a valid token contract address</p>
 						)}
 						{fetchError && <p className="text-xs text-warning">{fetchError}</p>}
 						{autoFilled && (

@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useHealth } from '@/hooks/use-health';
 import { useSigners } from '@/hooks/use-signers';
 import { cn } from '@/lib/utils';
-import { Activity, ArrowUpRight, Lock, Plus, Settings } from 'lucide-react';
+import { Activity, ArrowUpRight, FileText, Lock, Plus, Settings } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const MAX_SIDEBAR_SIGNERS = 8;
@@ -23,7 +23,7 @@ export function Sidebar() {
 	const hasMore = (signers?.length ?? 0) > MAX_SIDEBAR_SIGNERS;
 
 	return (
-		<aside className="hidden md:flex h-screen w-60 flex-shrink-0 flex-col border-r border-border bg-white">
+		<aside className="hidden md:flex h-screen w-60 flex-shrink-0 flex-col border-r border-border bg-background">
 			{/* Logo */}
 			<div className="border-b border-border/60 px-4 py-5">
 				<div className="flex items-center gap-2.5">
@@ -51,7 +51,7 @@ export function Sidebar() {
 						{signers?.length ?? 0} account{(signers?.length ?? 0) !== 1 ? 's' : ''}
 					</Mono>
 				</div>
-				<ArrowUpRight className="h-3.5 w-3.5 text-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+				<ArrowUpRight className="h-3.5 w-3.5 text-text-dim opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
 			</Link>
 
 			{/* Accounts */}
@@ -63,9 +63,9 @@ export function Sidebar() {
 					<Link
 						to="/signers/new"
 						className="flex h-5 w-5 items-center justify-center rounded text-text-dim hover:bg-surface-hover hover:text-accent transition-colors"
-						title="Create account"
+						aria-label="Create account"
 					>
-						<Plus className="h-3.5 w-3.5" />
+						<Plus className="h-3.5 w-3.5" aria-hidden="true" />
 					</Link>
 				</div>
 				{visibleSigners.map((signer) => (
@@ -102,6 +102,18 @@ export function Sidebar() {
 					Activity
 				</Link>
 				<Link
+					to="/templates"
+					className={cn(
+						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+						pathname.startsWith('/templates')
+							? 'bg-accent-muted text-accent'
+							: 'text-text-muted hover:bg-surface-hover/60 hover:text-text',
+					)}
+				>
+					<FileText className="h-3.5 w-3.5" />
+					Templates
+				</Link>
+				<Link
 					to="/settings"
 					className={cn(
 						'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
@@ -128,26 +140,26 @@ export function Sidebar() {
 								size="sm"
 								className={health?.vault?.connected ? 'text-text-muted' : 'text-danger/80'}
 							>
-								{health?.vault?.connected ? 'Vault connected' : 'Vault offline'}
+								{health?.vault?.connected ? 'Secure storage' : 'Storage offline'}
 							</Mono>
 						</div>
 					</TooltipTrigger>
 					<TooltipContent side="right">
 						{health?.vault?.connected
-							? 'HashiCorp Vault is storing encrypted key shares securely.'
-							: 'Vault is unreachable. Signing operations will fail.'}
+							? 'Secure storage is online. Your signing keys are protected.'
+							: 'Secure storage is offline. Signing will not work.'}
 					</TooltipContent>
 				</Tooltip>
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<div className="flex items-center gap-1.5 text-[10px] text-text-dim/60 cursor-default">
 							<Lock className="h-2.5 w-2.5" />
-							<span>Keys split across 3 shares</span>
+							<span>Split-key security active</span>
 						</div>
 					</TooltipTrigger>
 					<TooltipContent side="right">
-						Every private key is split into 3 shares via threshold cryptography. Any 2 can sign —
-						the full key never exists.
+						Your signing key is split across 3 independent devices. Any 2 can authorize a
+						transaction — the full key never exists in one place.
 					</TooltipContent>
 				</Tooltip>
 				<button

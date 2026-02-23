@@ -12,7 +12,6 @@ export type {
 export type { IShareStore, IVaultStore } from './share-store.interface.js';
 export type { IKmsProvider } from './kms-provider.interface.js';
 export type {
-	IPolicyEngine,
 	IRulesEngine,
 	PolicyContext,
 	PolicyResult,

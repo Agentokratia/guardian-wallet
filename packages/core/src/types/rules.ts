@@ -68,6 +68,40 @@ export interface MonthlyLimitCriterion {
 	readonly maxWei: string;
 }
 
+export interface MaxPerTxUsdCriterion {
+	readonly type: 'maxPerTxUsd';
+	/** Max outgoing value per transaction in USD. */
+	readonly maxUsd: number;
+}
+
+export interface DailyLimitUsdCriterion {
+	readonly type: 'dailyLimitUsd';
+	/** Rolling 24h spend cap in USD. */
+	readonly maxUsd: number;
+}
+
+export interface MonthlyLimitUsdCriterion {
+	readonly type: 'monthlyLimitUsd';
+	/** Rolling 30-day spend cap in USD. */
+	readonly maxUsd: number;
+}
+
+export interface BlockInfiniteApprovalsCriterion {
+	readonly type: 'blockInfiniteApprovals';
+	readonly enabled: boolean;
+}
+
+export interface MaxSlippageCriterion {
+	readonly type: 'maxSlippage';
+	/** Max allowed slippage percentage (e.g. 2 = 2%). */
+	readonly maxPercent: number;
+}
+
+export interface MevProtectionCriterion {
+	readonly type: 'mevProtection';
+	readonly enabled: boolean;
+}
+
 // ─── Discriminated Union ─────────────────────────────────────────────────────
 
 export type Criterion =
@@ -79,7 +113,13 @@ export type Criterion =
 	| RateLimitCriterion
 	| TimeWindowCriterion
 	| DailyLimitCriterion
-	| MonthlyLimitCriterion;
+	| MonthlyLimitCriterion
+	| MaxPerTxUsdCriterion
+	| DailyLimitUsdCriterion
+	| MonthlyLimitUsdCriterion
+	| BlockInfiniteApprovalsCriterion
+	| MaxSlippageCriterion
+	| MevProtectionCriterion;
 
 // ─── Rule & Document ─────────────────────────────────────────────────────────
 

@@ -54,7 +54,7 @@ export function ReceiveDialog({ open, onOpenChange, address, accountName }: Rece
 						type="button"
 						onClick={handleCopy}
 						className={cn(
-							'flex w-full items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-all hover:bg-surface-hover',
+							'flex w-full items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-left transition-[border-color,background-color] hover:bg-surface-hover',
 							copied && 'border-success/40 bg-success/[0.04]',
 						)}
 					>

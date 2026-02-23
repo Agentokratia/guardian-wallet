@@ -72,6 +72,15 @@ const SettingsPage = React.lazy(() =>
 const AccountSettingsPage = React.lazy(() =>
 	import('./pages/account-settings').then((m) => ({ default: m.AccountSettingsPage })),
 );
+const GuardrailsPage = React.lazy(() =>
+	import('./pages/guardrails').then((m) => ({ default: m.GuardrailsPage })),
+);
+const TemplatesPage = React.lazy(() =>
+	import('./pages/templates').then((m) => ({ default: m.TemplatesPage })),
+);
+const TemplateEditPage = React.lazy(() =>
+	import('./pages/template-edit').then((m) => ({ default: m.TemplateEditPage })),
+);
 
 function LazyFallback() {
 	return (
@@ -156,9 +165,13 @@ export function App() {
 						>
 							<Route path="/signers" element={<SignersPage />} />
 							<Route path="/signers/:id" element={<SignerDetailPage />} />
+							<Route path="/signers/:id/guardrails" element={<GuardrailsPage />} />
 							<Route path="/signers/:id/settings" element={<AccountSettingsPage />} />
 							<Route path="/signers/:id/sign" element={<SignPage />} />
 							<Route path="/audit" element={<AuditPage />} />
+							<Route path="/templates" element={<TemplatesPage />} />
+							<Route path="/templates/new" element={<TemplateEditPage />} />
+							<Route path="/templates/:templateId" element={<TemplateEditPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 

@@ -1,17 +1,17 @@
 import type { PolicyContext } from '@agentokratia/guardian-core';
 import { describe, expect, it } from 'vitest';
 import {
+	dailyLimitEvaluator,
+	ethValueEvaluator,
 	evaluateCriterion,
-	evaluateDailyLimit,
-	evaluateEthValue,
-	evaluateEvmAddress,
-	evaluateEvmFunction,
-	evaluateEvmNetwork,
-	evaluateIpAddress,
-	evaluateMonthlyLimit,
-	evaluateRateLimit,
-	evaluateTimeWindow,
-} from '../criteria-evaluators.js';
+	evmAddressEvaluator,
+	evmFunctionEvaluator,
+	evmNetworkEvaluator,
+	ipAddressEvaluator,
+	monthlyLimitEvaluator,
+	rateLimitEvaluator,
+	timeWindowEvaluator,
+} from '../evaluators/index.js';
 
 function makeContext(overrides?: Partial<PolicyContext>): PolicyContext {
 	return {
@@ -33,9 +33,11 @@ function makeContext(overrides?: Partial<PolicyContext>): PolicyContext {
 // ─── ethValue ────────────────────────────────────────────────────────────────
 
 describe('evaluateEthValue', () => {
+	const evaluate = ethValueEvaluator.evaluate.bind(ethValueEvaluator);
+
 	it('passes when value <= threshold', () => {
 		expect(
-			evaluateEthValue(
+			evaluate(
 				{ type: 'ethValue', operator: '<=', value: '100000000000000000' },
 				makeContext({ valueWei: 100000000000000000n }),
 			),
@@ -44,7 +46,7 @@ describe('evaluateEthValue', () => {
 
 	it('fails when value > threshold', () => {
 		expect(
-			evaluateEthValue(
+			evaluate(
 				{ type: 'ethValue', operator: '<=', value: '50000000000000000' },
 				makeContext({ valueWei: 100000000000000000n }),
 			),
@@ -53,7 +55,7 @@ describe('evaluateEthValue', () => {
 
 	it('handles strict less-than', () => {
 		expect(
-			evaluateEthValue(
+			evaluate(
 				{ type: 'ethValue', operator: '<', value: '100000000000000000' },
 				makeContext({ valueWei: 100000000000000000n }),
 			),
@@ -62,7 +64,7 @@ describe('evaluateEthValue', () => {
 
 	it('handles greater-than-or-equal', () => {
 		expect(
-			evaluateEthValue(
+			evaluate(
 				{ type: 'ethValue', operator: '>=', value: '50000000000000000' },
 				makeContext({ valueWei: 100000000000000000n }),
 			),
@@ -71,7 +73,7 @@ describe('evaluateEthValue', () => {
 
 	it('handles equality', () => {
 		expect(
-			evaluateEthValue(
+			evaluate(
 				{ type: 'ethValue', operator: '=', value: '100000000000000000' },
 				makeContext({ valueWei: 100000000000000000n }),
 			),
@@ -80,10 +82,7 @@ describe('evaluateEthValue', () => {
 
 	it('rejects zero-value transfer with > 0', () => {
 		expect(
-			evaluateEthValue(
-				{ type: 'ethValue', operator: '>', value: '0' },
-				makeContext({ valueWei: 0n }),
-			),
+			evaluate({ type: 'ethValue', operator: '>', value: '0' }, makeContext({ valueWei: 0n })),
 		).toBe(false);
 	});
 });
@@ -91,9 +90,11 @@ describe('evaluateEthValue', () => {
 // ─── evmAddress ──────────────────────────────────────────────────────────────
 
 describe('evaluateEvmAddress', () => {
+	const evaluate = evmAddressEvaluator.evaluate.bind(evmAddressEvaluator);
+
 	it('passes when address is in the list (case-insensitive)', () => {
 		expect(
-			evaluateEvmAddress(
+			evaluate(
 				{
 					type: 'evmAddress',
 					operator: 'in',
@@ -106,7 +107,7 @@ describe('evaluateEvmAddress', () => {
 
 	it('fails when address is NOT in the list', () => {
 		expect(
-			evaluateEvmAddress(
+			evaluate(
 				{
 					type: 'evmAddress',
 					operator: 'in',
@@ -119,7 +120,7 @@ describe('evaluateEvmAddress', () => {
 
 	it('not_in passes when address is NOT in the list', () => {
 		expect(
-			evaluateEvmAddress(
+			evaluate(
 				{
 					type: 'evmAddress',
 					operator: 'not_in',
@@ -132,7 +133,7 @@ describe('evaluateEvmAddress', () => {
 
 	it('handles deploy (no toAddress) with allowDeploy=true', () => {
 		expect(
-			evaluateEvmAddress(
+			evaluate(
 				{
 					type: 'evmAddress',
 					operator: 'in',
@@ -144,13 +145,26 @@ describe('evaluateEvmAddress', () => {
 		).toBe(true);
 	});
 
-	it('blocks deploy (no toAddress) without allowDeploy', () => {
+	it('passes deploy when allowlist is empty (no restriction)', () => {
 		expect(
-			evaluateEvmAddress(
+			evaluate(
 				{
 					type: 'evmAddress',
 					operator: 'in',
 					addresses: [],
+				},
+				makeContext({ toAddress: undefined }),
+			),
+		).toBe(true);
+	});
+
+	it('blocks deploy (no toAddress) without allowDeploy when allowlist is non-empty', () => {
+		expect(
+			evaluate(
+				{
+					type: 'evmAddress',
+					operator: 'in',
+					addresses: ['0x1234567890123456789012345678901234567890'],
 				},
 				makeContext({ toAddress: undefined }),
 			),
@@ -161,9 +175,11 @@ describe('evaluateEvmAddress', () => {
 // ─── evmNetwork ──────────────────────────────────────────────────────────────
 
 describe('evaluateEvmNetwork', () => {
+	const evaluate = evmNetworkEvaluator.evaluate.bind(evmNetworkEvaluator);
+
 	it('passes when chainId is in the list', () => {
 		expect(
-			evaluateEvmNetwork(
+			evaluate(
 				{ type: 'evmNetwork', operator: 'in', chainIds: [1, 11155111] },
 				makeContext({ chainId: 1 }),
 			),
@@ -172,7 +188,7 @@ describe('evaluateEvmNetwork', () => {
 
 	it('fails when chainId is NOT in the list', () => {
 		expect(
-			evaluateEvmNetwork(
+			evaluate(
 				{ type: 'evmNetwork', operator: 'in', chainIds: [1] },
 				makeContext({ chainId: 42161 }),
 			),
@@ -181,7 +197,7 @@ describe('evaluateEvmNetwork', () => {
 
 	it('not_in passes when chainId is NOT in the list', () => {
 		expect(
-			evaluateEvmNetwork(
+			evaluate(
 				{ type: 'evmNetwork', operator: 'not_in', chainIds: [1] },
 				makeContext({ chainId: 42161 }),
 			),
@@ -192,9 +208,11 @@ describe('evaluateEvmNetwork', () => {
 // ─── evmFunction ─────────────────────────────────────────────────────────────
 
 describe('evaluateEvmFunction', () => {
+	const evaluate = evmFunctionEvaluator.evaluate.bind(evmFunctionEvaluator);
+
 	it('passes when selector matches', () => {
 		expect(
-			evaluateEvmFunction(
+			evaluate(
 				{ type: 'evmFunction', selectors: ['0xa9059cbb'] },
 				makeContext({ functionSelector: '0xa9059cbb' }),
 			),
@@ -203,7 +221,7 @@ describe('evaluateEvmFunction', () => {
 
 	it('fails when selector does NOT match', () => {
 		expect(
-			evaluateEvmFunction(
+			evaluate(
 				{ type: 'evmFunction', selectors: ['0x12345678'] },
 				makeContext({ functionSelector: '0xa9059cbb' }),
 			),
@@ -212,7 +230,7 @@ describe('evaluateEvmFunction', () => {
 
 	it('allows plain transfer by default', () => {
 		expect(
-			evaluateEvmFunction(
+			evaluate(
 				{ type: 'evmFunction', selectors: ['0xa9059cbb'] },
 				makeContext({ functionSelector: undefined }),
 			),
@@ -221,7 +239,7 @@ describe('evaluateEvmFunction', () => {
 
 	it('blocks plain transfer when allowPlainTransfer is false', () => {
 		expect(
-			evaluateEvmFunction(
+			evaluate(
 				{ type: 'evmFunction', selectors: ['0xa9059cbb'], allowPlainTransfer: false },
 				makeContext({ functionSelector: undefined }),
 			),
@@ -232,9 +250,11 @@ describe('evaluateEvmFunction', () => {
 // ─── ipAddress ───────────────────────────────────────────────────────────────
 
 describe('evaluateIpAddress', () => {
+	const evaluate = ipAddressEvaluator.evaluate.bind(ipAddressEvaluator);
+
 	it('passes when IP is in the list (exact match)', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['192.168.1.1'] },
 				makeContext({ callerIp: '192.168.1.1' }),
 			),
@@ -243,7 +263,7 @@ describe('evaluateIpAddress', () => {
 
 	it('fails when IP is NOT in the list', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['192.168.1.1'] },
 				makeContext({ callerIp: '10.0.0.1' }),
 			),
@@ -252,7 +272,7 @@ describe('evaluateIpAddress', () => {
 
 	it('supports CIDR notation', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['10.0.0.0/8'] },
 				makeContext({ callerIp: '10.255.255.255' }),
 			),
@@ -261,7 +281,7 @@ describe('evaluateIpAddress', () => {
 
 	it('CIDR rejects IPs outside range', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['10.0.0.0/8'] },
 				makeContext({ callerIp: '11.0.0.1' }),
 			),
@@ -270,7 +290,7 @@ describe('evaluateIpAddress', () => {
 
 	it('not_in passes when IP is NOT in range', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'not_in', ips: ['10.0.0.0/8'] },
 				makeContext({ callerIp: '11.0.0.1' }),
 			),
@@ -279,7 +299,7 @@ describe('evaluateIpAddress', () => {
 
 	it('fails when callerIp is not provided', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['10.0.0.0/8'] },
 				makeContext({ callerIp: undefined }),
 			),
@@ -288,7 +308,7 @@ describe('evaluateIpAddress', () => {
 
 	it('handles /32 CIDR (single host)', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['192.168.1.5/32'] },
 				makeContext({ callerIp: '192.168.1.5' }),
 			),
@@ -297,7 +317,7 @@ describe('evaluateIpAddress', () => {
 
 	it('handles /0 CIDR (all IPs)', () => {
 		expect(
-			evaluateIpAddress(
+			evaluate(
 				{ type: 'ipAddress', operator: 'in', ips: ['0.0.0.0/0'] },
 				makeContext({ callerIp: '255.255.255.255' }),
 			),
@@ -308,30 +328,23 @@ describe('evaluateIpAddress', () => {
 // ─── rateLimit ───────────────────────────────────────────────────────────────
 
 describe('evaluateRateLimit', () => {
+	const evaluate = rateLimitEvaluator.evaluate.bind(rateLimitEvaluator);
+
 	it('passes when under limit', () => {
 		expect(
-			evaluateRateLimit(
-				{ type: 'rateLimit', maxPerHour: 10 },
-				makeContext({ requestCountLastHour: 5 }),
-			),
+			evaluate({ type: 'rateLimit', maxPerHour: 10 }, makeContext({ requestCountLastHour: 5 })),
 		).toBe(true);
 	});
 
 	it('fails when at limit', () => {
 		expect(
-			evaluateRateLimit(
-				{ type: 'rateLimit', maxPerHour: 10 },
-				makeContext({ requestCountLastHour: 10 }),
-			),
+			evaluate({ type: 'rateLimit', maxPerHour: 10 }, makeContext({ requestCountLastHour: 10 })),
 		).toBe(false);
 	});
 
 	it('fails when over limit', () => {
 		expect(
-			evaluateRateLimit(
-				{ type: 'rateLimit', maxPerHour: 10 },
-				makeContext({ requestCountLastHour: 15 }),
-			),
+			evaluate({ type: 'rateLimit', maxPerHour: 10 }, makeContext({ requestCountLastHour: 15 })),
 		).toBe(false);
 	});
 });
@@ -339,9 +352,11 @@ describe('evaluateRateLimit', () => {
 // ─── timeWindow ──────────────────────────────────────────────────────────────
 
 describe('evaluateTimeWindow', () => {
+	const evaluate = timeWindowEvaluator.evaluate.bind(timeWindowEvaluator);
+
 	it('passes within window', () => {
 		expect(
-			evaluateTimeWindow(
+			evaluate(
 				{ type: 'timeWindow', startHour: 9, endHour: 17 },
 				makeContext({ currentHourUtc: 12 }),
 			),
@@ -350,7 +365,7 @@ describe('evaluateTimeWindow', () => {
 
 	it('fails outside window', () => {
 		expect(
-			evaluateTimeWindow(
+			evaluate(
 				{ type: 'timeWindow', startHour: 9, endHour: 17 },
 				makeContext({ currentHourUtc: 20 }),
 			),
@@ -359,7 +374,7 @@ describe('evaluateTimeWindow', () => {
 
 	it('handles overnight window (22-6)', () => {
 		expect(
-			evaluateTimeWindow(
+			evaluate(
 				{ type: 'timeWindow', startHour: 22, endHour: 6 },
 				makeContext({ currentHourUtc: 23 }),
 			),
@@ -368,7 +383,7 @@ describe('evaluateTimeWindow', () => {
 
 	it('handles overnight window - early morning', () => {
 		expect(
-			evaluateTimeWindow(
+			evaluate(
 				{ type: 'timeWindow', startHour: 22, endHour: 6 },
 				makeContext({ currentHourUtc: 3 }),
 			),
@@ -377,7 +392,7 @@ describe('evaluateTimeWindow', () => {
 
 	it('rejects within gap of overnight window', () => {
 		expect(
-			evaluateTimeWindow(
+			evaluate(
 				{ type: 'timeWindow', startHour: 22, endHour: 6 },
 				makeContext({ currentHourUtc: 12 }),
 			),
@@ -388,9 +403,11 @@ describe('evaluateTimeWindow', () => {
 // ─── dailyLimit ──────────────────────────────────────────────────────────────
 
 describe('evaluateDailyLimit', () => {
+	const evaluate = dailyLimitEvaluator.evaluate.bind(dailyLimitEvaluator);
+
 	it('passes when daily spend + value <= limit', () => {
 		expect(
-			evaluateDailyLimit(
+			evaluate(
 				{ type: 'dailyLimit', maxWei: '500000000000000000' },
 				makeContext({ rollingDailySpendWei: 200000000000000000n, valueWei: 100000000000000000n }),
 			),
@@ -399,7 +416,7 @@ describe('evaluateDailyLimit', () => {
 
 	it('fails when daily spend + value > limit', () => {
 		expect(
-			evaluateDailyLimit(
+			evaluate(
 				{ type: 'dailyLimit', maxWei: '250000000000000000' },
 				makeContext({ rollingDailySpendWei: 200000000000000000n, valueWei: 100000000000000000n }),
 			),
@@ -410,9 +427,11 @@ describe('evaluateDailyLimit', () => {
 // ─── monthlyLimit ────────────────────────────────────────────────────────────
 
 describe('evaluateMonthlyLimit', () => {
+	const evaluate = monthlyLimitEvaluator.evaluate.bind(monthlyLimitEvaluator);
+
 	it('passes when monthly spend + value <= limit', () => {
 		expect(
-			evaluateMonthlyLimit(
+			evaluate(
 				{ type: 'monthlyLimit', maxWei: '5000000000000000000' },
 				makeContext({
 					rollingMonthlySpendWei: 1000000000000000000n,
@@ -424,7 +443,7 @@ describe('evaluateMonthlyLimit', () => {
 
 	it('fails when monthly spend + value > limit', () => {
 		expect(
-			evaluateMonthlyLimit(
+			evaluate(
 				{ type: 'monthlyLimit', maxWei: '1000000000000000000' },
 				makeContext({
 					rollingMonthlySpendWei: 1000000000000000000n,

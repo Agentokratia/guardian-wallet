@@ -43,6 +43,7 @@ pnpm example:viem 0xRecipient 0.001
 | `GUARDIAN_API_KEY` | Yes | Shown when you create a signer in the dashboard |
 | `GUARDIAN_API_SECRET` | Yes | Contents of the `.secret` file downloaded during signer creation |
 | `GOOGLE_API_KEY` | LangChain / Vercel AI only | [aistudio.google.com](https://aistudio.google.com/apikey) |
+| `ANTHROPIC_API_KEY` | Claude agent / MCP agent only | [console.anthropic.com](https://console.anthropic.com) |
 
 ## Run examples
 
@@ -55,6 +56,9 @@ pnpm example:langchain
 
 # Vercel AI SDK agent — balance check, sign, send
 pnpm example:vercel-ai
+
+# Claude autonomous agent — processes an invoice queue with zero human input
+pnpm example:claude-agent
 
 # Full lifecycle — health, init, balance, sign, send, audit
 ./examples/full-lifecycle/demo.sh
@@ -71,4 +75,5 @@ pnpm example:vercel-ai
 | [langchain](langchain/) | `DynamicStructuredTool` | AI agent with balance, send, and sign tools (Gemini via OpenAI endpoint) |
 | [vercel-ai-sdk](vercel-ai-sdk/) | Vercel AI `tool()` | AI agent with the same tools using Vercel's SDK (Gemini via OpenAI endpoint) |
 | [full-lifecycle](full-lifecycle/) | CLI | 7-step demo: health, init, balance, sign, send, audit log, CSV export |
+| [claude-agent-sdk](claude-agent-sdk/) | Claude Agent SDK + MCP | **Autonomous** DeFi rebalancing agent — reads Uniswap V3 prices, manages 50/50 ETH/USDC portfolio, swaps via threshold signing. Zero human input. |
 | [forge-proxy](forge-proxy/) | Foundry | Deploy a Solidity contract through the Guardian signing proxy |

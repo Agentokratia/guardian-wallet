@@ -8,6 +8,10 @@ const FALLBACK_CHAIN_IDS: Record<string, number> = {
 	'base-sepolia': 84532,
 	arbitrum: 42161,
 	'arbitrum-sepolia': 421614,
+	polygon: 137,
+	'polygon-amoy': 80002,
+	optimism: 10,
+	'optimism-sepolia': 11155420,
 };
 
 const FALLBACK_EXPLORER_URLS: Record<string, string> = {
@@ -17,6 +21,10 @@ const FALLBACK_EXPLORER_URLS: Record<string, string> = {
 	'base-sepolia': 'https://sepolia.basescan.org',
 	arbitrum: 'https://arbiscan.io',
 	'arbitrum-sepolia': 'https://sepolia.arbiscan.io',
+	polygon: 'https://polygonscan.com',
+	'polygon-amoy': 'https://amoy.polygonscan.com',
+	optimism: 'https://optimistic.etherscan.io',
+	'optimism-sepolia': 'https://sepolia-optimistic.etherscan.io',
 };
 
 // Mutable lookups — populated from API data via initChainLookups()
@@ -69,4 +77,11 @@ export function getExplorerTxUrlByChainId(chainId: number, txHash: string): stri
 	const base = chainIdToExplorer[chainId];
 	if (!base) return null;
 	return `${base}/tx/${txHash}`;
+}
+
+/** Get explorer address URL from chainId. Returns null if chain unknown. */
+export function getExplorerAddressUrl(chainId: number, address: string): string | null {
+	const base = chainIdToExplorer[chainId];
+	if (!base) return null;
+	return `${base}/address/${address}`;
 }

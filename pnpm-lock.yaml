@@ -59,10 +59,10 @@ importers:
         version: link:../../packages/signer
       '@langchain/core':
         specifier: ^0.3.0
-        version: 0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
+        version: 0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
       '@langchain/openai':
         specifier: ^0.5.0
-        version: 0.5.18(@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)))(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
+        version: 0.5.18(@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)))(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))
       viem:
         specifier: ^2.21.0
         version: 2.45.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
@@ -127,6 +127,9 @@ importers:
       '@agentokratia/guardian-auth':
         specifier: workspace:*
         version: link:../auth
+      '@agentokratia/guardian-core':
+        specifier: workspace:*
+        version: link:../core
       '@agentokratia/guardian-schemes':
         specifier: workspace:*
         version: link:../schemes
@@ -360,6 +363,9 @@ importers:
 
   packages/wallet:
     dependencies:
+      '@agentokratia/guardian-core':
+        specifier: workspace:*
+        version: link:../core
       '@agentokratia/guardian-schemes':
         specifier: workspace:*
         version: link:../schemes
@@ -4501,14 +4507,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))':
+  '@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       ansi-styles: 5.2.0
       camelcase: 6.3.0
       decamelize: 1.2.0
       js-tiktoken: 1.0.21
-      langsmith: 0.3.87(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
+      langsmith: 0.3.87(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
       mustache: 4.2.0
       p-queue: 6.6.2
       p-retry: 4.6.2
@@ -4521,11 +4527,11 @@ snapshots:
       - '@opentelemetry/sdk-trace-base'
       - openai
 
-  '@langchain/openai@0.5.18(@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)))(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))':
+  '@langchain/openai@0.5.18(@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)))(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))':
     dependencies:
-      '@langchain/core': 0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
+      '@langchain/core': 0.3.80(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76))
       js-tiktoken: 1.0.21
-      openai: 5.12.2(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
+      openai: 5.12.2(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
       - ws
@@ -6308,7 +6314,7 @@ snapshots:
       json-schema: 0.4.0
       verror: 1.10.0
 
-  langsmith@0.3.87(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)):
+  langsmith@0.3.87(@opentelemetry/api@1.9.0)(openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)):
     dependencies:
       '@types/uuid': 10.0.0
       chalk: 4.1.2
@@ -6318,7 +6324,7 @@ snapshots:
       uuid: 10.0.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
-      openai: 6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
+      openai: 6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
 
   libphonenumber-js@1.12.36: {}
 
@@ -6489,14 +6495,14 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
-  openai@5.12.2(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76):
+  openai@5.12.2(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76):
     optionalDependencies:
-      ws: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       zod: 3.25.76
 
-  openai@6.22.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76):
+  openai@6.22.0(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76):
     optionalDependencies:
-      ws: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       zod: 3.25.76
     optional: true
 

@@ -36,13 +36,13 @@ describe('RulesEngineProvider', () => {
 
 	// ─── Null / Empty ────────────────────────────────────────────────────────
 
-	it('default-denies when document is null', async () => {
+	it('default-allows when document is null (no policy configured)', async () => {
 		const result = await engine.evaluate(null, makeContext());
-		expect(result.allowed).toBe(false);
-		expect(result.violations[0]?.type).toBe(PolicyType.DEFAULT_DENY);
+		expect(result.allowed).toBe(true);
+		expect(result.violations).toHaveLength(0);
 	});
 
-	it('default-denies when document has no rules', async () => {
+	it('denies when document has empty rules (default deny)', async () => {
 		const result = await engine.evaluate(makeDoc({ rules: [] }), makeContext());
 		expect(result.allowed).toBe(false);
 		expect(result.violations[0]?.type).toBe(PolicyType.DEFAULT_DENY);

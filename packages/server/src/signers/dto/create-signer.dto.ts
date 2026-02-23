@@ -1,9 +1,10 @@
 import { ChainName, SchemeName, SignerType } from '@agentokratia/guardian-core';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateSignerDto {
 	@IsString()
 	@IsNotEmpty()
+	@MaxLength(64)
 	name!: string;
 
 	@IsOptional()

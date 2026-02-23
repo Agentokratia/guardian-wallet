@@ -18,9 +18,10 @@ import {
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { EitherAdminGuard } from '../common/either-admin.guard.js';
 import { SignerService } from '../signers/signer.service.js';
-import type { CreatePolicyDto } from './dto/create-policy.dto.js';
-import type { SavePolicyDocumentDto } from './dto/save-policy-document.dto.js';
-import type { UpdatePolicyDto } from './dto/update-policy.dto.js';
+import { CreatePolicyDto } from './dto/create-policy.dto.js';
+import { SavePolicyDocumentDto } from './dto/save-policy-document.dto.js';
+import { UpdatePolicyDto } from './dto/update-policy.dto.js';
+import { PolicyBacktestService } from './policy-backtest.service.js';
 import { PolicyDocumentService } from './policy-document.service.js';
 import { PolicyService } from './policy.service.js';
 
@@ -31,6 +32,7 @@ export class PolicyController {
 		@Inject(PolicyService) private readonly policyService: PolicyService,
 		@Inject(PolicyDocumentService) private readonly policyDocService: PolicyDocumentService,
 		@Inject(SignerService) private readonly signerService: SignerService,
+		@Inject(PolicyBacktestService) private readonly backtestService: PolicyBacktestService,
 	) {}
 
 	private async verifySignerOwnership(signerId: string, req: AuthenticatedRequest) {
@@ -68,6 +70,61 @@ export class PolicyController {
 			body.rules as unknown as PolicyRule[],
 			body.description,
 		);
+	}
+
+	// ─── Draft / Activate / Backtest ──────────────────────────────────────────
+
+	@Get('signers/:id/policy/draft')
+	async getDraft(@Param('id') signerId: string, @Req() req: AuthenticatedRequest) {
+		await this.verifySignerOwnership(signerId, req);
+		const doc = await this.policyDocService.getDraft(signerId);
+		return doc ?? { rules: [], description: null, status: 'draft' };
+	}
+
+	@Put('signers/:id/policy/draft')
+	async saveDraft(
+		@Param('id') signerId: string,
+		@Body() body: SavePolicyDocumentDto,
+		@Req() req: AuthenticatedRequest,
+	) {
+		await this.verifySignerOwnership(signerId, req);
+		return this.policyDocService.saveDraft(
+			signerId,
+			body.rules as unknown as PolicyRule[],
+			body.description,
+		);
+	}
+
+	@Post('signers/:id/policy/activate')
+	@HttpCode(HttpStatus.OK)
+	async activate(@Param('id') signerId: string, @Req() req: AuthenticatedRequest) {
+		await this.verifySignerOwnership(signerId, req);
+		return this.policyDocService.activate(signerId);
+	}
+
+	@Post('signers/:id/policy/backtest')
+	@HttpCode(HttpStatus.OK)
+	async backtest(
+		@Param('id') signerId: string,
+		@Body() body: { rules?: PolicyRule[] },
+		@Req() req: AuthenticatedRequest,
+	) {
+		await this.verifySignerOwnership(signerId, req);
+
+		// Prefer rules from the request body (live editor state),
+		// fall back to saved draft, then to empty result.
+		let rules: readonly PolicyRule[] | undefined = body.rules;
+		if (rules && rules.length > 0) {
+			this.policyDocService.validateRules(rules);
+		}
+		if (!rules || rules.length === 0) {
+			const draft = await this.policyDocService.getDraft(signerId);
+			rules = draft?.rules;
+		}
+		if (!rules || rules.length === 0) {
+			return { totalAnalyzed: 0, wouldPass: 0, wouldBlock: 0, blockedRequests: [] };
+		}
+		return this.backtestService.backtest(signerId, rules);
 	}
 
 	// ─── Legacy CRUD (kept for backward compatibility) ───────────────────────

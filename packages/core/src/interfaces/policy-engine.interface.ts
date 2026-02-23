@@ -31,18 +31,14 @@ export interface PolicyContext {
 	readonly txData?: string;
 	/** Request IP for ipAddress criterion. */
 	readonly callerIp?: string;
-}
-
-export interface IPolicyEngine {
-	evaluate(
-		policies: ReadonlyArray<{
-			id: string;
-			type: PolicyType;
-			config: Record<string, unknown>;
-			enabled: boolean;
-		}>,
-		context: PolicyContext,
-	): Promise<PolicyResult>;
+	/** Total outgoing USD value of this transaction (native + ERC-20 + swap). */
+	readonly valueUsd?: number;
+	/** Rolling 24h spend in USD. */
+	readonly rollingDailySpendUsd?: number;
+	/** Rolling 30-day spend in USD. */
+	readonly rollingMonthlySpendUsd?: number;
+	/** Actual recipient of an ERC-20 transfer/transferFrom (differs from toAddress which is the token contract). */
+	readonly transferRecipient?: string;
 }
 
 export interface IRulesEngine {

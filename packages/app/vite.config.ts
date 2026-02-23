@@ -39,7 +39,7 @@ export default defineConfig({
 	build: {
 		rollupOptions: {
 			external: [
-				'env',          // WASM host import (provided by WebAssembly runtime)
+				'env', // WASM host import (provided by WebAssembly runtime)
 			],
 		},
 	},
@@ -47,6 +47,11 @@ export default defineConfig({
 		port: 3000,
 		proxy: {
 			'/api': {
+				target: 'http://localhost:8080',
+				changeOrigin: true,
+				timeout: 180_000, // DKG cold start takes ~120s
+			},
+			'/health': {
 				target: 'http://localhost:8080',
 				changeOrigin: true,
 			},
