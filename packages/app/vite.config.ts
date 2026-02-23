@@ -51,6 +51,10 @@ export default defineConfig({
 				changeOrigin: true,
 				timeout: 180_000, // DKG cold start takes ~120s
 			},
+			'/health': {
+				target: 'http://localhost:8080',
+				changeOrigin: true,
+			},
 		},
 	},
 });

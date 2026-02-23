@@ -11,7 +11,7 @@ interface HealthResponse {
 export function useHealth() {
 	return useQuery({
 		queryKey: ['health'],
-		queryFn: () => api.get<HealthResponse>('/health'),
+		queryFn: () => api.rawGet<HealthResponse>('/health'),
 		refetchInterval: 60_000,
 	});
 }

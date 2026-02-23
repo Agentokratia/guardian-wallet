@@ -77,6 +77,14 @@ async function request<T>(
 	throw lastError ?? new Error('Request failed');
 }
 
+/** Fetch a path outside /api/v1 (e.g. /health). */
+async function rawGet<T>(path: string): Promise<T> {
+	const origin = API_ORIGIN.replace(/\/+$/, '');
+	const res = await fetch(`${origin}${path}`, { credentials: 'include' });
+	if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+	return res.json() as Promise<T>;
+}
+
 export const api = {
 	get: <T>(path: string) => request<T>('GET', path),
 	post: <T>(path: string, body?: unknown, timeoutMs?: number) =>
@@ -84,4 +92,5 @@ export const api = {
 	put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
 	patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
 	del: <T>(path: string) => request<T>('DELETE', path),
+	rawGet,
 };
