@@ -27,6 +27,8 @@ export interface TransactionOutflows {
 	readonly outflows: readonly DecodedOutflow[];
 	/** Total USD value of all outflows (0 if no prices) */
 	readonly totalUsd: number;
+	/** Actual recipient of ERC-20 transfer/transferFrom (not the token contract). */
+	readonly transferRecipient?: string;
 }
 
 // ─── Selectors ───────────────────────────────────────────────────────────────
@@ -97,15 +99,31 @@ const KNOWN_TOKEN_DECIMALS: Record<number, Record<string, number>> = {
 @Injectable()
 export class TransferDecoderService {
 	private readonly logger = new Logger(TransferDecoderService.name);
+	private readonly warnedTokens = new Set<string>();
 
 	/**
 	 * Get the number of decimals for a token on a given chain.
 	 * Falls back to 18 (standard ERC-20) for unknown tokens.
+	 * WARNING: Incorrect decimals cause USD limits to be off by orders of magnitude.
 	 */
 	getTokenDecimals(chainId: number, tokenAddress: string): number {
 		const chainTokens = KNOWN_TOKEN_DECIMALS[chainId];
-		if (!chainTokens) return ETH_DECIMALS;
-		return chainTokens[tokenAddress.toLowerCase()] ?? ETH_DECIMALS;
+		const lower = tokenAddress.toLowerCase();
+
+		if (chainTokens) {
+			const known = chainTokens[lower];
+			if (known !== undefined) return known;
+		}
+
+		// Log once per unknown token to avoid spam
+		const key = `${chainId}:${lower}`;
+		if (!this.warnedTokens.has(key)) {
+			this.warnedTokens.add(key);
+			this.logger.warn(
+				`Unknown token decimals for ${lower} on chain ${chainId} — defaulting to 18. USD limits may be inaccurate.`,
+			);
+		}
+		return ETH_DECIMALS;
 	}
 
 	/**
@@ -122,6 +140,7 @@ export class TransferDecoderService {
 		priceOracle: PriceOracleService,
 	): Promise<TransactionOutflows> {
 		const outflows: DecodedOutflow[] = [];
+		let transferRecipient: string | undefined;
 
 		// 1. Native value
 		if (tx.value && tx.value > 0n) {
@@ -136,16 +155,17 @@ export class TransferDecoderService {
 
 		// 2. Calldata-based outflows
 		if (tx.data && tx.data.length >= 10) {
-			const calldataOutflow = this.decodeCalldata(tx.data as Hex, tx.to);
+			const decoded = this.decodeCalldataWithRecipient(tx.data as Hex, tx.to);
 
-			if (calldataOutflow) {
-				const usdValue = await this.priceOutflow(calldataOutflow, tx.chainId, priceOracle);
-				outflows.push({ ...calldataOutflow, usdValue });
+			if (decoded) {
+				transferRecipient = decoded.recipient;
+				const usdValue = await this.priceOutflow(decoded.outflow, tx.chainId, priceOracle);
+				outflows.push({ ...decoded.outflow, usdValue });
 			}
 		}
 
 		const totalUsd = outflows.reduce((sum, o) => sum + (o.usdValue ?? 0), 0);
-		return { outflows, totalUsd };
+		return { outflows, totalUsd, transferRecipient };
 	}
 
 	/**
@@ -235,35 +255,50 @@ export class TransferDecoderService {
 		return Number(formatUnits(outflow.amount, decimals)) * tokenPrice;
 	}
 
-	private decodeCalldata(data: Hex, toAddress?: string): Omit<DecodedOutflow, 'usdValue'> | null {
+	/**
+	 * Decode calldata and extract the actual fund recipient (for transfer/transferFrom)
+	 * and the input token address (for swaps) when possible.
+	 */
+	private decodeCalldataWithRecipient(
+		data: Hex,
+		toAddress?: string,
+	): { outflow: Omit<DecodedOutflow, 'usdValue'>; recipient?: string } | null {
 		const selector = data.slice(0, 10).toLowerCase();
 		const params = `0x${data.slice(10)}` as Hex;
 
 		try {
 			switch (selector) {
 				case TRANSFER_SELECTOR: {
-					const [, amount] = decodeAbiParameters(TRANSFER_PARAMS, params);
-					return { token: toAddress ?? 'unknown', amount };
+					const [to, amount] = decodeAbiParameters(TRANSFER_PARAMS, params);
+					return {
+						outflow: { token: toAddress ?? 'unknown', amount },
+						recipient: to,
+					};
 				}
 				case TRANSFER_FROM_SELECTOR: {
-					const [, , amount] = decodeAbiParameters(TRANSFER_FROM_PARAMS, params);
-					return { token: toAddress ?? 'unknown', amount };
+					const [, to, amount] = decodeAbiParameters(TRANSFER_FROM_PARAMS, params);
+					return {
+						outflow: { token: toAddress ?? 'unknown', amount },
+						recipient: to,
+					};
 				}
 				case UNISWAP_V2_SWAP_EXACT_TOKENS: {
 					const [amountIn] = decodeAbiParameters(SWAP_EXACT_TOKENS_PARAMS, params);
-					return { token: 'unknown', amount: amountIn };
+					// V2 path is not easily decoded from flat params; use toAddress as router
+					return { outflow: { token: 'unknown', amount: amountIn } };
 				}
 				case UNISWAP_V3_EXACT_INPUT_SINGLE: {
-					// ExactInputSingleParams struct — amountIn is at param index 4
 					// Struct: (tokenIn, tokenOut, fee, recipient, deadline, amountIn, amountOutMinimum, sqrtPriceLimitX96)
-					// Decoded as flat tuple
 					const decoded = decodeAbiParameters(
 						parseAbiParameters(
 							'address, address, uint24, address, uint256, uint256, uint256, uint160',
 						),
 						params,
 					);
-					return { token: 'unknown', amount: decoded[5] };
+					const tokenIn = decoded[0] as string;
+					return {
+						outflow: { token: isAddress(tokenIn) ? tokenIn : 'unknown', amount: decoded[5] },
+					};
 				}
 				default:
 					return null;

@@ -33,7 +33,7 @@ export function TemplatesPage() {
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-[17px] font-bold text-text">Policy Templates</h1>
+					<h1 className="text-[17px] font-bold text-text">Guardrail Templates</h1>
 					<p className="mt-0.5 text-[12px] text-text-muted">
 						Manage reusable guardrail configurations.
 					</p>
@@ -111,8 +111,6 @@ function TemplateCard({ template: t }: { template: PolicyTemplate }) {
 					<span className="text-[10px] text-text-dim">
 						{t.rules.length} rule{t.rules.length !== 1 ? 's' : ''}
 					</span>
-					<span className="text-[10px] text-text-dim/40">|</span>
-					<span className="font-mono text-[10px] text-text-dim">{t.slug}</span>
 				</div>
 			</div>
 		</Link>

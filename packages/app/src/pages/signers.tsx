@@ -330,8 +330,8 @@ function AccountRow({ signer, balance, policyCount, lastAction }: AccountRowProp
 					</TooltipTrigger>
 					<TooltipContent>
 						{policyCount === 0
-							? 'No policies configured'
-							: `${policyCount} active ${policyCount === 1 ? 'policy' : 'policies'}`}
+							? 'No guardrails configured'
+							: `${policyCount} active ${policyCount === 1 ? 'guardrail' : 'guardrails'}`}
 					</TooltipContent>
 				</Tooltip>
 
@@ -598,7 +598,7 @@ export function SignersPage() {
 						</div>
 						<div className="mt-3">
 							<div className="text-2xl font-bold tabular-nums text-text">{totalPolicies}</div>
-							<div className="mt-0.5 text-[11px] text-text-dim">Active Policies</div>
+							<div className="mt-0.5 text-[11px] text-text-dim">Active Guardrails</div>
 						</div>
 					</div>
 

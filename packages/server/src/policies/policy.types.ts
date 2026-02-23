@@ -1,10 +1,10 @@
-import type { PolicyConfig, PolicyType } from '@agentokratia/guardian-core';
+import type { PolicyType } from '@agentokratia/guardian-core';
 
 export interface PolicyEntity {
 	readonly id: string;
 	readonly signerId: string;
 	readonly type: PolicyType;
-	readonly config: PolicyConfig;
+	readonly config: Record<string, unknown>;
 	readonly enabled: boolean;
 	readonly appliesTo?: readonly string[];
 	readonly timesTriggered: number;

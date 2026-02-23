@@ -1,6 +1,6 @@
 import type { Criterion, PolicyRule } from '@agentokratia/guardian-core';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { isAddress } from 'viem';
+import { getAddress, isAddress } from 'viem';
 import { PolicyDocumentRepository } from './policy-document.repository.js';
 import type { PolicyDocumentEntity } from './policy-document.types.js';
 
@@ -57,14 +57,16 @@ const VALIDATORS: Record<string, CriterionValidator> = {
 
 	evmAddress(c, prefix) {
 		requireSetOp(c, prefix);
-		const { addresses } = c as { addresses: unknown };
-		if (!Array.isArray(addresses)) {
+		const addrs = (c as { addresses: unknown }).addresses;
+		if (!Array.isArray(addrs)) {
 			throw new BadRequestException(`${prefix}: addresses must be an array`);
 		}
-		for (const addr of addresses) {
-			if (!isAddress(addr)) {
-				throw new BadRequestException(`${prefix}: invalid address "${addr}"`);
+		// Accept loose hex, normalize to EIP-55 checksum for storage
+		for (let i = 0; i < addrs.length; i++) {
+			if (!isAddress(addrs[i], { strict: false })) {
+				throw new BadRequestException(`${prefix}: invalid address "${addrs[i]}"`);
 			}
+			addrs[i] = getAddress(addrs[i]);
 		}
 	},
 
@@ -184,13 +186,16 @@ export class PolicyDocumentService {
 		return this.repo.activate(signerId);
 	}
 
-	private validateRules(rules: readonly PolicyRule[]): void {
+	validateRules(rules: readonly PolicyRule[]): void {
 		for (let i = 0; i < rules.length; i++) {
 			const rule = rules[i];
 			if (!rule || !VALID_ACTIONS.has(rule.action)) {
 				throw new BadRequestException(`Rule ${i}: invalid action "${rule?.action}"`);
 			}
-			if (!Array.isArray(rule.criteria) || rule.criteria.length === 0) {
+			if (
+				!Array.isArray(rule.criteria) ||
+				(rule.criteria.length === 0 && rule.action !== 'reject')
+			) {
 				throw new BadRequestException(`Rule ${i}: must have at least one criterion`);
 			}
 			for (let j = 0; j < rule.criteria.length; j++) {

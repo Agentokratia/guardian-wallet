@@ -104,13 +104,27 @@ export class PolicyController {
 
 	@Post('signers/:id/policy/backtest')
 	@HttpCode(HttpStatus.OK)
-	async backtest(@Param('id') signerId: string, @Req() req: AuthenticatedRequest) {
+	async backtest(
+		@Param('id') signerId: string,
+		@Body() body: { rules?: PolicyRule[] },
+		@Req() req: AuthenticatedRequest,
+	) {
 		await this.verifySignerOwnership(signerId, req);
-		const draft = await this.policyDocService.getDraft(signerId);
-		if (!draft) {
+
+		// Prefer rules from the request body (live editor state),
+		// fall back to saved draft, then to empty result.
+		let rules: readonly PolicyRule[] | undefined = body.rules;
+		if (rules && rules.length > 0) {
+			this.policyDocService.validateRules(rules);
+		}
+		if (!rules || rules.length === 0) {
+			const draft = await this.policyDocService.getDraft(signerId);
+			rules = draft?.rules;
+		}
+		if (!rules || rules.length === 0) {
 			return { totalAnalyzed: 0, wouldPass: 0, wouldBlock: 0, blockedRequests: [] };
 		}
-		return this.backtestService.backtest(signerId, draft.rules);
+		return this.backtestService.backtest(signerId, rules);
 	}
 
 	// ─── Legacy CRUD (kept for backward compatibility) ───────────────────────

@@ -138,7 +138,7 @@ export function GuardrailsPage() {
 			setPolicySaving(true);
 			try {
 				await savePolicyAsync({ signerId, rules });
-				toast({ title: 'Guardrails saved', description: 'Your policy is now active.' });
+				toast({ title: 'Guardrails saved', description: 'Your guardrails are now active.' });
 				setTemplateRules(null);
 				setShowTemplatePicker(false);
 			} catch {
@@ -150,7 +150,10 @@ export function GuardrailsPage() {
 		[signerId, savePolicyAsync, toast],
 	);
 
-	const handleBacktest = useCallback(() => backtestAsync(signerId), [signerId, backtestAsync]);
+	const handleBacktest = useCallback(
+		(rules: Record<string, unknown>[]) => backtestAsync({ signerId, rules }),
+		[signerId, backtestAsync],
+	);
 
 	const handleTemplateSelect = useCallback((rules: Record<string, unknown>[]) => {
 		builderKeyRef.current += 1;

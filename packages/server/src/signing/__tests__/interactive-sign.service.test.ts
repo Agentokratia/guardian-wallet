@@ -8,13 +8,7 @@ import {
 	SignerType,
 	SigningPath,
 } from '@agentokratia/guardian-core';
-import type {
-	IChain,
-	IPolicyEngine,
-	IRulesEngine,
-	IShareStore,
-	Signer,
-} from '@agentokratia/guardian-core';
+import type { IChain, IRulesEngine, IShareStore, Signer } from '@agentokratia/guardian-core';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hexToBytes, keccak256, toHex } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,7 +18,6 @@ import * as cryptoUtils from '../../common/crypto-utils.js';
 import type { PriceOracleService } from '../../common/price-oracle.service.js';
 import type { TransferDecoderService } from '../../common/transfer-decoder.service.js';
 import type { PolicyDocumentRepository } from '../../policies/policy-document.repository.js';
-import type { PolicyRepository } from '../../policies/policy.repository.js';
 import type { SignerRepository } from '../../signers/signer.repository.js';
 import { InteractiveSignService } from '../interactive-sign.service.js';
 
@@ -135,20 +128,6 @@ function createMocks() {
 		sumUsdBySignerInWindow: vi.fn().mockResolvedValue(0),
 	};
 
-	const policyRepo = {
-		findEnabledBySigner: vi.fn().mockResolvedValue([]),
-		incrementTimesTriggered: vi.fn().mockResolvedValue(undefined),
-	};
-
-	const policyEngine = {
-		evaluate: vi.fn().mockResolvedValue({
-			allowed: true,
-			violations: [],
-			evaluatedCount: 0,
-			evaluationTimeMs: 1,
-		}),
-	};
-
 	const chain = {
 		chainId: 11155111,
 		name: 'sepolia',
@@ -207,8 +186,6 @@ function createMocks() {
 	return {
 		signerRepo,
 		signingRequestRepo,
-		policyRepo,
-		policyEngine,
 		rulesEngine,
 		policyDocRepo,
 		chain,
@@ -236,8 +213,6 @@ describe('InteractiveSignService', () => {
 		service = new InteractiveSignService(
 			mocks.signerRepo as unknown as SignerRepository,
 			mocks.signingRequestRepo as unknown as SigningRequestRepository,
-			mocks.policyRepo as unknown as PolicyRepository,
-			mocks.policyEngine as unknown as IPolicyEngine,
 			mocks.rulesEngine as unknown as IRulesEngine,
 			mocks.policyDocRepo as unknown as PolicyDocumentRepository,
 			mocks.chainRegistry as unknown as ChainRegistryService,
@@ -295,7 +270,7 @@ describe('InteractiveSignService', () => {
 
 		it('throws ForbiddenException when policy blocks transaction', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-			mocks.policyEngine.evaluate.mockResolvedValue({
+			mocks.rulesEngine.evaluate.mockResolvedValue({
 				allowed: false,
 				violations: [{ policyId: 'p1', type: 'spending_limit', reason: 'Exceeded' }],
 				evaluatedCount: 1,
@@ -313,7 +288,7 @@ describe('InteractiveSignService', () => {
 
 		it('logs blocked request to audit when policy blocks', async () => {
 			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
-			mocks.policyEngine.evaluate.mockResolvedValue({
+			mocks.rulesEngine.evaluate.mockResolvedValue({
 				allowed: false,
 				violations: [{ policyId: 'p1', type: 'spending_limit', reason: 'Exceeded' }],
 				evaluatedCount: 1,

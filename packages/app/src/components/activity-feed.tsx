@@ -25,7 +25,7 @@ export function ActivityFeed({
 			<div className="rounded-xl border border-border bg-surface px-6 py-10 text-center">
 				<p className="text-sm font-medium text-text-muted">No activity yet</p>
 				<Mono size="xs" className="text-text-dim mt-1.5">
-					Transactions, message signings, and policy blocks will appear here.
+					Transactions, message signings, and guardrail blocks will appear here.
 				</Mono>
 			</div>
 		);

@@ -3,6 +3,11 @@
  *
  * "This policy would have blocked N of your last 20 transactions."
  * Gives traders confidence before activating a new policy.
+ *
+ * Limitation: Rolling spend context is approximated from the fetched batch only.
+ * The real rolling spend at each historical tx's timestamp is not reconstructed
+ * (would require N DB queries per request). Spending limit criteria may show
+ * slightly different results than they would have in real-time.
  */
 
 import type { PolicyContext, PolicyResult, PolicyRule } from '@agentokratia/guardian-core';
@@ -50,16 +55,27 @@ export class PolicyBacktestService {
 		draftRules: readonly PolicyRule[],
 		limit = 20,
 	): Promise<BacktestResult> {
-		// Get recent approved requests
+		// Get recent approved requests (oldest first for cumulative spend)
 		const { data: requests } = await this.signingRequestRepo.findAll(
 			{ signerId, status: RequestStatus.APPROVED },
 			{ page: 1, limit },
 		);
 
+		// Sort oldest-first so cumulative spend builds up chronologically
+		const sorted = [...requests].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
 		const blocked: BacktestBlockedRequest[] = [];
 
-		for (const req of requests) {
-			const ctx = this.requestToContext(req);
+		// Track cumulative spend across the batch for approximate rolling context
+		let cumulativeSpendWei = 0n;
+		let cumulativeSpendUsd = 0;
+		let requestCount = 0;
+
+		for (const req of sorted) {
+			const valueWei = req.valueWei ? BigInt(req.valueWei) : 0n;
+			const valueUsd = req.valueUsd ?? 0;
+
+			const ctx = this.requestToContext(req, cumulativeSpendWei, cumulativeSpendUsd, requestCount);
 			const result = await this.rulesEngine.evaluate({ rules: draftRules }, ctx);
 
 			if (!result.allowed) {
@@ -73,6 +89,11 @@ export class PolicyBacktestService {
 					reasons: result.violations.map((v) => v.reason),
 				});
 			}
+
+			// Accumulate spend for subsequent requests
+			cumulativeSpendWei += valueWei;
+			cumulativeSpendUsd += valueUsd;
+			requestCount++;
 		}
 
 		return {
@@ -83,22 +104,27 @@ export class PolicyBacktestService {
 		};
 	}
 
-	private requestToContext(req: SigningRequestEntity): PolicyContext {
+	private requestToContext(
+		req: SigningRequestEntity,
+		cumulativeSpendWei: bigint,
+		cumulativeSpendUsd: number,
+		requestCount: number,
+	): PolicyContext {
 		return {
 			signerAddress: '',
 			toAddress: req.toAddress ?? undefined,
 			valueWei: req.valueWei ? BigInt(req.valueWei) : 0n,
 			chainId: req.chainId ?? 1,
-			rollingDailySpendWei: 0n,
-			rollingMonthlySpendWei: 0n,
-			requestCountLastHour: 0,
-			requestCountToday: 0,
+			rollingDailySpendWei: cumulativeSpendWei,
+			rollingMonthlySpendWei: cumulativeSpendWei,
+			requestCountLastHour: requestCount,
+			requestCountToday: requestCount,
 			currentHourUtc: req.createdAt.getUTCHours(),
 			timestamp: req.createdAt,
 			txData: req.txData ?? undefined,
 			valueUsd: req.valueUsd ?? undefined,
-			rollingDailySpendUsd: 0,
-			rollingMonthlySpendUsd: 0,
+			rollingDailySpendUsd: cumulativeSpendUsd,
+			rollingMonthlySpendUsd: cumulativeSpendUsd,
 		};
 	}
 }

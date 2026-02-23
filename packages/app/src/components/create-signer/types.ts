@@ -69,7 +69,7 @@ export const ACCOUNT_TYPES: readonly AccountType[] = [
 		subtitle: 'Automated trading on DEXes like Uniswap or 1inch.',
 		guardrails: [
 			'Trade and daily spend limits',
-			'Only known DEX routers whitelisted',
+			'Only approved DEX routers',
 			'Max slippage cap and rate limiting',
 		],
 		usedWith: 'Custom bots, Hummingbot, Freqtrade',
@@ -80,7 +80,7 @@ export const ACCOUNT_TYPES: readonly AccountType[] = [
 		icon: TrendingUp,
 		subtitle: 'Yield farming, lending, and staking across protocols.',
 		guardrails: [
-			'Aave, Compound, Lido whitelisted',
+			'Aave, Compound, Lido approved',
 			'Higher per-tx limits for deposits',
 			'Tight slippage protection',
 		],
@@ -92,7 +92,7 @@ export const ACCOUNT_TYPES: readonly AccountType[] = [
 		icon: Zap,
 		subtitle: 'Sends payments to known recipients at high volume.',
 		guardrails: [
-			'Whitelist-only recipients',
+			'Approved recipients only',
 			'High-throughput rate limits',
 			'Daily and monthly caps',
 		],

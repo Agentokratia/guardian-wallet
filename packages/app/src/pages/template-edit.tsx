@@ -114,7 +114,7 @@ export function TemplateEditPage() {
 
 	const handleSave = useCallback(async () => {
 		if (!name.trim() || !slug.trim()) {
-			toast({ title: 'Name and slug are required', variant: 'destructive' });
+			toast({ title: 'Name and short ID are required', variant: 'destructive' });
 			return;
 		}
 
@@ -274,10 +274,10 @@ export function TemplateEditPage() {
 						/>
 					</div>
 
-					{/* Slug */}
+					{/* Short ID (auto-generated from name) */}
 					<div>
 						<label className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
-							Slug
+							Short ID
 						</label>
 						<Input
 							value={slug}

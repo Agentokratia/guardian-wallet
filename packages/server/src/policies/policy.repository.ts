@@ -1,4 +1,4 @@
-import type { PolicyConfig, PolicyType } from '@agentokratia/guardian-core';
+import type { PolicyType } from '@agentokratia/guardian-core';
 import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseService } from '../common/supabase.service.js';
 import type { CreatePolicyDto, PolicyEntity, PolicyRow, UpdatePolicyDto } from './policy.types.js';
@@ -112,7 +112,7 @@ export class PolicyRepository {
 			id: row.id,
 			signerId: row.signer_id,
 			type: row.type as PolicyType,
-			config: row.config as unknown as PolicyConfig,
+			config: row.config as Record<string, unknown>,
 			enabled: row.enabled,
 			appliesTo: row.applies_to ?? undefined,
 			timesTriggered: row.times_triggered,

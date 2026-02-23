@@ -128,7 +128,7 @@ const POSTURE_CATEGORIES = [
 		label: 'Contracts',
 		max: 11,
 		icon: Shield,
-		hint: 'Whitelist allowed contracts',
+		hint: 'Add trusted contracts',
 	},
 	{
 		key: 'spendingLimits' as const,
@@ -240,7 +240,7 @@ function getNextStep(cert: CertificationScore): { text: string; pts: number } | 
 			current: p.spendingLimits,
 		},
 		{
-			text: 'Whitelist allowed contracts',
+			text: 'Add trusted contracts',
 			pts: p.contractControl === 0 ? 11 : 11 - p.contractControl,
 			current: p.contractControl,
 		},
@@ -378,7 +378,7 @@ export function CertificationCard({ cert, address, name, onGetBadge }: Certifica
 				{/* ──── Pillars ──── */}
 				<div className="mt-4 grid grid-cols-3 gap-4">
 					<PillarBar
-						label="Policy Posture"
+						label="Guardrail Posture"
 						value={cert.policyPosture.total}
 						max={cert.policyPosture.max}
 						tier={cert.tier}
@@ -414,10 +414,10 @@ export function CertificationCard({ cert, address, name, onGetBadge }: Certifica
 
 				{expanded && (
 					<div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-						{/* Policy posture detail */}
+						{/* Guardrail posture detail */}
 						<div>
 							<h4 className="text-[11px] font-semibold text-text mb-2">
-								Policy Posture — {cert.policyPosture.total}/{cert.policyPosture.max}
+								Guardrail Posture — {cert.policyPosture.total}/{cert.policyPosture.max}
 							</h4>
 							<PostureDetail cert={cert} />
 						</div>

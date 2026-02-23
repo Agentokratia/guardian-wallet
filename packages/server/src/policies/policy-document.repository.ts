@@ -42,16 +42,11 @@ export class PolicyDocumentRepository {
 	}
 
 	async findAnyBySigner(signerId: string): Promise<PolicyDocumentEntity | null> {
-		// Return whatever exists — active first, then draft
-		const { data, error } = await this.supabase.client
-			.from(this.tableName)
-			.select('*')
-			.eq('signer_id', signerId)
-			.order('status', { ascending: true }) // 'active' < 'draft' alphabetically
-			.limit(1);
-
-		if (error || !data || data.length === 0) return null;
-		return this.toDomain(data[0] as PolicyDocumentRow);
+		// Return active first, fall back to draft. Two explicit queries
+		// to avoid relying on alphabetical sort order of status values.
+		const active = await this.findBySigner(signerId);
+		if (active) return active;
+		return this.findDraftBySigner(signerId);
 	}
 
 	async upsert(
@@ -83,17 +78,14 @@ export class PolicyDocumentRepository {
 			return this.toDomain(row as PolicyDocumentRow);
 		}
 
-		// Fallback: client-side (non-atomic) for environments without the RPC
+		// Fallback: client-side for environments without the RPC.
+		// Order: promote draft FIRST, then delete old active.
+		// If crash between steps: signer has two active docs — findBySigner
+		// picks latest by activated_at DESC, so the new one wins. Safe.
 		const draft = await this.findDraftBySigner(signerId);
 		if (!draft) {
 			throw new Error('No draft policy to activate');
 		}
-
-		await this.supabase.client
-			.from(this.tableName)
-			.delete()
-			.eq('signer_id', signerId)
-			.eq('status', 'active');
 
 		const { data, error } = await this.supabase.client
 			.from(this.tableName)
@@ -109,6 +101,14 @@ export class PolicyDocumentRepository {
 		if (error || !data) {
 			throw new Error(`Failed to activate policy: ${error?.message ?? 'unknown'}`);
 		}
+
+		// Now safe to delete old active (the new one is already promoted)
+		await this.supabase.client
+			.from(this.tableName)
+			.delete()
+			.eq('signer_id', signerId)
+			.eq('status', 'active')
+			.neq('id', draft.id);
 
 		return this.toDomain(data as PolicyDocumentRow);
 	}

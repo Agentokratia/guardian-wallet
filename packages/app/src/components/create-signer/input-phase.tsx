@@ -57,7 +57,14 @@ export function InputPhase({
 					name="signer-name"
 					placeholder="e.g. my-trading-bot"
 					value={name}
-					onChange={(e) => onNameChange(e.target.value)}
+					onChange={(e) =>
+						onNameChange(
+							e.target.value
+								.toLowerCase()
+								.replace(/\s+/g, '-')
+								.replace(/[^a-z0-9-]/g, ''),
+						)
+					}
 					className="bg-surface h-11 text-[14px]"
 					autoFocus
 					required
@@ -65,9 +72,7 @@ export function InputPhase({
 					autoComplete="off"
 					spellCheck={false}
 				/>
-				<p className="mt-1.5 text-[11px] text-text-dim">
-					A unique name for this account. Use lowercase and hyphens.
-				</p>
+				<p className="mt-1.5 text-[11px] text-text-dim">A unique name for this account.</p>
 			</div>
 
 			{/* ---- Description ---- */}

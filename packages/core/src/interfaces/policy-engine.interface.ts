@@ -37,18 +37,8 @@ export interface PolicyContext {
 	readonly rollingDailySpendUsd?: number;
 	/** Rolling 30-day spend in USD. */
 	readonly rollingMonthlySpendUsd?: number;
-}
-
-export interface IPolicyEngine {
-	evaluate(
-		policies: ReadonlyArray<{
-			id: string;
-			type: PolicyType;
-			config: Record<string, unknown>;
-			enabled: boolean;
-		}>,
-		context: PolicyContext,
-	): Promise<PolicyResult>;
+	/** Actual recipient of an ERC-20 transfer/transferFrom (differs from toAddress which is the token contract). */
+	readonly transferRecipient?: string;
 }
 
 export interface IRulesEngine {

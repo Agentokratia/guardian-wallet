@@ -111,7 +111,7 @@ const TAB_INFO: Record<TabId, { description: string; emptyHint: string }> = {
 	contracts: {
 		description: 'Only allow transactions to these contracts.',
 		emptyHint:
-			'No whitelist set \u2014 your agent can interact with any contract. Add trusted contracts to control where funds can go.',
+			'No trusted contracts set \u2014 your agent can interact with any contract. Add approved contracts to control where funds can go.',
 	},
 	blocklist: {
 		description: 'Block transactions to specific addresses.',
@@ -194,7 +194,7 @@ function tabsWithErrors(errs: Record<string, string>): Set<TabId> {
 interface PolicyBuilderProps {
 	initialRules?: Record<string, unknown>[];
 	onSave: (rules: Record<string, unknown>[]) => void;
-	onBacktest?: () => Promise<BacktestResult>;
+	onBacktest?: (rules: Record<string, unknown>[]) => Promise<BacktestResult>;
 	onReset?: () => void;
 	onLoadTemplate?: () => void;
 	saving?: boolean;
@@ -247,21 +247,10 @@ export function PolicyBuilder({
 	const whitelistAddresses = (values.evmAddress?.addresses as string[] | undefined) ?? [];
 	const blockedAddresses = (values.evmAddressBlocked?.addresses as string[] | undefined) ?? [];
 
-	/** Addresses visible in QuickAdd for the current chain. */
-	const quickAddAddressSet = useMemo(() => {
-		const set = new Set<string>();
-		if (allContracts) {
-			for (const c of allContracts) {
-				if (c.chainId === quickAddChain) set.add(c.address.toLowerCase());
-			}
-		}
-		return set;
-	}, [allContracts, quickAddChain]);
-
-	/** Selected addresses NOT visible in QuickAdd (custom or from other chains). */
+	/** Selected addresses that are NOT any known contract (truly custom / unlisted). */
 	const extraWhitelist = useMemo(
-		() => whitelistAddresses.filter((a) => !quickAddAddressSet.has(a.toLowerCase())),
-		[whitelistAddresses, quickAddAddressSet],
+		() => whitelistAddresses.filter((a) => !contractsByAddress.has(a.toLowerCase())),
+		[whitelistAddresses, contractsByAddress],
 	);
 
 	/* ─── Handlers ─────────────────────────────────────────────────────────── */
@@ -413,13 +402,14 @@ export function PolicyBuilder({
 		if (!onBacktest) return;
 		setBacktesting(true);
 		try {
-			setBacktestResult(await onBacktest());
+			const currentRules = buildRules(values, enabled);
+			setBacktestResult(await onBacktest(currentRules));
 		} catch {
 			/* keep previous */
 		} finally {
 			setBacktesting(false);
 		}
-	}, [onBacktest]);
+	}, [onBacktest, values, enabled]);
 
 	const enabledCount = Object.values(enabled).filter(Boolean).length;
 	const errorTabs = useMemo(() => tabsWithErrors(errors), [errors]);
@@ -650,9 +640,7 @@ export function PolicyBuilder({
 									onChange={(v) => handleFieldChange('evmAddress', 'allowDeploy', v)}
 									size="sm"
 								/>
-								<span className="text-[10px] text-text-dim">
-									Allow contract deploys (creates without a to-address)
-								</span>
+								<span className="text-[10px] text-text-dim">Allow creating new contracts</span>
 							</label>
 
 							{whitelistAddresses.length === 0 && (
@@ -923,8 +911,8 @@ export function PolicyBuilder({
 								</div>
 							</SafetyRow>
 							<SafetyRow
-								label="MEV protection"
-								description="Flags transactions at risk of being front-run in the public mempool"
+								label="Front-running protection"
+								description="Flags swap transactions at risk of being front-run by other traders"
 								badge="Warns only"
 								checked={enabled.mevProtection ?? false}
 								onChange={(on) => handleToggle('mevProtection', on)}
@@ -984,38 +972,92 @@ export function PolicyBuilder({
 
 			{/* ── Backtest result ───────────────────────────────────────────── */}
 			{backtestResult && (
-				<div className="border-t border-border px-4 py-3" aria-live="polite">
-					<div className="mx-auto max-w-lg">
-						<div className="flex items-center gap-4 text-[12px]">
-							<span className="font-medium text-text">If these rules were active before</span>
-							<span className="flex items-center gap-1 text-success">
-								<CheckCircle2 className="h-3.5 w-3.5" />
-								{backtestResult.wouldPass} would pass
-							</span>
-							<span className="flex items-center gap-1 text-danger">
-								<XCircle className="h-3.5 w-3.5" />
-								{backtestResult.wouldBlock} would be blocked
-							</span>
+				<div className="border-t border-border" aria-live="polite">
+					{/* Summary bar */}
+					<div className="flex items-stretch divide-x divide-border">
+						<div className="flex-1 px-4 py-3 text-center">
+							<div className="text-[18px] font-bold tabular-nums text-text">
+								{backtestResult.totalAnalyzed}
+							</div>
+							<div className="text-[10px] text-text-dim">transactions tested</div>
 						</div>
-						{backtestResult.blockedRequests.length > 0 && (
-							<div className="mt-2 space-y-1">
+						<div className="flex-1 px-4 py-3 text-center">
+							<div className="text-[18px] font-bold tabular-nums text-success">
+								{backtestResult.wouldPass}
+							</div>
+							<div className="text-[10px] text-text-dim">would pass</div>
+						</div>
+						<div className="flex-1 px-4 py-3 text-center">
+							<div className="text-[18px] font-bold tabular-nums text-danger">
+								{backtestResult.wouldBlock}
+							</div>
+							<div className="text-[10px] text-text-dim">would block</div>
+						</div>
+					</div>
+
+					{/* Blocked list */}
+					{backtestResult.blockedRequests.length > 0 && (
+						<div className="border-t border-border">
+							<div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-dim">
+								Blocked transactions
+							</div>
+							<div className="divide-y divide-border/50">
 								{backtestResult.blockedRequests.map((req) => (
-									<div
-										key={req.requestId}
-										className="flex items-center justify-between rounded bg-danger/5 px-2.5 py-1.5 text-[11px]"
-									>
-										<span className="font-mono text-text-muted">
-											{req.toAddress ? `${req.toAddress.slice(0, 8)}...` : 'Deploy'}
-											{req.valueUsd !== null && (
-												<span className="ml-1.5 text-text-dim">${req.valueUsd.toFixed(2)}</span>
-											)}
-										</span>
-										<span className="text-danger">{req.reasons[0]}</span>
+									<div key={req.requestId} className="px-4 py-2.5">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<XCircle className="h-3 w-3 shrink-0 text-danger" />
+												<span className="font-mono text-[11px] text-text">
+													{req.toAddress
+														? `${req.toAddress.slice(0, 6)}...${req.toAddress.slice(-4)}`
+														: 'Contract deploy'}
+												</span>
+											</div>
+											<div className="flex items-center gap-2 text-[11px]">
+												{req.valueUsd !== null && req.valueUsd > 0 && (
+													<span className="tabular-nums text-text-muted">
+														$
+														{req.valueUsd < 0.01
+															? '<0.01'
+															: req.valueUsd.toLocaleString(undefined, {
+																	minimumFractionDigits: 2,
+																	maximumFractionDigits: 2,
+																})}
+													</span>
+												)}
+												<span className="text-[10px] text-text-dim">
+													{new Date(req.createdAt).toLocaleDateString(undefined, {
+														month: 'short',
+														day: 'numeric',
+													})}
+												</span>
+											</div>
+										</div>
+										<div className="mt-1 ml-5 text-[10px] text-danger/80">{req.reasons[0]}</div>
 									</div>
 								))}
 							</div>
-						)}
-					</div>
+						</div>
+					)}
+
+					{/* All-pass message */}
+					{backtestResult.totalAnalyzed > 0 && backtestResult.wouldBlock === 0 && (
+						<div className="border-t border-border px-4 py-3 text-center">
+							<span className="inline-flex items-center gap-1.5 text-[11px] text-success">
+								<CheckCircle2 className="h-3.5 w-3.5" />
+								All past transactions would have passed these rules
+							</span>
+						</div>
+					)}
+
+					{/* No history message */}
+					{backtestResult.totalAnalyzed === 0 && (
+						<div className="border-t border-border px-4 py-3 text-center">
+							<span className="text-[11px] text-text-dim">
+								No transaction history yet to test against
+							</span>
+						</div>
+					)}
 				</div>
 			)}
 
@@ -1064,7 +1106,7 @@ export function PolicyBuilder({
 								onClick={handleSave}
 								disabled={saving || saved}
 								className={cn(
-									'h-7 text-[11px] transition-colors',
+									'h-9 px-4 text-[12px] font-medium transition-colors',
 									saved && 'bg-success hover:bg-success',
 								)}
 							>
@@ -1073,7 +1115,7 @@ export function PolicyBuilder({
 								) : saved ? (
 									<CheckCircle2 className="mr-1 h-3 w-3" />
 								) : null}
-								{saved ? 'Saved' : 'Save'}
+								{saved ? 'Guardrails Saved' : 'Save Guardrails'}
 							</Button>
 						</div>
 					</div>
@@ -1428,7 +1470,7 @@ function RemoveGuardrailsDialog({
 					<div className="flex items-start gap-2">
 						<AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-danger" />
 						<div className="text-[11px] text-danger/80 leading-relaxed">
-							<p className="font-medium text-danger">This signer will be fully exposed.</p>
+							<p className="font-medium text-danger">This account will be fully exposed.</p>
 							<p className="mt-1">
 								No spending limits, no contract restrictions, no rate limits. Any connected agent
 								can sign any transaction to any address.

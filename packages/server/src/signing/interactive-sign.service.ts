@@ -1,7 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type {
 	IChain,
-	IPolicyEngine,
 	IRulesEngine,
 	IShareStore,
 	IThresholdScheme,
@@ -30,7 +29,6 @@ import { SHARE_STORE } from '../common/share-store.module.js';
 import { TransferDecoderService } from '../common/transfer-decoder.service.js';
 import { runAlwaysOnChecks } from '../policies/always-on-checks.js';
 import { PolicyDocumentRepository } from '../policies/policy-document.repository.js';
-import { PolicyRepository } from '../policies/policy.repository.js';
 import { SignerRepository } from '../signers/signer.repository.js';
 
 const SESSION_TTL_MS = 120_000;
@@ -138,8 +136,6 @@ export class InteractiveSignService implements OnModuleDestroy {
 	constructor(
 		@Inject(SignerRepository) private readonly signerRepo: SignerRepository,
 		@Inject(SigningRequestRepository) private readonly signingRequestRepo: SigningRequestRepository,
-		@Inject(PolicyRepository) private readonly policyRepo: PolicyRepository,
-		@Inject('POLICY_ENGINE') private readonly policyEngine: IPolicyEngine,
 		@Inject('RULES_ENGINE') private readonly rulesEngine: IRulesEngine,
 		@Inject(PolicyDocumentRepository) private readonly policyDocRepo: PolicyDocumentRepository,
 		@Inject(ChainRegistryService) private readonly chainRegistry: ChainRegistryService,
@@ -221,6 +217,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		// Compute USD value of this transaction
 		const txDataHex = populatedTx.data ? toHex(populatedTx.data) : undefined;
 		let valueUsd: number | undefined;
+		let transferRecipient: string | undefined;
 		try {
 			const outflows = await this.transferDecoder.decode(
 				{
@@ -232,6 +229,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 				this.priceOracle,
 			);
 			valueUsd = outflows.totalUsd;
+			transferRecipient = outflows.transferRecipient;
 		} catch (err) {
 			this.logger.warn(`Failed to compute USD value: ${String(err)}`);
 		}
@@ -253,6 +251,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			valueUsd,
 			rollingDailySpendUsd: rollingDailyUsd,
 			rollingMonthlySpendUsd: rollingMonthlyUsd,
+			transferRecipient,
 		};
 
 		// Step 3b: Always-on security checks (run before policy engine, cannot be disabled)
@@ -286,25 +285,10 @@ export class InteractiveSignService implements OnModuleDestroy {
 			});
 		}
 
-		// Step 4: Evaluate policies
+		// Step 4: Evaluate policies (rules engine handles null doc → default deny)
 		this.logger.log(`[${tag}] Step 4/8: Evaluating policies`);
 		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
-		let policyResult: PolicyResult;
-
-		if (policyDoc) {
-			policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
-		} else {
-			const enabledPolicies = await this.policyRepo.findEnabledBySigner(signer.id);
-			policyResult = await this.policyEngine.evaluate(
-				enabledPolicies.map((p) => ({
-					id: p.id,
-					type: p.type,
-					config: p.config as unknown as Record<string, unknown>,
-					enabled: p.enabled,
-				})),
-				policyContext,
-			);
-		}
+		const policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
 
 		// Step 5: If blocked, log and throw
 		this.logger.log(
@@ -622,23 +606,30 @@ export class InteractiveSignService implements OnModuleDestroy {
 			callerIp: input.callerIp,
 		};
 
-		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
-		let policyResult: PolicyResult;
+		// Always-on security checks (cannot be disabled)
+		const alwaysOnViolations = runAlwaysOnChecks(policyContext, this.transferDecoder);
+		if (alwaysOnViolations.length > 0) {
+			await this.signingRequestRepo
+				.create({
+					signerId: signer.id,
+					ownerAddress: signer.ownerAddress,
+					requestType: RequestType.SIGN_MESSAGE,
+					signingPath,
+					status: RequestStatus.BLOCKED,
+					policyViolations: alwaysOnViolations as unknown as Record<string, unknown>[],
+					policiesEvaluated: 0,
+					evaluationTimeMs: 0,
+				})
+				.catch((err) => this.logger.error(`Failed to write blocked audit log: ${err}`));
 
-		if (policyDoc) {
-			policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
-		} else {
-			const enabledPolicies = await this.policyRepo.findEnabledBySigner(signer.id);
-			policyResult = await this.policyEngine.evaluate(
-				enabledPolicies.map((p) => ({
-					id: p.id,
-					type: p.type,
-					config: p.config as unknown as Record<string, unknown>,
-					enabled: p.enabled,
-				})),
-				policyContext,
-			);
+			throw new ForbiddenException({
+				message: 'Message signing blocked by security check',
+				violations: alwaysOnViolations.map(({ type, reason }) => ({ type, reason })),
+			});
 		}
+
+		const policyDoc = await this.policyDocRepo.findBySigner(signer.id);
+		const policyResult = await this.rulesEngine.evaluate(policyDoc, policyContext);
 
 		if (!policyResult.allowed) {
 			await this.signingRequestRepo

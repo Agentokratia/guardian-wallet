@@ -91,8 +91,8 @@ export interface BacktestResult {
 
 export function useBacktestPolicy() {
 	return useMutation({
-		mutationFn: (signerId: string) =>
-			api.post<BacktestResult>(`/signers/${signerId}/policy/backtest`, {}),
+		mutationFn: ({ signerId, rules }: { signerId: string; rules: Record<string, unknown>[] }) =>
+			api.post<BacktestResult>(`/signers/${signerId}/policy/backtest`, { rules }),
 	});
 }
 

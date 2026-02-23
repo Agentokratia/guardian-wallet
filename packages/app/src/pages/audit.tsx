@@ -75,7 +75,7 @@ function exportCsv(data: SigningRequest[]) {
 		'Value (ETH, raw)',
 		'Status',
 		'Tx Hash',
-		'Policies Evaluated',
+		'Guardrails Evaluated',
 		'Evaluation Time (ms)',
 	];
 	const rows = data.map((r) => [

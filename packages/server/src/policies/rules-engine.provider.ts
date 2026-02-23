@@ -1,10 +1,13 @@
 /**
- * Rules engine — ordered rules, first-match-wins, default deny.
+ * Rules engine — ordered rules, first-match-wins.
  *
  * Each signer has a single PolicyDocument containing ordered rules.
  * Each rule has an action (accept/reject) and composable criteria (AND'd).
  * Rules evaluated top-down, first rule where ALL criteria match → use its action.
  * No match → default deny, with diagnostic info about which criteria failed.
+ *
+ * No policy document (null) → default ALLOW. The 2-of-3 MPC threshold is the
+ * primary access control gate; policies are an additional restriction layer.
  */
 
 import {
@@ -16,119 +19,8 @@ import {
 	PolicyType,
 } from '@agentokratia/guardian-core';
 import { Injectable, Logger } from '@nestjs/common';
-import { evaluateCriterion } from './criteria-evaluators.js';
-
-// ─── Human-readable reasons per criterion type ─────────────────────────────
-
-interface FailReason {
-	/** Safe to return to any caller (no thresholds, addresses, or config details). */
-	short: string;
-	/** Full diagnostic — for dashboard/audit only (includes exact values + limits). */
-	detail: string;
-}
-
-function criterionFailReason(c: Criterion, ctx: PolicyContext): FailReason {
-	switch (c.type) {
-		case 'evmAddress':
-			if (c.operator === 'not_in') {
-				return {
-					short: 'Blocked address',
-					detail: `Transaction to blocked address ${ctx.toAddress ?? 'unknown'}`,
-				};
-			}
-			return {
-				short: 'Address not approved',
-				detail: `Address ${ctx.toAddress ?? 'unknown'} is not in the approved list`,
-			};
-
-		case 'evmNetwork':
-			return {
-				short: 'Network not allowed',
-				detail:
-					c.operator === 'in'
-						? `Chain ${ctx.chainId} is not in the allowed networks`
-						: `Chain ${ctx.chainId} is blocked`,
-			};
-
-		case 'maxPerTxUsd':
-			return {
-				short: 'Per-transaction limit exceeded',
-				detail:
-					ctx.valueUsd === undefined
-						? 'Unable to determine USD value — price data unavailable (fail-closed)'
-						: `Transaction value $${ctx.valueUsd.toFixed(2)} exceeds per-transaction limit of $${c.maxUsd.toLocaleString()}`,
-			};
-
-		case 'dailyLimitUsd':
-			return {
-				short: 'Daily spending limit exceeded',
-				detail:
-					ctx.valueUsd === undefined || ctx.rollingDailySpendUsd === undefined
-						? 'Unable to verify daily spend — price data unavailable (fail-closed)'
-						: `Daily spend $${(ctx.rollingDailySpendUsd + ctx.valueUsd).toFixed(2)} would exceed daily limit of $${c.maxUsd.toLocaleString()}`,
-			};
-
-		case 'monthlyLimitUsd':
-			return {
-				short: 'Monthly spending limit exceeded',
-				detail:
-					ctx.valueUsd === undefined || ctx.rollingMonthlySpendUsd === undefined
-						? 'Unable to verify monthly spend — price data unavailable (fail-closed)'
-						: `Monthly spend $${(ctx.rollingMonthlySpendUsd + ctx.valueUsd).toFixed(2)} would exceed monthly limit of $${c.maxUsd.toLocaleString()}`,
-			};
-
-		case 'rateLimit':
-			return {
-				short: 'Rate limit exceeded',
-				detail: `Rate limit exceeded: ${ctx.requestCountLastHour}/${c.maxPerHour} requests this hour`,
-			};
-
-		case 'timeWindow':
-			return {
-				short: 'Outside trading hours',
-				detail: `Current hour ${ctx.currentHourUtc} UTC is outside trading window ${c.startHour}:00–${c.endHour}:00`,
-			};
-
-		case 'ethValue':
-			return { short: 'ETH value limit exceeded', detail: 'Transaction value exceeds ETH limit' };
-
-		case 'dailyLimit':
-			return {
-				short: 'Daily ETH limit exceeded',
-				detail: 'Rolling 24h spend exceeds daily ETH limit',
-			};
-
-		case 'monthlyLimit':
-			return {
-				short: 'Monthly ETH limit exceeded',
-				detail: 'Rolling 30d spend exceeds monthly ETH limit',
-			};
-
-		case 'blockInfiniteApprovals':
-			return {
-				short: 'Unlimited approval blocked',
-				detail: 'Unlimited token approval detected — only finite approvals allowed',
-			};
-
-		case 'evmFunction':
-			return {
-				short: 'Function not allowed',
-				detail: `Function ${ctx.functionSelector ?? 'unknown'} is not in the allowed list`,
-			};
-
-		case 'ipAddress':
-			return {
-				short: 'IP not allowed',
-				detail: `IP ${ctx.callerIp ?? 'unknown'} is not allowed`,
-			};
-
-		default:
-			return {
-				short: 'Policy check failed',
-				detail: `Criterion ${(c as Criterion).type} not satisfied`,
-			};
-	}
-}
+import { criterionFailReason, evaluateCriterion } from './evaluators/index.js';
+import type { FailReason } from './evaluators/types.js';
 
 @Injectable()
 export class RulesEngineProvider implements IRulesEngine {
@@ -137,30 +29,33 @@ export class RulesEngineProvider implements IRulesEngine {
 	async evaluate(document: PolicyDocument | null, context: PolicyContext): Promise<PolicyResult> {
 		const start = performance.now();
 
-		// No document → unconfigured signer → default deny
+		// No document → unconfigured signer → default allow
+		// The 2-of-3 MPC threshold is already the access control gate.
+		// Policies are an additional restriction layer, not the primary gate.
 		if (!document) {
 			const evaluationTimeMs = Math.round(performance.now() - start);
+			this.logger.warn('No policy configured — transaction allowed by default');
 			return {
-				allowed: false,
-				violations: [
-					{
-						policyId: 'none',
-						type: PolicyType.DEFAULT_DENY,
-						reason: 'No policy configured — default deny',
-						config: {},
-					},
-				],
+				allowed: true,
+				violations: [],
 				evaluatedCount: 0,
 				evaluationTimeMs,
 			};
 		}
 
-		// Document with empty rules → user explicitly chose no restrictions → allow all
+		// Document with empty rules → no rules match → default deny
 		if (document.rules.length === 0) {
 			const evaluationTimeMs = Math.round(performance.now() - start);
 			return {
-				allowed: true,
-				violations: [],
+				allowed: false,
+				violations: [
+					{
+						policyId: document.id,
+						type: PolicyType.DEFAULT_DENY,
+						reason: 'Policy has no rules configured — default deny',
+						config: {},
+					},
+				],
 				evaluatedCount: 0,
 				evaluationTimeMs,
 			};

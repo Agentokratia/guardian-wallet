@@ -16,6 +16,14 @@ import { hashApiKey, timingSafeCompare } from '../common/crypto-utils.js';
 import { SessionGuard } from '../common/session.guard.js';
 import { SignerRepository } from '../signers/signer.repository.js';
 import { AuthService } from './auth.service.js';
+import type {
+	AdminTokenDto,
+	LoginChallengeDto,
+	PasskeyLoginDto,
+	PasskeyRegisterDto,
+	RegisterDto,
+	VerifyEmailDto,
+} from './dto/auth.dto.js';
 import { RateLimitGuard } from './rate-limit.guard.js';
 import { SessionService } from './session.service.js';
 
@@ -33,7 +41,7 @@ export class AuthController {
 	 * Start registration: send OTP to email.
 	 */
 	@Post('register')
-	async register(@Body() body: { email: string }) {
+	async register(@Body() body: RegisterDto) {
 		const result = await this.authService.registerEmail(body.email);
 		return { userId: result.userId, isNewUser: result.isNewUser };
 	}
@@ -42,7 +50,7 @@ export class AuthController {
 	 * Verify email OTP → return passkey registration options.
 	 */
 	@Post('verify-email')
-	async verifyEmail(@Body() body: { email: string; code: string }) {
+	async verifyEmail(@Body() body: VerifyEmailDto) {
 		const result = await this.authService.verifyEmailOTP(body.email, body.code);
 		return {
 			userId: result.userId,
@@ -55,12 +63,12 @@ export class AuthController {
 	 */
 	@Post('passkey/register')
 	async passkeyRegister(
-		@Body() body: { userId: string; response: unknown; prfDerivedAddress?: string },
+		@Body() body: PasskeyRegisterDto,
 		@Res({ passthrough: true }) res: Response,
 	) {
 		const result = await this.authService.completePasskeyRegistration(
 			body.userId,
-			body.response as Parameters<AuthService['completePasskeyRegistration']>[1],
+			body.response as unknown as Parameters<AuthService['completePasskeyRegistration']>[1],
 			body.prfDerivedAddress,
 		);
 
@@ -73,7 +81,7 @@ export class AuthController {
 	 * Get authentication challenge for login.
 	 */
 	@Post('passkey/login-challenge')
-	async loginChallenge(@Body() body: { email: string }) {
+	async loginChallenge(@Body() body: LoginChallengeDto) {
 		const result = await this.authService.getLoginChallenge(body.email);
 		return { userId: result.userId, authOptions: result.authOptions };
 	}
@@ -82,13 +90,10 @@ export class AuthController {
 	 * Verify passkey login → set session cookie.
 	 */
 	@Post('passkey/login')
-	async passkeyLogin(
-		@Body() body: { email: string; response: unknown },
-		@Res({ passthrough: true }) res: Response,
-	) {
+	async passkeyLogin(@Body() body: PasskeyLoginDto, @Res({ passthrough: true }) res: Response) {
 		const result = await this.authService.completePasskeyLogin(
 			body.email,
-			body.response as Parameters<AuthService['completePasskeyLogin']>[1],
+			body.response as unknown as Parameters<AuthService['completePasskeyLogin']>[1],
 		);
 
 		this.setSessionCookie(res, result.token);
@@ -101,11 +106,7 @@ export class AuthController {
 	 * Limits replay window — the raw hash is only sent once per session.
 	 */
 	@Post('admin-token')
-	async adminToken(@Body() body: { signerId: string; adminToken: string; ttl?: number }) {
-		if (!body.signerId || !body.adminToken) {
-			throw new UnauthorizedException('Missing signerId or adminToken');
-		}
-
+	async adminToken(@Body() body: AdminTokenDto) {
 		const doubleHash = hashApiKey(body.adminToken);
 		const signer = await this.signerRepo.findById(body.signerId);
 

@@ -12,13 +12,9 @@ export {
 } from './enums/index.js';
 
 export type {
-	AllowedContractsConfig,
-	AllowedFunctionsConfig,
-	BlockedAddressesConfig,
 	BlockInfiniteApprovalsCriterion,
 	ComparisonOperator,
 	Criterion,
-	DailyLimitConfig,
 	DailyLimitCriterion,
 	DailyLimitUsdCriterion,
 	DKGState,
@@ -32,14 +28,11 @@ export type {
 	MaxPerTxUsdCriterion,
 	MaxSlippageCriterion,
 	MevProtectionCriterion,
-	MonthlyLimitConfig,
 	MonthlyLimitCriterion,
 	MonthlyLimitUsdCriterion,
 	Policy,
-	PolicyConfig,
 	PolicyDocument,
 	PolicyRule,
-	RateLimitConfig,
 	RateLimitCriterion,
 	RuleAction,
 	SetOperator,
@@ -47,8 +40,6 @@ export type {
 	ShareFile,
 	Signer,
 	SigningRequest,
-	SpendingLimitConfig,
-	TimeWindowConfig,
 	TimeWindowCriterion,
 } from './types/index.js';
 
@@ -68,7 +59,6 @@ export type {
 	FeeEstimate,
 	IChain,
 	IKmsProvider,
-	IPolicyEngine,
 	IRulesEngine,
 	IShareStore,
 	IThresholdScheme,

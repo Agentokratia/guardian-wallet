@@ -1,4 +1,5 @@
 import {
+	BadRequestException,
 	Body,
 	Controller,
 	Delete,
@@ -17,9 +18,15 @@ import type { CreatePolicyTemplateDto } from './dto/create-template.dto.js';
 import type { UpdatePolicyTemplateDto } from './dto/update-template.dto.js';
 import { PolicyTemplateRepository } from './policy-template.repository.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Controller('policy-templates')
 export class PolicyTemplateController {
 	constructor(@Inject(PolicyTemplateRepository) private readonly repo: PolicyTemplateRepository) {}
+
+	private validateUuid(id: string): void {
+		if (!UUID_RE.test(id)) throw new BadRequestException('Invalid template ID');
+	}
 
 	/** List visible templates (public — used by guardrails page template picker). */
 	@Get()
@@ -62,6 +69,7 @@ export class PolicyTemplateController {
 	@Put(':id')
 	@UseGuards(SessionGuard)
 	async update(@Param('id') id: string, @Body() dto: UpdatePolicyTemplateDto) {
+		this.validateUuid(id);
 		const existing = await this.repo.findById(id);
 		if (!existing) {
 			throw new NotFoundException('Template not found');
@@ -82,6 +90,7 @@ export class PolicyTemplateController {
 	@Delete(':id')
 	@UseGuards(SessionGuard)
 	async remove(@Param('id') id: string) {
+		this.validateUuid(id);
 		const existing = await this.repo.findById(id);
 		if (!existing) {
 			throw new NotFoundException('Template not found');

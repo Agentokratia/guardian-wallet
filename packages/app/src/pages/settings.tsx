@@ -51,7 +51,7 @@ export function SettingsPage() {
 										<Dot color={vaultConnected ? 'success' : 'danger'} pulse={vaultConnected} />
 										<div>
 											<span className="text-sm font-medium text-text">
-												Vault: {vaultConnected ? 'Connected' : 'Disconnected'}
+												Secure Storage: {vaultConnected ? 'Connected' : 'Disconnected'}
 											</span>
 											<p className="text-[11px] text-text-dim mt-0.5">
 												Secure storage for signing keys

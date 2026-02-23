@@ -126,7 +126,7 @@ export function AddTokenDialog({
 				setFetchError(null);
 			} catch {
 				if (cancelled || fetchRef.current !== id) return;
-				setFetchError('Not a valid ERC-20 on this network');
+				setFetchError('Not a valid token on this network');
 				setAutoFilled(false);
 			} finally {
 				if (!cancelled && fetchRef.current === id) {
@@ -271,7 +271,7 @@ export function AddTokenDialog({
 							)}
 						</div>
 						{address.length > 0 && !isValidAddress && (
-							<p className="text-xs text-danger">Enter a valid ERC-20 contract address</p>
+							<p className="text-xs text-danger">Enter a valid token contract address</p>
 						)}
 						{fetchError && <p className="text-xs text-warning">{fetchError}</p>}
 						{autoFilled && (

@@ -22,13 +22,18 @@ export const AUTH_EXPIRED_EVENT = 'auth:expired';
 const MAX_RETRIES = 1;
 const RETRY_DELAY_MS = 500;
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+	method: string,
+	path: string,
+	body?: unknown,
+	timeoutMs = 30_000,
+): Promise<T> {
 	let lastError: Error | undefined;
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		try {
 			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), 30_000);
+			const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 			const res = await fetch(`${BASE_URL}${path}`, {
 				method,
@@ -74,7 +79,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
 	get: <T>(path: string) => request<T>('GET', path),
-	post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+	post: <T>(path: string, body?: unknown, timeoutMs?: number) =>
+		request<T>('POST', path, body, timeoutMs),
 	put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
 	patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
 	del: <T>(path: string) => request<T>('DELETE', path),

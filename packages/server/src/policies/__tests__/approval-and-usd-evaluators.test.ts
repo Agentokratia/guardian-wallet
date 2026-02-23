@@ -1,20 +1,20 @@
 /**
  * Tests for approval-blocking evaluators (ERC-20, increaseAllowance, Permit2, setApprovalForAll),
- * USD limit evaluators, advisory evaluators, and the buildRules → RulesEngine integration path.
+ * USD limit evaluators, and the buildRules → RulesEngine integration path.
  */
 
 import type { PolicyContext, PolicyDocument } from '@agentokratia/guardian-core';
 import { PolicyType } from '@agentokratia/guardian-core';
 import { describe, expect, it } from 'vitest';
 import {
-	evaluateBlockInfiniteApprovals,
+	blockInfiniteApprovalsEvaluator,
+	dailyLimitUsdEvaluator,
 	evaluateCriterion,
-	evaluateDailyLimitUsd,
-	evaluateMaxPerTxUsd,
-	evaluateMaxSlippage,
-	evaluateMevProtection,
-	evaluateMonthlyLimitUsd,
-} from '../criteria-evaluators.js';
+	maxPerTxUsdEvaluator,
+	maxSlippageEvaluator,
+	mevProtectionEvaluator,
+	monthlyLimitUsdEvaluator,
+} from '../evaluators/index.js';
 import { RulesEngineProvider } from '../rules-engine.provider.js';
 
 // ─── Test calldata fixtures (pre-encoded ABI) ────────────────────────────────
@@ -76,30 +76,25 @@ function makeContext(overrides?: Partial<PolicyContext>): PolicyContext {
 
 const ENABLED = { type: 'blockInfiniteApprovals' as const, enabled: true };
 const DISABLED = { type: 'blockInfiniteApprovals' as const, enabled: false };
+const evaluate = blockInfiniteApprovalsEvaluator.evaluate.bind(blockInfiniteApprovalsEvaluator);
 
 // ─── blockInfiniteApprovals: ERC-20 approve() ───────────────────────────────
 
 describe('blockInfiniteApprovals — ERC-20 approve()', () => {
 	it('blocks MAX_UINT256 approve', () => {
-		expect(evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: APPROVE_MAX }))).toBe(
-			false,
-		);
+		expect(evaluate(ENABLED, makeContext({ txData: APPROVE_MAX }))).toBe(false);
 	});
 
 	it('allows small approve', () => {
-		expect(evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: APPROVE_SMALL }))).toBe(
-			true,
-		);
+		expect(evaluate(ENABLED, makeContext({ txData: APPROVE_SMALL }))).toBe(true);
 	});
 
 	it('passes when disabled', () => {
-		expect(evaluateBlockInfiniteApprovals(DISABLED, makeContext({ txData: APPROVE_MAX }))).toBe(
-			true,
-		);
+		expect(evaluate(DISABLED, makeContext({ txData: APPROVE_MAX }))).toBe(true);
 	});
 
 	it('passes when no txData', () => {
-		expect(evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: undefined }))).toBe(true);
+		expect(evaluate(ENABLED, makeContext({ txData: undefined }))).toBe(true);
 	});
 });
 
@@ -107,15 +102,11 @@ describe('blockInfiniteApprovals — ERC-20 approve()', () => {
 
 describe('blockInfiniteApprovals — increaseAllowance()', () => {
 	it('blocks MAX_UINT256 increaseAllowance', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: INCREASE_ALLOWANCE_MAX })),
-		).toBe(false);
+		expect(evaluate(ENABLED, makeContext({ txData: INCREASE_ALLOWANCE_MAX }))).toBe(false);
 	});
 
 	it('allows small increaseAllowance', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: INCREASE_ALLOWANCE_SMALL })),
-		).toBe(true);
+		expect(evaluate(ENABLED, makeContext({ txData: INCREASE_ALLOWANCE_SMALL }))).toBe(true);
 	});
 });
 
@@ -123,15 +114,11 @@ describe('blockInfiniteApprovals — increaseAllowance()', () => {
 
 describe('blockInfiniteApprovals — Permit2 approve()', () => {
 	it('blocks MAX_UINT160 Permit2 approve', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: PERMIT2_APPROVE_MAX })),
-		).toBe(false);
+		expect(evaluate(ENABLED, makeContext({ txData: PERMIT2_APPROVE_MAX }))).toBe(false);
 	});
 
 	it('allows small Permit2 approve', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: PERMIT2_APPROVE_SMALL })),
-		).toBe(true);
+		expect(evaluate(ENABLED, makeContext({ txData: PERMIT2_APPROVE_SMALL }))).toBe(true);
 	});
 });
 
@@ -139,15 +126,11 @@ describe('blockInfiniteApprovals — Permit2 approve()', () => {
 
 describe('blockInfiniteApprovals — setApprovalForAll()', () => {
 	it('blocks setApprovalForAll(operator, true)', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: SET_APPROVAL_FOR_ALL_TRUE })),
-		).toBe(false);
+		expect(evaluate(ENABLED, makeContext({ txData: SET_APPROVAL_FOR_ALL_TRUE }))).toBe(false);
 	});
 
 	it('allows setApprovalForAll(operator, false) (revoking)', () => {
-		expect(
-			evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: SET_APPROVAL_FOR_ALL_FALSE })),
-		).toBe(true);
+		expect(evaluate(ENABLED, makeContext({ txData: SET_APPROVAL_FOR_ALL_FALSE }))).toBe(true);
 	});
 });
 
@@ -155,18 +138,16 @@ describe('blockInfiniteApprovals — setApprovalForAll()', () => {
 
 describe('blockInfiniteApprovals — non-approval calls', () => {
 	it('passes for ERC-20 transfer()', () => {
-		expect(evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: TRANSFER_CALL }))).toBe(
-			true,
-		);
+		expect(evaluate(ENABLED, makeContext({ txData: TRANSFER_CALL }))).toBe(true);
 	});
 
 	it('passes for plain ETH transfer (no data)', () => {
-		expect(evaluateBlockInfiniteApprovals(ENABLED, makeContext({ txData: '0x' }))).toBe(true);
+		expect(evaluate(ENABLED, makeContext({ txData: '0x' }))).toBe(true);
 	});
 
 	it('passes for unknown selector', () => {
 		expect(
-			evaluateBlockInfiniteApprovals(
+			evaluate(
 				ENABLED,
 				makeContext({
 					txData: '0xdeadbeef0000000000000000000000000000000000000000000000000000000000000000',
@@ -210,38 +191,37 @@ describe('evaluateCriterion dispatches blockInfiniteApprovals', () => {
 // ─── USD Limits ──────────────────────────────────────────────────────────────
 
 describe('evaluateMaxPerTxUsd', () => {
+	const evalUsd = maxPerTxUsdEvaluator.evaluate.bind(maxPerTxUsdEvaluator);
+
 	it('passes when valueUsd <= maxUsd', () => {
-		expect(
-			evaluateMaxPerTxUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 50 })),
-		).toBe(true);
+		expect(evalUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 50 }))).toBe(true);
 	});
 
 	it('passes at exact limit', () => {
-		expect(
-			evaluateMaxPerTxUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 100 })),
-		).toBe(true);
+		expect(evalUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 100 }))).toBe(
+			true,
+		);
 	});
 
 	it('fails when over limit', () => {
-		expect(
-			evaluateMaxPerTxUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 101 })),
-		).toBe(false);
+		expect(evalUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: 101 }))).toBe(
+			false,
+		);
 	});
 
 	it('fails when no price data (fail-closed)', () => {
 		expect(
-			evaluateMaxPerTxUsd(
-				{ type: 'maxPerTxUsd', maxUsd: 100 },
-				makeContext({ valueUsd: undefined }),
-			),
+			evalUsd({ type: 'maxPerTxUsd', maxUsd: 100 }, makeContext({ valueUsd: undefined })),
 		).toBe(false);
 	});
 });
 
 describe('evaluateDailyLimitUsd', () => {
+	const evalUsd = dailyLimitUsdEvaluator.evaluate.bind(dailyLimitUsdEvaluator);
+
 	it('passes when rolling + current <= limit', () => {
 		expect(
-			evaluateDailyLimitUsd(
+			evalUsd(
 				{ type: 'dailyLimitUsd', maxUsd: 1000 },
 				makeContext({ rollingDailySpendUsd: 500, valueUsd: 200 }),
 			),
@@ -250,7 +230,7 @@ describe('evaluateDailyLimitUsd', () => {
 
 	it('fails when rolling + current > limit', () => {
 		expect(
-			evaluateDailyLimitUsd(
+			evalUsd(
 				{ type: 'dailyLimitUsd', maxUsd: 1000 },
 				makeContext({ rollingDailySpendUsd: 900, valueUsd: 200 }),
 			),
@@ -259,7 +239,7 @@ describe('evaluateDailyLimitUsd', () => {
 
 	it('fails when valueUsd is undefined (fail-closed)', () => {
 		expect(
-			evaluateDailyLimitUsd(
+			evalUsd(
 				{ type: 'dailyLimitUsd', maxUsd: 1000 },
 				makeContext({ rollingDailySpendUsd: 500, valueUsd: undefined }),
 			),
@@ -268,7 +248,7 @@ describe('evaluateDailyLimitUsd', () => {
 
 	it('fails when rollingDailySpendUsd is undefined (fail-closed)', () => {
 		expect(
-			evaluateDailyLimitUsd(
+			evalUsd(
 				{ type: 'dailyLimitUsd', maxUsd: 1000 },
 				makeContext({ rollingDailySpendUsd: undefined, valueUsd: 100 }),
 			),
@@ -277,9 +257,11 @@ describe('evaluateDailyLimitUsd', () => {
 });
 
 describe('evaluateMonthlyLimitUsd', () => {
+	const evalUsd = monthlyLimitUsdEvaluator.evaluate.bind(monthlyLimitUsdEvaluator);
+
 	it('passes when under limit', () => {
 		expect(
-			evaluateMonthlyLimitUsd(
+			evalUsd(
 				{ type: 'monthlyLimitUsd', maxUsd: 5000 },
 				makeContext({ rollingMonthlySpendUsd: 2000, valueUsd: 500 }),
 			),
@@ -288,7 +270,7 @@ describe('evaluateMonthlyLimitUsd', () => {
 
 	it('fails when over limit', () => {
 		expect(
-			evaluateMonthlyLimitUsd(
+			evalUsd(
 				{ type: 'monthlyLimitUsd', maxUsd: 5000 },
 				makeContext({ rollingMonthlySpendUsd: 4800, valueUsd: 500 }),
 			),
@@ -296,19 +278,126 @@ describe('evaluateMonthlyLimitUsd', () => {
 	});
 });
 
-// ─── Advisory evaluators ─────────────────────────────────────────────────────
+// ─── maxSlippage ─────────────────────────────────────────────────────────────
 
-describe('evaluateMaxSlippage (advisory)', () => {
-	it('always returns true (v1 advisory)', () => {
-		expect(evaluateMaxSlippage({ type: 'maxSlippage', maxPercent: 2 }, makeContext())).toBe(true);
+/** swapExactTokensForTokens(amountIn=1000, amountOutMin=0, ...) — zero slippage */
+const SWAP_ZERO_SLIPPAGE =
+	'0x38ed173900000000000000000000000000000000000000000000000000000000000003e80000000000000000000000000000000000000000000000000000000000000000';
+
+/** swapExactTokensForTokens(amountIn=1000, amountOutMin=900, ...) — normal slippage */
+const SWAP_NORMAL_SLIPPAGE =
+	'0x38ed173900000000000000000000000000000000000000000000000000000000000003e80000000000000000000000000000000000000000000000000000000000000384';
+
+/** swapExactETHForTokens(amountOutMin=0, ...) — zero slippage on ETH swap */
+const SWAP_ETH_ZERO_SLIPPAGE =
+	'0x7ff36ab50000000000000000000000000000000000000000000000000000000000000000';
+
+/** swapExactETHForTokens(amountOutMin=500, ...) — normal ETH swap */
+const SWAP_ETH_NORMAL =
+	'0x7ff36ab500000000000000000000000000000000000000000000000000000000000001f4';
+
+describe('evaluateMaxSlippage', () => {
+	const evalSlippage = maxSlippageEvaluator.evaluate.bind(maxSlippageEvaluator);
+
+	it('passes for non-swap transactions', () => {
+		expect(
+			evalSlippage({ type: 'maxSlippage', maxPercent: 2 }, makeContext({ txData: TRANSFER_CALL })),
+		).toBe(true);
+	});
+
+	it('passes for plain ETH transfer (no data)', () => {
+		expect(
+			evalSlippage({ type: 'maxSlippage', maxPercent: 2 }, makeContext({ txData: undefined })),
+		).toBe(true);
+	});
+
+	it('blocks swapExactTokensForTokens with amountOutMin=0', () => {
+		expect(
+			evalSlippage(
+				{ type: 'maxSlippage', maxPercent: 2 },
+				makeContext({ txData: SWAP_ZERO_SLIPPAGE }),
+			),
+		).toBe(false);
+	});
+
+	it('passes swapExactTokensForTokens within maxPercent', () => {
+		// amountIn=1000, amountOutMin=900 → 10% slippage. maxPercent=15 → passes.
+		expect(
+			evalSlippage(
+				{ type: 'maxSlippage', maxPercent: 15 },
+				makeContext({ txData: SWAP_NORMAL_SLIPPAGE }),
+			),
+		).toBe(true);
+	});
+
+	it('blocks swapExactTokensForTokens exceeding maxPercent', () => {
+		// amountIn=1000, amountOutMin=900 → 10% slippage. maxPercent=5 → blocks.
+		expect(
+			evalSlippage(
+				{ type: 'maxSlippage', maxPercent: 5 },
+				makeContext({ txData: SWAP_NORMAL_SLIPPAGE }),
+			),
+		).toBe(false);
+	});
+
+	it('blocks swapExactETHForTokens with amountOutMin=0', () => {
+		expect(
+			evalSlippage(
+				{ type: 'maxSlippage', maxPercent: 2 },
+				makeContext({ txData: SWAP_ETH_ZERO_SLIPPAGE }),
+			),
+		).toBe(false);
+	});
+
+	it('passes swapExactETHForTokens with non-zero amountOutMin', () => {
+		expect(
+			evalSlippage(
+				{ type: 'maxSlippage', maxPercent: 2 },
+				makeContext({ txData: SWAP_ETH_NORMAL }),
+			),
+		).toBe(true);
 	});
 });
 
-describe('evaluateMevProtection (advisory)', () => {
-	it('always returns true (advisory)', () => {
-		expect(evaluateMevProtection({ type: 'mevProtection', enabled: true }, makeContext())).toBe(
-			true,
-		);
+// ─── mevProtection ───────────────────────────────────────────────────────────
+
+describe('evaluateMevProtection', () => {
+	const evalMev = mevProtectionEvaluator.evaluate.bind(mevProtectionEvaluator);
+
+	it('passes when disabled', () => {
+		expect(
+			evalMev(
+				{ type: 'mevProtection', enabled: false },
+				makeContext({ txData: SWAP_NORMAL_SLIPPAGE }),
+			),
+		).toBe(true);
+	});
+
+	it('passes for non-swap transactions', () => {
+		expect(
+			evalMev({ type: 'mevProtection', enabled: true }, makeContext({ txData: TRANSFER_CALL })),
+		).toBe(true);
+	});
+
+	it('passes for plain ETH transfers', () => {
+		expect(
+			evalMev({ type: 'mevProtection', enabled: true }, makeContext({ txData: undefined })),
+		).toBe(true);
+	});
+
+	it('blocks swap transactions when enabled (swapExactTokensForTokens)', () => {
+		expect(
+			evalMev(
+				{ type: 'mevProtection', enabled: true },
+				makeContext({ txData: SWAP_NORMAL_SLIPPAGE }),
+			),
+		).toBe(false);
+	});
+
+	it('blocks swap transactions when enabled (swapExactETHForTokens)', () => {
+		expect(
+			evalMev({ type: 'mevProtection', enabled: true }, makeContext({ txData: SWAP_ETH_NORMAL })),
+		).toBe(false);
 	});
 });
 

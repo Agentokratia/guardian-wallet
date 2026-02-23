@@ -140,7 +140,7 @@ export function Sidebar() {
 								size="sm"
 								className={health?.vault?.connected ? 'text-text-muted' : 'text-danger/80'}
 							>
-								{health?.vault?.connected ? 'Vault connected' : 'Vault offline'}
+								{health?.vault?.connected ? 'Secure storage' : 'Storage offline'}
 							</Mono>
 						</div>
 					</TooltipTrigger>

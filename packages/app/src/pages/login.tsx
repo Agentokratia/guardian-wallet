@@ -30,7 +30,7 @@ const PROMISES = [
 	},
 	{
 		headline: 'Autonomy with guardrails.',
-		body: 'Spending limits. Allowlists. Time windows. Agents operate freely within rules that math enforces. Every transaction logged. Every policy honored. No exceptions.',
+		body: 'Spending limits. Approved contracts. Time windows. Agents operate freely within rules that math enforces. Every transaction logged. Every guardrail honored. No exceptions.',
 	},
 	{
 		headline: 'Three paths in. Zero ways to lose.',
@@ -56,7 +56,7 @@ const FAQ_ITEMS = [
 	},
 	{
 		q: 'Can agents sign transactions autonomously?',
-		a: 'Yes. The Signer + Server path lets agents sign using their share and the server share, without any human intervention. Policy rules (spending limits, allowlists, rate limits) control what the agent can do.',
+		a: 'Yes. The Signer + Server path lets agents sign using their share and the server share, without any human intervention. Guardrails (spending limits, approved contracts, rate limits) control what the agent can do.',
 	},
 	{
 		q: 'What if the server goes down?',
@@ -68,7 +68,7 @@ const FAQ_ITEMS = [
 	},
 	{
 		q: 'Is this self-hosted?',
-		a: 'Yes. Guardian runs on dedicated infrastructure. Docker Compose brings up the server, Vault, and database in one command. The operator owns the shares, the policies, and the audit log.',
+		a: 'Yes. Guardian runs on dedicated infrastructure. Docker Compose brings up the server, Vault, and database in one command. The operator owns the shares, the guardrails, and the audit log.',
 	},
 ];
 
@@ -521,7 +521,7 @@ export function LoginPage() {
 									<div className="aspect-square rounded-2xl border border-border bg-surface flex items-center justify-center">
 										<div className="text-center px-6">
 											<div className="text-[11px] font-bold uppercase tracking-[0.2em] text-text-dim mb-3">
-												{i === 0 ? 'Key Security' : i === 1 ? 'Policy Engine' : 'Recovery'}
+												{i === 0 ? 'Key Security' : i === 1 ? 'Guardrails' : 'Recovery'}
 											</div>
 											<div className="font-serif text-lg text-text">
 												{i === 0

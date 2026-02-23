@@ -3,8 +3,9 @@
  *
  * Adding a new criterion:
  * 1. Add interface to `../types/rules.ts` + update Criterion union
- * 2. Add evaluator to `packages/server/src/policies/criteria-evaluators.ts`
- * 3. Add CriterionMeta entry here
+ * 2. Add CriterionMeta entry here
+ * 3. Create `packages/server/src/policies/evaluators/my-new.evaluator.ts`
+ * 4. Add 1 line to EVALUATORS in `evaluators/index.ts` (forget → build fails)
  *
  * Zero UI changes required — the builder reads this catalog dynamically.
  */
@@ -42,7 +43,7 @@ const ethValue: CriterionMeta = {
 		value: c.value ?? '0',
 	}),
 	validate: (v) => {
-		if (v.value === undefined || v.value === '') return 'Value is required';
+		if (v.value === undefined || v.value === '') return 'Enter a max transaction value';
 		return null;
 	},
 };
@@ -116,7 +117,7 @@ const evmNetwork: CriterionMeta = {
 	}),
 	validate: (v) => {
 		const ids = v.chainIds as number[] | undefined;
-		if (!ids || ids.length === 0) return 'Select at least one chain';
+		if (!ids || ids.length === 0) return 'Select at least one network';
 		return null;
 	},
 };
@@ -172,16 +173,17 @@ const rateLimit: CriterionMeta = {
 	description: 'Max signing requests per hour.',
 	category: 'limits',
 	fields: [{ key: 'maxPerHour', label: 'Max per hour', type: 'number', required: true, min: 1 }],
-	toCriterion: (v) => ({
-		type: 'rateLimit',
-		maxPerHour: Number(v.maxPerHour) || 10,
-	}),
+	toCriterion: (v) => {
+		const n = Number(v.maxPerHour);
+		if (!n || n <= 0) throw new Error('rateLimit maxPerHour must be a positive number');
+		return { type: 'rateLimit', maxPerHour: n };
+	},
 	fromCriterion: (c) => ({
 		maxPerHour: c.maxPerHour ?? 10,
 	}),
 	validate: (v) => {
 		const n = Number(v.maxPerHour);
-		if (!n || n <= 0) return 'Must be a positive number';
+		if (!n || n <= 0) return 'Enter a rate limit (requests per hour)';
 		return null;
 	},
 };
@@ -207,8 +209,9 @@ const timeWindow: CriterionMeta = {
 	validate: (v) => {
 		const s = Number(v.startHour);
 		const e = Number(v.endHour);
-		if (s < 0 || s > 23) return 'Start hour must be 0-23';
-		if (e < 0 || e > 23) return 'End hour must be 0-23';
+		if (s < 0 || s > 23) return 'Start hour must be between 0 and 23';
+		if (e < 0 || e > 23) return 'End hour must be between 0 and 23';
+		if (s === e) return 'Start and end hours must be different';
 		return null;
 	},
 };
@@ -218,7 +221,7 @@ const maxPerTxUsd: CriterionMeta = {
 	label: 'Per transaction',
 	description: 'Max outgoing value per transaction.',
 	category: 'limits',
-	fields: [{ key: 'maxUsd', label: 'Max USD', type: 'usd', unit: 'USD', required: true, min: 0 }],
+	fields: [{ key: 'maxUsd', label: 'Max USD', type: 'usd', unit: 'USD', required: true, min: 1 }],
 	toCriterion: (v) => ({
 		type: 'maxPerTxUsd',
 		maxUsd: Number(v.maxUsd) || 0,
@@ -228,7 +231,7 @@ const maxPerTxUsd: CriterionMeta = {
 	}),
 	validate: (v) => {
 		const n = Number(v.maxUsd);
-		if (Number.isNaN(n) || n < 0) return 'Must be a non-negative number';
+		if (Number.isNaN(n) || n <= 0) return 'Enter a max amount per transaction';
 		return null;
 	},
 };
@@ -239,7 +242,7 @@ const dailyLimitUsd: CriterionMeta = {
 	description: 'Rolling 24-hour spending cap.',
 	category: 'limits',
 	fields: [
-		{ key: 'maxUsd', label: 'Max USD per day', type: 'usd', unit: 'USD', required: true, min: 0 },
+		{ key: 'maxUsd', label: 'Max USD per day', type: 'usd', unit: 'USD', required: true, min: 1 },
 	],
 	toCriterion: (v) => ({
 		type: 'dailyLimitUsd',
@@ -250,7 +253,7 @@ const dailyLimitUsd: CriterionMeta = {
 	}),
 	validate: (v) => {
 		const n = Number(v.maxUsd);
-		if (Number.isNaN(n) || n < 0) return 'Must be a non-negative number';
+		if (Number.isNaN(n) || n <= 0) return 'Enter a daily spending limit';
 		return null;
 	},
 };
@@ -261,7 +264,7 @@ const monthlyLimitUsd: CriterionMeta = {
 	description: 'Rolling 30-day spending cap.',
 	category: 'limits',
 	fields: [
-		{ key: 'maxUsd', label: 'Max USD per month', type: 'usd', unit: 'USD', required: true, min: 0 },
+		{ key: 'maxUsd', label: 'Max USD per month', type: 'usd', unit: 'USD', required: true, min: 1 },
 	],
 	toCriterion: (v) => ({
 		type: 'monthlyLimitUsd',
@@ -272,7 +275,7 @@ const monthlyLimitUsd: CriterionMeta = {
 	}),
 	validate: (v) => {
 		const n = Number(v.maxUsd);
-		if (Number.isNaN(n) || n < 0) return 'Must be a non-negative number';
+		if (Number.isNaN(n) || n <= 0) return 'Enter a monthly spending limit';
 		return null;
 	},
 };
@@ -319,18 +322,17 @@ const maxSlippage: CriterionMeta = {
 	}),
 	validate: (v) => {
 		const n = Number(v.maxPercent);
-		if (Number.isNaN(n) || n < 0 || n > 100) return 'Must be 0-100';
+		if (Number.isNaN(n) || n < 0 || n > 100) return 'Enter a slippage percentage (0–100)';
 		return null;
 	},
 };
 
 const mevProtection: CriterionMeta = {
 	type: 'mevProtection',
-	label: 'MEV protection',
+	label: 'Front-running protection',
 	description:
-		'Flag transactions not using a private mempool. Advisory — logs a warning, does not block.',
+		'Block swap transactions at risk of being front-run by other traders. Prevents sandwich attacks.',
 	category: 'defi-safety',
-	advisory: true,
 	fields: [{ key: 'enabled', label: 'Enabled', type: 'toggle' }],
 	toCriterion: (v) => ({
 		type: 'mevProtection',
@@ -344,21 +346,8 @@ const mevProtection: CriterionMeta = {
 
 const maliciousAddressBlacklist: CriterionMeta = {
 	type: 'maliciousAddressBlacklist',
-	label: 'Scam address blacklist',
-	description: 'Known malicious addresses blocked automatically. Expand via pnpm update-blacklist.',
-	category: 'security',
-	alwaysOn: true,
-	fields: [],
-	toCriterion: () => ({}),
-	fromCriterion: () => ({}),
-	validate: () => null,
-};
-
-const contractBytecodeCheck: CriterionMeta = {
-	type: 'contractBytecodeCheck',
-	label: 'Contract scanner',
-	description:
-		'Checks if the target address is a contract. Flags unverified contracts in the audit log.',
+	label: 'Scam address protection',
+	description: 'Known malicious and burn addresses blocked automatically.',
 	category: 'security',
 	alwaysOn: true,
 	fields: [],
@@ -390,7 +379,6 @@ export const CRITERION_CATALOG: readonly CriterionMeta[] = [
 	mevProtection,
 	// Security (always-on)
 	maliciousAddressBlacklist,
-	contractBytecodeCheck,
 	// Network
 	evmNetwork,
 	// Advanced

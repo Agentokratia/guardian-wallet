@@ -117,7 +117,7 @@ function TokenRow({
 					<div className="flex items-center gap-1.5">
 						<span className="text-[12px] font-semibold text-text">{token.symbol}</span>
 						{canExpand && (
-							<span className="text-[9px] text-text-dim">{token.networks.length} nets</span>
+							<span className="text-[9px] text-text-dim">{token.networks.length} networks</span>
 						)}
 					</div>
 					<div className="text-[10px] text-text-dim truncate">{token.name}</div>
@@ -378,7 +378,7 @@ export function SignerDetailPage() {
 				<div className="rounded-xl border border-border bg-surface px-6 py-10 text-center">
 					<p className="text-sm font-medium text-text-muted">Account not found</p>
 					<p className="mt-1 text-[11px] text-text-dim">
-						This signer may have been removed or the ID is invalid.
+						This account may have been removed or the ID is invalid.
 					</p>
 					<Link
 						to="/signers"
@@ -555,10 +555,10 @@ export function SignerDetailPage() {
 							</div>
 						</div>
 					) : (
-						<div className="px-4 py-5 text-center">
-							<p className="text-[11px] text-text-dim">No guardrails configured.</p>
+						<div className="px-4 py-5 text-center border-t border-warning/10 bg-warning/[0.02]">
+							<p className="text-[11px] text-warning font-medium">No guardrails configured</p>
 							<p className="mt-1 text-[10px] text-text-dim/70">
-								Set spending limits, whitelist contracts, and block exploits.
+								Set spending limits, approve contracts, and block exploits.
 							</p>
 						</div>
 					)}
@@ -605,7 +605,7 @@ export function SignerDetailPage() {
 						<div className="flex gap-3 border-t border-border px-4 py-2.5">
 							{[
 								{
-									label: 'Policy',
+									label: 'Guardrails',
 									value: certification.policyPosture.total,
 									max: 45,
 								},
@@ -712,7 +712,7 @@ export function SignerDetailPage() {
 				) : (
 					<div className="rounded-xl border border-dashed border-border bg-surface px-5 py-6 text-center">
 						<p className="text-[12px] font-medium text-text-muted">No tokens tracked</p>
-						<p className="mt-1 text-[10px] text-text-dim">Add ERC-20 tokens to monitor balances.</p>
+						<p className="mt-1 text-[10px] text-text-dim">Add tokens to track balances.</p>
 					</div>
 				)}
 			</div>
