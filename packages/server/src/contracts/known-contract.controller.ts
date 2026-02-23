@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
 import { SessionGuard } from '../common/session.guard.js';
-import type { CreateContractDto } from './dto/create-contract.dto.js';
+import { CreateContractDto } from './dto/create-contract.dto.js';
 import { KnownContractRepository } from './known-contract.repository.js';
 
 @Controller('contracts')

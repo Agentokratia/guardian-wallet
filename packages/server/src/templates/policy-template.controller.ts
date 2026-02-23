@@ -14,8 +14,8 @@ import {
 } from '@nestjs/common';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
 import { SessionGuard } from '../common/session.guard.js';
-import type { CreatePolicyTemplateDto } from './dto/create-template.dto.js';
-import type { UpdatePolicyTemplateDto } from './dto/update-template.dto.js';
+import { CreatePolicyTemplateDto } from './dto/create-template.dto.js';
+import { UpdatePolicyTemplateDto } from './dto/update-template.dto.js';
 import { PolicyTemplateRepository } from './policy-template.repository.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

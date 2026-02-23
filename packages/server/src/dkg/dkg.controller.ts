@@ -3,8 +3,8 @@ import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { SessionGuard } from '../common/session.guard.js';
 import { SignerRepository } from '../signers/signer.repository.js';
 import { DKGService } from './dkg.service.js';
-import type { FinalizeDkgDto } from './dto/finalize-dkg.dto.js';
-import type { InitDkgDto } from './dto/init-dkg.dto.js';
+import { FinalizeDkgDto } from './dto/finalize-dkg.dto.js';
+import { InitDkgDto } from './dto/init-dkg.dto.js';
 
 @Controller('dkg')
 @UseGuards(SessionGuard)
