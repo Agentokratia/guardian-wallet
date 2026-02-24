@@ -8,7 +8,7 @@
 	"dependencies": {
 		"@agentokratia/guardian-signer": "workspace:*",
 		"@ai-sdk/openai": "^1.2.0",
-		"ai": "^4.3.0",
+		"ai": "^5.0.52",
 		"viem": "^2.21.0",
 		"zod": "^3.23.0"
 	},
