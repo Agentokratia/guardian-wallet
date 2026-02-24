@@ -28,7 +28,9 @@
 		}
 	},
 	"files": ["dist"],
-	"engines": { "node": ">=20.0.0" },
+	"engines": {
+		"node": ">=20.0.0"
+	},
 	"private": true,
 	"scripts": {
 		"build": "tsc",

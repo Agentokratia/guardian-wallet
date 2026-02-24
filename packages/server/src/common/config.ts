@@ -108,6 +108,12 @@ export function parseConfig(): AppConfig {
 			throw new Error('KMS_LOCAL_KEY_FILE is required when KMS_PROVIDER=local-file');
 	}
 
+	const emailProvider = optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend';
+	const resendApiKey = optionalEnv('RESEND_API_KEY', '');
+	if (emailProvider === 'resend' && !resendApiKey) {
+		throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
+	}
+
 	return {
 		NODE_ENV: optionalEnv('NODE_ENV', 'development'),
 		PORT: port,
@@ -132,8 +138,8 @@ export function parseConfig(): AppConfig {
 			.split(',')
 			.map((s) => s.trim()),
 
-		EMAIL_PROVIDER: optionalEnv('EMAIL_PROVIDER', 'console') as 'console' | 'resend',
-		RESEND_API_KEY: optionalEnv('RESEND_API_KEY', ''),
+		EMAIL_PROVIDER: emailProvider,
+		RESEND_API_KEY: resendApiKey,
 
 		PUBLIC_CREATE_LIMIT: parsePoolInt('PUBLIC_CREATE_LIMIT', '20'),
 

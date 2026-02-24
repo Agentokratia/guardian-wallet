@@ -11,16 +11,19 @@ import {
 	ConflictException,
 	Inject,
 	Injectable,
+	InternalServerErrorException,
 	Logger,
 	NotFoundException,
 	UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/types';
+import { Resend } from 'resend';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
 import { SupabaseService } from '../common/supabase.service.js';
 import { ChallengeStore } from './challenge-store.js';
 import type { CreateTokenInput } from './session.service.js';
 import { SessionService } from './session.service.js';
+import { renderOtpEmail } from './templates/otp-email.js';
 
 export interface AuthResult {
 	token: string;
@@ -32,13 +35,16 @@ export interface AuthResult {
 @Injectable()
 export class AuthService {
 	private readonly logger = new Logger(AuthService.name);
+	private readonly resend: Resend | null;
 
 	constructor(
 		@Inject(ChallengeStore) private readonly challengeStore: ChallengeStore,
 		@Inject(SessionService) private readonly sessionService: SessionService,
 		@Inject(SupabaseService) private readonly supabase: SupabaseService,
 		@Inject(APP_CONFIG) private readonly config: AppConfig,
-	) {}
+	) {
+		this.resend = config.EMAIL_PROVIDER === 'resend' ? new Resend(config.RESEND_API_KEY) : null;
+	}
 
 	/**
 	 * Step 1: Register email — create user if new, send OTP.
@@ -106,10 +112,20 @@ export class AuthService {
 		}
 
 		// Send OTP
-		if (this.config.EMAIL_PROVIDER === 'console') {
-			this.logger.log(`[DEV] OTP for ${normalized}: ${otp.code}`);
+		if (this.resend) {
+			const email = renderOtpEmail(otp.code);
+			const { error: sendError } = await this.resend.emails.send({
+				from: 'Guardian Wallet <noreply@agentokratia.com>',
+				to: normalized,
+				subject: email.subject,
+				text: email.text,
+				html: email.html,
+			});
+			if (sendError) {
+				this.logger.error(`Failed to send OTP email: ${JSON.stringify(sendError)}`);
+				throw new InternalServerErrorException('Failed to send verification email');
+			}
 		} else {
-			// TODO: Implement Resend email sending
 			this.logger.log(`[DEV] OTP for ${normalized}: ${otp.code}`);
 		}
 

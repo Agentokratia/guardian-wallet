@@ -13,8 +13,8 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const CONFIG_DIR = join(homedir(), '.guardian-wallet');
 const TEST_NAME = `test-anon-${Date.now()}`;
@@ -39,7 +39,7 @@ async function main() {
 		throw new Error(`Create failed: ${createRes.status} ${text}`);
 	}
 
-	const result = await createRes.json() as {
+	const result = (await createRes.json()) as {
 		signerId: string;
 		ethAddress: string;
 		apiKey: string;
@@ -50,7 +50,9 @@ async function main() {
 	console.log(`    signerId:  ${result.signerId}`);
 	console.log(`    address:   ${result.ethAddress}`);
 	console.log(`    apiKey:    ${result.apiKey.slice(0, 20)}...`);
-	console.log(`    shares:    signer=${result.signerShare.length} chars, user=${result.userShare.length} chars`);
+	console.log(
+		`    shares:    signer=${result.signerShare.length} chars, user=${result.userShare.length} chars`,
+	);
 	assert(result.signerId, 'signerId missing');
 	assert(result.ethAddress.startsWith('0x'), 'ethAddress missing');
 	assert(result.apiKey.startsWith('gw_live_'), 'apiKey missing prefix');
@@ -139,7 +141,7 @@ async function main() {
 		headers: { 'x-api-key': loadedConfig.apiKey },
 	});
 	assert(listRes.status === 200, `Expected 200, got ${listRes.status}`);
-	const signers = await listRes.json() as { name: string; ethAddress: string; status: string }[];
+	const signers = (await listRes.json()) as { name: string; ethAddress: string; status: string }[];
 	assert(signers.length > 0, 'No signers returned');
 	assert(signers[0]!.ethAddress === result.ethAddress, 'Address mismatch');
 	console.log(`    Signer: ${signers[0]!.name} (${signers[0]!.ethAddress.slice(0, 6)}...)`);
@@ -155,9 +157,12 @@ async function main() {
 			'X-Admin-Token': hash,
 		},
 	});
-	const pauseBody = await pauseRes.json() as { status: string };
+	const pauseBody = (await pauseRes.json()) as { status: string };
 	console.log(`    Status: ${pauseRes.status}, signer: ${pauseBody.status}`);
-	assert(pauseRes.status === 200 || pauseRes.status === 201, `Expected 200/201, got ${pauseRes.status}`);
+	assert(
+		pauseRes.status === 200 || pauseRes.status === 201,
+		`Expected 200/201, got ${pauseRes.status}`,
+	);
 	assert(pauseBody.status === 'paused', `Expected paused, got ${pauseBody.status}`);
 	console.log('    PASS\n');
 
@@ -171,9 +176,12 @@ async function main() {
 			'X-Admin-Token': hash,
 		},
 	});
-	const resumeBody = await resumeRes.json() as { status: string };
+	const resumeBody = (await resumeRes.json()) as { status: string };
 	console.log(`    Status: ${resumeRes.status}, signer: ${resumeBody.status}`);
-	assert(resumeRes.status === 200 || resumeRes.status === 201, `Expected 200/201, got ${resumeRes.status}`);
+	assert(
+		resumeRes.status === 200 || resumeRes.status === 201,
+		`Expected 200/201, got ${resumeRes.status}`,
+	);
 	assert(resumeBody.status === 'active', `Expected active, got ${resumeBody.status}`);
 	console.log('    PASS\n');
 
@@ -200,11 +208,14 @@ async function main() {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ signerId: result.signerId, adminToken: hash }),
 	});
-	const tokenBody = await tokenRes.json() as { token: string; expiresIn: string };
+	const tokenBody = (await tokenRes.json()) as { token: string; expiresIn: string };
 	console.log(`    Status: ${tokenRes.status}`);
 	console.log(`    Token: ${tokenBody.token?.slice(0, 30)}...`);
 	console.log(`    Expires: ${tokenBody.expiresIn}`);
-	assert(tokenRes.status === 200 || tokenRes.status === 201, `Expected 200/201, got ${tokenRes.status}`);
+	assert(
+		tokenRes.status === 200 || tokenRes.status === 201,
+		`Expected 200/201, got ${tokenRes.status}`,
+	);
 	assert(tokenBody.token?.startsWith('eyJ'), 'Token should be JWT');
 	console.log('    PASS\n');
 
@@ -216,9 +227,12 @@ async function main() {
 		method: 'POST',
 		headers: { 'X-Admin-Token': tokenBody.token },
 	});
-	const jwtBody = await jwtPauseRes.json() as { status: string };
+	const jwtBody = (await jwtPauseRes.json()) as { status: string };
 	console.log(`    Status: ${jwtPauseRes.status}, signer: ${jwtBody.status}`);
-	assert(jwtPauseRes.status === 200 || jwtPauseRes.status === 201, `Expected 200/201, got ${jwtPauseRes.status}`);
+	assert(
+		jwtPauseRes.status === 200 || jwtPauseRes.status === 201,
+		`Expected 200/201, got ${jwtPauseRes.status}`,
+	);
 	assert(jwtBody.status === 'paused', `Expected paused, got ${jwtBody.status}`);
 	console.log('    PASS\n');
 
@@ -226,9 +240,15 @@ async function main() {
 	// Cleanup
 	// =========================================================================
 	console.log('  Cleaning up test files...');
-	try { rmSync(configPath); } catch {}
-	try { rmSync(userSharePath); } catch {}
-	try { rmSync(adminPath); } catch {}
+	try {
+		rmSync(configPath);
+	} catch {}
+	try {
+		rmSync(userSharePath);
+	} catch {}
+	try {
+		rmSync(adminPath);
+	} catch {}
 	console.log('    Done\n');
 
 	console.log('  ==========================================');

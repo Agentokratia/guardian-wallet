@@ -1,7 +1,7 @@
 {
 	"name": "@agentokratia/guardian-signer",
 	"version": "0.1.0",
-	"description": "SDK for threshold signing \u2014 the key never exists",
+	"description": "SDK for threshold signing — the key never exists",
 	"license": "Apache-2.0",
 	"author": "Agentokratia <hello@agentokratia.com>",
 	"repository": {
@@ -22,8 +22,12 @@
 		}
 	},
 	"files": ["dist"],
-	"engines": { "node": ">=20.0.0" },
-	"publishConfig": { "access": "public" },
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "tsc",
 		"lint": "biome check src/",
