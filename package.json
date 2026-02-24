@@ -27,6 +27,9 @@
 		"example:mcp": "tsx --env-file=examples/.env examples/mcp/test-tools.ts",
 		"example:mcp-agent": "tsx --env-file=examples/.env examples/mcp/llm-agent.ts",
 		"example:claude-agent": "tsx --env-file=examples/.env examples/claude-agent-sdk/agent.ts",
+		"changeset": "changeset",
+		"version-packages": "changeset version",
+		"release": "changeset publish",
 		"prepare": "husky"
 	},
 	"lint-staged": {
@@ -35,6 +38,8 @@
 	"devDependencies": {
 		"@anthropic-ai/sdk": "^0.75.0",
 		"@biomejs/biome": "^1.9.0",
+		"@changesets/changelog-github": "^0.5.2",
+		"@changesets/cli": "^2.29.8",
 		"@google/generative-ai": "^0.24.1",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.2.7",

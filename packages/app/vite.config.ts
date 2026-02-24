@@ -41,6 +41,25 @@ export default defineConfig({
 			external: [
 				'env', // WASM host import (provided by WebAssembly runtime)
 			],
+			output: {
+				manualChunks: {
+					'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+					'vendor-ui': [
+						'@radix-ui/react-dialog',
+						'@radix-ui/react-select',
+						'@radix-ui/react-tabs',
+						'@radix-ui/react-tooltip',
+						'@radix-ui/react-toast',
+						'@radix-ui/react-scroll-area',
+						'@radix-ui/react-switch',
+						'@radix-ui/react-separator',
+						'@radix-ui/react-slot',
+					],
+					'vendor-icons': ['lucide-react'],
+					'vendor-query': ['@tanstack/react-query'],
+					'vendor-viem': ['viem'],
+				},
+			},
 		},
 	},
 	server: {

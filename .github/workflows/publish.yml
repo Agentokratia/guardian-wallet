@@ -1,13 +1,18 @@
-name: Publish Guardian Wallet packages
+name: Release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -18,51 +23,34 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
 
-      - name: Upgrade npm for OIDC support
-        run: npm install -g npm@latest
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Get version from package.json
-        id: version
-        run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> $GITHUB_OUTPUT
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/mpc-wasm
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
 
       - name: Install dependencies
         run: pnpm install
 
       - name: Build all packages
-        run: pnpm -r build
+        run: pnpm build
 
-      - name: Publish @agentokratia/guardian-core
-        working-directory: packages/core
-        run: npm publish --access public
-        continue-on-error: true
+      - name: Run tests
+        run: pnpm test
 
-      - name: Publish @agentokratia/guardian-mpc-wasm
-        working-directory: packages/mpc-wasm
-        run: npm publish --access public
-        continue-on-error: true
-
-      - name: Publish @agentokratia/guardian-schemes
-        working-directory: packages/schemes
-        run: npm publish --access public
-        continue-on-error: true
-
-      - name: Publish @agentokratia/guardian-chains
-        working-directory: packages/chains
-        run: npm publish --access public
-        continue-on-error: true
-
-      - name: Publish @agentokratia/guardian-signer
-        working-directory: packages/signer
-        run: npm publish --access public
-        continue-on-error: true
-
-      - name: Publish @agentokratia/guardian-wallet
-        working-directory: packages/wallet
-        run: npm publish --access public
-        continue-on-error: true
-
-      - name: Create git tag
-        run: |
-          git tag v${{ steps.version.outputs.version }}
-          git push origin v${{ steps.version.outputs.version }}
+      - name: Create release PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+          publish: pnpm changeset publish --provenance
+          title: 'chore: version packages'
+          commit: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

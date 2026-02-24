@@ -21,7 +21,7 @@
 	},
 	"private": true,
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/auth/templates',{recursive:true});cpSync('src/auth/templates/otp-email.html','dist/auth/templates/otp-email.html')\"",
 		"dev": "tsx watch --env-file=../../.env src/main.ts",
 		"start": "node dist/main.js",
 		"lint": "biome check src/",
@@ -45,6 +45,7 @@
 		"helmet": "^8.1.0",
 		"node-vault": "^0.10.2",
 		"reflect-metadata": "^0.2.0",
+		"resend": "^6.9.2",
 		"rxjs": "^7.8.0",
 		"viem": "^2.0.0"
 	},
