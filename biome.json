@@ -41,7 +41,15 @@
 		}
 	},
 	"files": {
-		"ignore": ["node_modules", "dist", ".next", "coverage", "wasm"]
+		"ignore": [
+			"node_modules",
+			"dist",
+			".next",
+			"coverage",
+			"wasm",
+			"packages/mpc-wasm/pkg",
+			"packages/mpc-wasm/pkg-web"
+		]
 	},
 	"overrides": [
 		{

@@ -1,0 +1,17 @@
+{
+  "name": "guardian-mpc-wasm",
+  "type": "module",
+  "description": "WASM wrapper for CGGMP24 threshold ECDSA — keygen, signing, presignatures",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "files": [
+    "guardian_mpc_wasm_bg.wasm",
+    "guardian_mpc_wasm.js",
+    "guardian_mpc_wasm.d.ts"
+  ],
+  "main": "guardian_mpc_wasm.js",
+  "types": "guardian_mpc_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
