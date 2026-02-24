@@ -18,6 +18,15 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/mpc-wasm
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
       - name: Install dependencies
         run: pnpm install
 
