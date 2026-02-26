@@ -2,7 +2,6 @@ import { GuardianLogo } from '@/components/guardian-logo';
 import { OTPInput } from '@/components/otp-input';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Mono } from '@/components/ui/mono';
 import { useAuth } from '@/hooks/use-auth';
 import {
 	ArrowRight,
@@ -16,7 +15,7 @@ import {
 	Mail,
 	MessageSquare,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 
 /* ========================================================================== */
@@ -72,7 +71,7 @@ const FAQ_ITEMS = [
 	},
 ];
 
-type AuthStep = 'email' | 'otp' | 'passkey' | 'login';
+type AuthStep = 'email' | 'passkey-or-otp' | 'otp' | 'setup-touchid';
 
 /* ========================================================================== */
 /*  Sub-components                                                             */
@@ -153,15 +152,30 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 /*  Auth Form                                                                  */
 /* ========================================================================== */
 
-function AuthForm() {
-	const { register, verifyOTP, completeRegistration, loginChallenge } = useAuth();
+function AuthForm({ onBlockRedirect }: { onBlockRedirect: (block: boolean) => void }) {
+	const { login, verifyOTP, passkeyLogin, setupPasskey, prfSupported } = useAuth();
 	const [step, setStep] = useState<AuthStep>('email');
 	const [email, setEmail] = useState('');
 	const [otpValue, setOtpValue] = useState('');
-	const [userId, setUserId] = useState('');
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const busyRef = useRef(false);
+	const hadPasskeyRef = useRef(false);
+	const [resendCooldown, setResendCooldown] = useState(0);
+	const [resendCount, setResendCount] = useState(0);
+	const RESEND_COOLDOWN_SECS = 60;
+	const RESEND_MAX = 4; // 1 initial + 4 resends = 5 total (matches server limit)
+
+	// Countdown timer for resend cooldown
+	useEffect(() => {
+		if (resendCooldown <= 0) return;
+		const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+		return () => clearTimeout(timer);
+	}, [resendCooldown]);
+
+	function startCooldown() {
+		setResendCooldown(RESEND_COOLDOWN_SECS);
+	}
 
 	async function handleEmailSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -170,36 +184,49 @@ function AuthForm() {
 		setError(null);
 		setLoading(true);
 		try {
-			// Try login first (existing user with passkeys)
-			await loginChallenge(email);
-			// If loginChallenge succeeds, passkey prompt was shown and auth completed
-		} catch (loginErr: unknown) {
-			const loginMsg = loginErr instanceof Error ? loginErr.message : '';
-			const isNotFound = loginMsg.includes('No account found') || loginMsg.includes('404');
-			const isNotComplete =
-				loginMsg.includes('registration not complete') || loginMsg.includes('No passkeys');
-
-			if (isNotFound || isNotComplete) {
-				// User doesn't exist or hasn't finished registration — start OTP flow
-				try {
-					const result = await register(email);
-					setUserId(result.userId);
-					setStep('otp');
-				} catch (regErr: unknown) {
-					const message =
-						regErr instanceof Error ? regErr.message : 'Failed to send verification code';
-					setError(message);
-				}
+			const { hasPasskey } = await login(email);
+			hadPasskeyRef.current = hasPasskey;
+			setResendCount(0);
+			startCooldown();
+			if (hasPasskey) {
+				setStep('passkey-or-otp');
 			} else {
-				// Check for ceremony abort (stale AbortController)
-				const code = (loginErr as { code?: string })?.code;
-				if (code === 'ERROR_CEREMONY_ABORTED') {
-					setError('Authentication was interrupted. Please try again.');
-				} else {
-					const message = loginMsg || 'Authentication failed';
-					setError(message);
-				}
+				setStep('otp');
 			}
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Failed to send verification code';
+			setError(message);
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	async function handlePasskeyLogin() {
+		setError(null);
+		setLoading(true);
+		try {
+			await passkeyLogin(email);
+			// Auth state updated → redirect handled by LoginPage
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Passkey authentication failed';
+			setError(message);
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	async function handleResend() {
+		if (resendCooldown > 0 || loading) return;
+		setError(null);
+		setLoading(true);
+		try {
+			await login(email, { sendOtp: true });
+			setResendCount((c) => c + 1);
+			startCooldown();
+			setOtpValue('');
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : 'Failed to resend code';
+			setError(message);
 		} finally {
 			setLoading(false);
 		}
@@ -210,11 +237,24 @@ function AuthForm() {
 		busyRef.current = true;
 		setError(null);
 		setLoading(true);
+
+		// Block redirect before verifyOTP if we'll show the Touch ID setup step
+		const shouldShowSetup = prfSupported && !hadPasskeyRef.current;
+		if (shouldShowSetup) {
+			onBlockRedirect(true);
+		}
+
 		try {
-			const result = await verifyOTP(email, code);
-			setUserId(result.userId);
-			setStep('passkey');
+			await verifyOTP(email, code);
+			// New user + PRF supported → show Touch ID setup step
+			if (shouldShowSetup) {
+				setStep('setup-touchid');
+			}
+			// Otherwise: redirect handled by LoginPage (isAuthenticated = true)
 		} catch (err: unknown) {
+			if (shouldShowSetup) {
+				onBlockRedirect(false);
+			}
 			const message = err instanceof Error ? err.message : 'Verification failed';
 			setError(message);
 			setOtpValue('');
@@ -224,27 +264,140 @@ function AuthForm() {
 		}
 	}
 
-	async function handleCreatePasskey() {
-		if (busyRef.current) return;
-		busyRef.current = true;
+	const handleTouchIdSetup = useCallback(async () => {
 		setError(null);
 		setLoading(true);
 		try {
-			await completeRegistration(userId);
-		} catch (err: unknown) {
-			// Check for WebAuthn ceremony abort — this is a programmatic abort
-			// (stale AbortController), not a user cancellation. Show a retry prompt.
-			const code = (err as { code?: string })?.code;
-			if (code === 'ERROR_CEREMONY_ABORTED') {
-				setError('Passkey creation was interrupted. Please try again.');
-			} else {
-				const message = err instanceof Error ? err.message : 'Passkey creation failed';
-				setError(message);
+			const prfOutput = await setupPasskey();
+			if (prfOutput) {
+				const { wipePRF } = await import('@agentokratia/guardian-auth/browser');
+				wipePRF(prfOutput);
 			}
+			// Passkey registered → unblock redirect → lands on dashboard
+			onBlockRedirect(false);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Passkey setup failed');
 		} finally {
 			setLoading(false);
-			busyRef.current = false;
 		}
+	}, [setupPasskey, onBlockRedirect]);
+
+	if (step === 'setup-touchid') {
+		return (
+			<div className="w-full max-w-sm mx-auto space-y-5">
+				<div className="text-center">
+					<div className="inline-flex items-center justify-center h-14 w-14 rounded-full bg-accent/10 mb-4">
+						<Fingerprint className="h-6 w-6 text-accent" />
+					</div>
+					<h3 className="text-lg font-semibold text-text">Enable Touch ID</h3>
+					<p className="mt-1.5 text-sm text-text-muted">
+						Sign in faster next time. No email codes needed.
+					</p>
+				</div>
+
+				{error && (
+					<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
+						{error}
+					</div>
+				)}
+
+				<Button
+					type="button"
+					size="lg"
+					onClick={handleTouchIdSetup}
+					disabled={loading}
+					className="w-full h-12 text-[15px]"
+				>
+					{loading ? (
+						<Loader2 className="h-4 w-4 animate-spin" />
+					) : (
+						<Fingerprint className="h-4 w-4" />
+					)}
+					{loading ? 'Setting up...' : 'Enable Touch ID'}
+				</Button>
+
+				<button
+					type="button"
+					onClick={() => onBlockRedirect(false)}
+					className="block w-full text-center text-sm text-text-muted hover:text-text transition-colors"
+				>
+					Maybe later
+				</button>
+			</div>
+		);
+	}
+
+	if (step === 'passkey-or-otp') {
+		return (
+			<div className="w-full max-w-sm mx-auto space-y-4">
+				<div className="text-center">
+					<div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-accent-muted mb-3">
+						<Fingerprint className="h-5 w-5 text-accent" />
+					</div>
+					<h3 className="text-lg font-semibold text-text">Welcome back</h3>
+					<p className="mt-1 text-sm text-text-muted">
+						Sign in to <span className="font-medium text-text">{email}</span>
+					</p>
+				</div>
+
+				{error && (
+					<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
+						{error}
+					</div>
+				)}
+
+				<Button
+					type="button"
+					size="lg"
+					onClick={handlePasskeyLogin}
+					disabled={loading}
+					className="w-full h-12 text-[15px]"
+				>
+					{loading ? (
+						<Loader2 className="h-4 w-4 animate-spin" />
+					) : (
+						<Fingerprint className="h-4 w-4" />
+					)}
+					{loading ? 'Authenticating...' : 'Sign in with Touch ID'}
+				</Button>
+
+				<div className="flex flex-col items-center gap-2">
+					<button
+						type="button"
+						onClick={async () => {
+							setError(null);
+							setLoading(true);
+							try {
+								await login(email, { sendOtp: true });
+								startCooldown();
+								setStep('otp');
+							} catch (err: unknown) {
+								setError(err instanceof Error ? err.message : 'Failed to send code');
+							} finally {
+								setLoading(false);
+							}
+						}}
+						disabled={loading}
+						className="text-sm text-text-muted hover:text-text transition-colors disabled:opacity-40"
+					>
+						Use email code instead
+					</button>
+					<button
+						type="button"
+						onClick={() => {
+							setStep('email');
+							setOtpValue('');
+							setError(null);
+							setResendCount(0);
+							setResendCooldown(0);
+						}}
+						className="text-sm text-text-muted hover:text-text transition-colors"
+					>
+						Use a different email
+					</button>
+				</div>
+			</div>
+		);
 	}
 
 	if (step === 'otp') {
@@ -280,49 +433,33 @@ function AuthForm() {
 					</div>
 				)}
 
-				<button
-					type="button"
-					onClick={() => {
-						setStep('email');
-						setOtpValue('');
-						setError(null);
-					}}
-					className="w-full text-center text-sm text-text-muted hover:text-text transition-colors"
-				>
-					Use a different email
-				</button>
-			</div>
-		);
-	}
-
-	if (step === 'passkey') {
-		return (
-			<div className="w-full max-w-sm mx-auto space-y-4 text-center">
-				<div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-accent-muted">
-					<Fingerprint className="h-5 w-5 text-accent" />
-				</div>
-				<h3 className="text-lg font-semibold text-text">Create your passkey</h3>
-				<p className="text-sm text-text-muted">
-					Set up a passkey to secure your account. This will be your login credential.
-				</p>
-				{error && (
-					<div className="rounded-md border border-danger/30 bg-danger-muted px-4 py-3 text-sm text-danger">
-						{error}
-					</div>
-				)}
-				<Button
-					onClick={handleCreatePasskey}
-					disabled={loading}
-					size="lg"
-					className="w-full h-12 text-[15px]"
-				>
-					{loading ? (
-						<Loader2 className="h-4 w-4 animate-spin" />
+				<div className="flex flex-col items-center gap-2">
+					{resendCount < RESEND_MAX ? (
+						<button
+							type="button"
+							onClick={handleResend}
+							disabled={resendCooldown > 0 || loading}
+							className="text-sm text-text-muted hover:text-text transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+						>
+							{resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+						</button>
 					) : (
-						<Fingerprint className="h-4 w-4" />
+						<p className="text-sm text-text-muted">No more resends available. Try again later.</p>
 					)}
-					{loading ? 'Waiting for passkey...' : 'Create Passkey'}
-				</Button>
+					<button
+						type="button"
+						onClick={() => {
+							setStep('email');
+							setOtpValue('');
+							setError(null);
+							setResendCount(0);
+							setResendCooldown(0);
+						}}
+						className="text-sm text-text-muted hover:text-text transition-colors"
+					>
+						Use a different email
+					</button>
+				</div>
 			</div>
 		);
 	}
@@ -361,11 +498,11 @@ function AuthForm() {
 				) : (
 					<ArrowRight className="h-4 w-4" />
 				)}
-				{loading ? 'Signing in...' : 'Continue with Email'}
+				{loading ? 'Sending code...' : 'Continue with Email'}
 			</Button>
 
 			<p className="text-center text-[12px] text-text-dim">
-				Sign in with a passkey — no wallet or extension needed
+				Sign in with email — no wallet or extension needed
 			</p>
 		</form>
 	);
@@ -378,6 +515,7 @@ function AuthForm() {
 export function LoginPage() {
 	const { isAuthenticated, loading: authLoading } = useAuth();
 	const [showAuthInHero, setShowAuthInHero] = useState(false);
+	const [blockRedirect, setBlockRedirect] = useState(false);
 
 	if (authLoading) {
 		return (
@@ -387,7 +525,7 @@ export function LoginPage() {
 		);
 	}
 
-	if (isAuthenticated) {
+	if (isAuthenticated && !blockRedirect) {
 		return <Navigate to="/signers" replace />;
 	}
 
@@ -423,7 +561,7 @@ export function LoginPage() {
 					{/* Auth form — primary CTA */}
 					<div className="mt-10 flex flex-col items-center gap-4">
 						{showAuthInHero ? (
-							<AuthForm />
+							<AuthForm onBlockRedirect={setBlockRedirect} />
 						) : (
 							<>
 								<div className="flex flex-col sm:flex-row items-center gap-3">
@@ -453,7 +591,7 @@ export function LoginPage() {
 									</div>
 									<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
 										<Check className="h-3 w-3 text-success" />
-										Passkey security (WebAuthn)
+										Email + OTP login
 									</div>
 									<div className="flex items-center gap-1.5 text-[12px] text-text-dim">
 										<Check className="h-3 w-3 text-success" />

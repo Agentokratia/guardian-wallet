@@ -1,48 +1,78 @@
 import {
+	IsBoolean,
 	IsEmail,
 	IsNotEmpty,
-	IsNumber,
 	IsObject,
 	IsOptional,
 	IsString,
-	IsUUID,
 	Matches,
-	Max,
-	MaxLength,
-	Min,
 } from 'class-validator';
 
 /**
- * POST /auth/register — Start registration: send OTP to email.
+ * POST /auth/login — Check user + conditionally send OTP.
+ * If user has a passkey and sendOtp is not true: no OTP sent.
+ * Pass sendOtp: true to force OTP (e.g. "Use email code instead" fallback).
  */
-export class RegisterDto {
+export class LoginDto {
 	@IsEmail()
 	@IsNotEmpty()
 	email!: string;
+
+	@IsOptional()
+	@IsBoolean()
+	sendOtp?: boolean;
 }
 
 /**
- * POST /auth/verify-email — Verify email OTP, return passkey registration options.
+ * POST /auth/verify-otp — Verify OTP, issue JWT session token.
  */
-export class VerifyEmailDto {
+export class VerifyOTPDto {
 	@IsEmail()
 	@IsNotEmpty()
 	email!: string;
 
 	@IsString()
 	@IsNotEmpty()
-	@MaxLength(10)
+	@Matches(/^\d{6}$/, { message: 'Code must be exactly 6 digits' })
 	code!: string;
 }
 
 /**
- * POST /auth/passkey/register — Complete passkey registration, set session cookie.
+ * POST /auth/passkey/login-challenge — Get passkey authentication challenge (unauthenticated).
  */
-export class PasskeyRegisterDto {
-	@IsUUID()
+export class PasskeyLoginChallengeDto {
+	@IsEmail()
 	@IsNotEmpty()
-	userId!: string;
+	email!: string;
+}
 
+/**
+ * POST /auth/passkey/login-verify — Verify passkey authentication (unauthenticated).
+ */
+export class PasskeyLoginVerifyDto {
+	@IsEmail()
+	@IsNotEmpty()
+	email!: string;
+
+	@IsObject()
+	@IsNotEmpty()
+	response!: Record<string, unknown>;
+}
+
+/**
+ * POST /auth/refresh — Rotate refresh token, issue new access + refresh tokens.
+ * CLI sends refreshToken in body; dashboard uses HttpOnly cookie.
+ */
+export class RefreshDto {
+	@IsOptional()
+	@IsString()
+	refreshToken?: string;
+}
+
+/**
+ * POST /auth/passkey/setup-complete — Complete optional passkey registration (for signing).
+ */
+export class PasskeySetupCompleteDto {
 	@IsObject()
 	@IsNotEmpty()
 	response!: Record<string, unknown>;
@@ -51,45 +81,4 @@ export class PasskeyRegisterDto {
 	@IsString()
 	@Matches(/^0x[0-9a-fA-F]{40}$/, { message: 'prfDerivedAddress must be a valid Ethereum address' })
 	prfDerivedAddress?: string;
-}
-
-/**
- * POST /auth/passkey/login-challenge — Get authentication challenge for login.
- */
-export class LoginChallengeDto {
-	@IsEmail()
-	@IsNotEmpty()
-	email!: string;
-}
-
-/**
- * POST /auth/passkey/login — Verify passkey login, set session cookie.
- */
-export class PasskeyLoginDto {
-	@IsEmail()
-	@IsNotEmpty()
-	email!: string;
-
-	@IsObject()
-	@IsNotEmpty()
-	response!: Record<string, unknown>;
-}
-
-/**
- * POST /auth/admin-token — Exchange X-Admin-Token for a short-lived admin JWT.
- */
-export class AdminTokenDto {
-	@IsUUID()
-	@IsNotEmpty()
-	signerId!: string;
-
-	@IsString()
-	@IsNotEmpty()
-	adminToken!: string;
-
-	@IsOptional()
-	@IsNumber()
-	@Min(60)
-	@Max(3600)
-	ttl?: number;
 }

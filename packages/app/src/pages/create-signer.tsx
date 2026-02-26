@@ -1,15 +1,13 @@
 import { CreatingPhase } from '@/components/create-signer/creating-phase';
 import { DonePhase } from '@/components/create-signer/done-phase';
-import { EncryptPhase } from '@/components/create-signer/encrypt-phase';
 import { ErrorPhase } from '@/components/create-signer/error-phase';
 import { InputPhase } from '@/components/create-signer/input-phase';
 import type { CreationResult, DKGResult, Phase } from '@/components/create-signer/types';
 import { Header } from '@/components/layout/header';
 import { useAuth } from '@/hooks/use-auth';
-import { useCreateSigner, useDKGFinalize, useDKGInit } from '@/hooks/use-dkg';
+import { useCreateSigner } from '@/hooks/use-dkg';
 import { useToast } from '@/hooks/use-toast';
-import { api } from '@/lib/api-client';
-import { downloadFile } from '@/lib/download';
+import { ApiError, api } from '@/lib/api-client';
 import { encryptUserShare } from '@/lib/user-share-store';
 import { cn } from '@/lib/utils';
 import { wipePRF } from '@agentokratia/guardian-auth/browser';
@@ -21,13 +19,11 @@ import { useNavigate } from 'react-router-dom';
 /*  Progress bar                                                               */
 /* -------------------------------------------------------------------------- */
 
-const STEPS = ['Account', 'Backup', 'Credentials'] as const;
+const STEPS = ['Account', 'Credentials'] as const;
 
 function phaseToStep(phase: Phase): number {
-	if (phase === 'input') return 0;
-	if (phase === 'creating') return 0;
-	if (phase === 'encrypt') return 1;
-	if (phase === 'done') return 2;
+	if (phase === 'input' || phase === 'creating') return 0;
+	if (phase === 'done') return 1;
 	return 0;
 }
 
@@ -35,7 +31,7 @@ function ProgressBar({ phase }: { phase: Phase }) {
 	const step = phaseToStep(phase);
 	if (phase === 'error') return null;
 
-	const pct = step === 0 ? (phase === 'creating' ? 25 : 5) : step === 1 ? 55 : 100;
+	const pct = step === 0 ? (phase === 'creating' ? 40 : 5) : 100;
 
 	return (
 		<div className="mx-auto mb-8 max-w-md">
@@ -73,12 +69,10 @@ export function CreateSignerPage() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const { toast } = useToast();
-	const { isAuthenticated, address, refreshPRF } = useAuth();
+	const { isAuthenticated, address, hasPasskey, setupPasskey, refreshPRF } = useAuth();
 
 	// Destructure stable mutateAsync refs (TanStack Query v5 guarantees stability)
 	const { mutateAsync: createSignerAsync } = useCreateSigner();
-	const { mutateAsync: dkgInitAsync } = useDKGInit();
-	const { mutateAsync: dkgFinalizeAsync } = useDKGFinalize();
 
 	// Input state
 	const [name, setName] = useState('');
@@ -91,10 +85,8 @@ export function CreateSignerPage() {
 	const [dkgResult, setDkgResult] = useState<DKGResult | null>(null);
 	const [result, setResult] = useState<CreationResult | null>(null);
 	const [errorMessage, setErrorMessage] = useState('');
-	const [secretDownloaded, setSecretDownloaded] = useState(false);
-
-	// Prevent leaving without downloading
-	const needsDownloadRef = useRef(false);
+	const [errorStatus, setErrorStatus] = useState<number | null>(null);
+	const [encryptError, setEncryptError] = useState('');
 
 	// Focus management — focus phase container on transition
 	const phaseRef = useRef<HTMLDivElement>(null);
@@ -103,16 +95,6 @@ export function CreateSignerPage() {
 	useEffect(() => {
 		phaseRef.current?.focus({ preventScroll: true });
 	}, [phase]);
-
-	useEffect(() => {
-		const handler = (e: BeforeUnloadEvent) => {
-			if (needsDownloadRef.current) {
-				e.preventDefault();
-			}
-		};
-		window.addEventListener('beforeunload', handler);
-		return () => window.removeEventListener('beforeunload', handler);
-	}, []);
 
 	/* -------------------------------------------------------------------- */
 	/*  Transition to done                                                    */
@@ -124,18 +106,54 @@ export function CreateSignerPage() {
 				signerId: dkg.signerId,
 				ethAddress: dkg.ethAddress,
 				apiKey: dkg.apiKey,
-				shareData: dkg.shareData,
+				apiSecret: dkg.apiSecret,
 				backupStored,
 				backupPayload,
 			});
-			needsDownloadRef.current = true;
 			setPhase('done');
 		},
 		[],
 	);
 
 	/* -------------------------------------------------------------------- */
-	/*  Step 1: Create signer + DKG                                          */
+	/*  Passkey encrypt — shared logic for create + retry                     */
+	/* -------------------------------------------------------------------- */
+
+	const doEncrypt = useCallback(
+		async (dkg: DKGResult): Promise<string> => {
+			let prfOutput: Uint8Array | null = null;
+
+			if (!hasPasskey) {
+				if (import.meta.env.DEV) console.log('[create-signer] No passkey — initiating setup');
+				prfOutput = await setupPasskey();
+			}
+
+			if (!prfOutput) {
+				prfOutput = await refreshPRF();
+			}
+
+			try {
+				const shareBytes = Uint8Array.from(atob(dkg.userShare), (c) => c.charCodeAt(0));
+				const encrypted = await encryptUserShare(shareBytes, prfOutput);
+
+				const payload = {
+					walletAddress: address,
+					iv: encrypted.iv,
+					ciphertext: encrypted.ciphertext,
+					salt: encrypted.salt,
+				};
+				await api.post(`/signers/${dkg.signerId}/user-share`, payload);
+
+				return JSON.stringify(payload);
+			} finally {
+				wipePRF(prfOutput);
+			}
+		},
+		[hasPasskey, setupPasskey, refreshPRF, address],
+	);
+
+	/* -------------------------------------------------------------------- */
+	/*  Step 1: Create signer + DKG + auto-encrypt                           */
 	/* -------------------------------------------------------------------- */
 
 	const handleCreate = useCallback(async () => {
@@ -144,102 +162,61 @@ export function CreateSignerPage() {
 		setPhase('creating');
 		setCreationStep(0);
 		setErrorMessage('');
+		setErrorStatus(null);
+		setEncryptError('');
 
 		try {
-			// 1. Create signer record
-			const { signer, apiKey } = await createSignerAsync({
+			// Server does create + DKG in one call (createWithDKG)
+			const result = await createSignerAsync({
 				name: name.trim(),
 				type: accountType,
 				scheme: 'cggmp24',
 				description: description.trim() || undefined,
 			});
-			setCreationStep(1);
 
-			// 2. DKG — generate keys
-			const initResult = await dkgInitAsync({ signerId: signer.id });
-			setCreationStep(2);
-
-			const finalResult = await dkgFinalizeAsync({
-				sessionId: initResult.sessionId,
-				signerId: signer.id,
-			});
-
-			// 3. Store intermediate result → move to encrypt phase
 			const intermediate: DKGResult = {
-				signerId: signer.id,
-				ethAddress: finalResult.ethAddress,
-				apiKey,
-				shareData: finalResult.signerShare,
-				userShare: finalResult.userShare,
+				signerId: result.signerId,
+				ethAddress: result.ethAddress,
+				apiKey: result.apiKey,
+				apiSecret: result.signerShare,
+				userShare: result.userShare,
 			};
 			setDkgResult(intermediate);
 
-			if (finalResult.userShare && isAuthenticated) {
-				setPhase('encrypt');
-			} else {
-				finalizeToDone(intermediate, false, '');
+			// Auto-fire passkey encrypt as final creation step
+			setCreationStep(2);
+			try {
+				const payload = await doEncrypt(intermediate);
+				finalizeToDone(intermediate, true, payload);
+			} catch {
+				setEncryptError('Passkey was cancelled or failed.');
 			}
 		} catch (err: unknown) {
 			setPhase('error');
+			setErrorStatus(err instanceof ApiError ? err.status : null);
 			setErrorMessage(err instanceof Error ? err.message : 'Account creation failed');
 		}
-	}, [
-		name,
-		description,
-		accountType,
-		createSignerAsync,
-		dkgInitAsync,
-		dkgFinalizeAsync,
-		isAuthenticated,
-		finalizeToDone,
-	]);
+	}, [name, description, accountType, createSignerAsync, doEncrypt, finalizeToDone]);
 
 	/* -------------------------------------------------------------------- */
-	/*  Step 2: Passkey encryption                                           */
+	/*  Encrypt retry / skip (from CreatingPhase error state)                 */
 	/* -------------------------------------------------------------------- */
 
-	const handleEncrypt = useCallback(async () => {
-		if (!dkgResult) throw new Error('No DKG result');
-
-		console.log('[create-signer] Getting PRF for share encryption...');
-		const prfOutput = await refreshPRF();
-		console.log('[create-signer] Got PRF, length:', prfOutput.length);
+	const handleRetryEncrypt = useCallback(async () => {
+		if (!dkgResult) return;
+		setEncryptError('');
 
 		try {
-			const shareBytes = Uint8Array.from(atob(dkgResult.userShare), (c) => c.charCodeAt(0));
-			const encrypted = await encryptUserShare(shareBytes, prfOutput);
-
-			const payload = {
-				walletAddress: address,
-				iv: encrypted.iv,
-				ciphertext: encrypted.ciphertext,
-				salt: encrypted.salt,
-			};
-			await api.post(`/signers/${dkgResult.signerId}/user-share`, payload);
-			console.log('[create-signer] User share encrypted and stored successfully');
-
-			finalizeToDone(dkgResult, true, JSON.stringify(payload));
-		} finally {
-			wipePRF(prfOutput);
+			const payload = await doEncrypt(dkgResult);
+			finalizeToDone(dkgResult, true, payload);
+		} catch {
+			setEncryptError('Passkey was cancelled or failed. Try again or skip.');
 		}
-	}, [dkgResult, refreshPRF, address, finalizeToDone]);
-
-	const handleSkipEncrypt = useCallback(() => {
-		if (!dkgResult) return;
-		finalizeToDone(dkgResult, false, '');
-	}, [dkgResult, finalizeToDone]);
+	}, [dkgResult, doEncrypt, finalizeToDone]);
 
 	/* -------------------------------------------------------------------- */
 	/*  Done phase handlers                                                   */
 	/* -------------------------------------------------------------------- */
-
-	const handleDownloadSecret = useCallback(() => {
-		if (!result?.shareData) return;
-		const blob = new Blob([result.shareData], { type: 'text/plain' });
-		downloadFile(blob, `${name || 'signer'}.secret`);
-		setSecretDownloaded(true);
-		needsDownloadRef.current = false;
-	}, [result, name]);
 
 	const finishCreation = useCallback(() => {
 		queryClient.invalidateQueries({ queryKey: ['signers'] });
@@ -286,20 +263,22 @@ export function CreateSignerPage() {
 					/>
 				)}
 
-				{phase === 'creating' && <CreatingPhase step={creationStep} />}
-
-				{phase === 'encrypt' && (
-					<EncryptPhase onEncrypt={handleEncrypt} onSkip={handleSkipEncrypt} />
+				{phase === 'creating' && (
+					<CreatingPhase
+						step={creationStep}
+						encryptError={encryptError}
+						onRetryEncrypt={handleRetryEncrypt}
+					/>
 				)}
 
-				{phase === 'error' && <ErrorPhase errorMessage={errorMessage} onRetry={handleRetry} />}
+				{phase === 'error' && (
+					<ErrorPhase errorMessage={errorMessage} errorStatus={errorStatus} onRetry={handleRetry} />
+				)}
 
 				{phase === 'done' && result && (
 					<DonePhase
 						name={name}
 						result={result}
-						secretDownloaded={secretDownloaded}
-						onDownloadSecret={handleDownloadSecret}
 						onGuardrails={handleGuardrails}
 						onSkip={handleSkip}
 					/>

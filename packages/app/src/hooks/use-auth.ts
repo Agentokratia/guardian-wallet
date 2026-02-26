@@ -7,10 +7,7 @@ import {
 	wipeKey,
 	wipePRF,
 } from '@agentokratia/guardian-auth/browser';
-import type {
-	WebAuthnAuthResult,
-	WebAuthnRegistrationResult,
-} from '@agentokratia/guardian-auth/shared';
+import type { WebAuthnAuthResult } from '@agentokratia/guardian-auth/shared';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 interface AuthState {
@@ -19,21 +16,19 @@ interface AuthState {
 	address: string | undefined;
 	email: string | undefined;
 	userId: string | undefined;
+	hasPasskey: boolean;
 	prfSupported: boolean;
 }
 
 interface AuthContextValue extends AuthState {
-	/** Step 1: Send OTP to email */
-	register: (email: string) => Promise<{ userId: string; isNewUser: boolean }>;
-	/** Step 2: Verify OTP → get registration options */
-	verifyOTP: (
-		email: string,
-		code: string,
-	) => Promise<{ userId: string; registrationOptions: unknown }>;
-	/** Step 3: Register passkey → derive wallet → authenticate */
-	completeRegistration: (userId: string) => Promise<void>;
-	/** Login Step 1: Get login challenge */
-	loginChallenge: (email: string) => Promise<void>;
+	/** Send OTP to email (login or register). Skips OTP if user has passkey (unless sendOtp: true). */
+	login: (email: string, options?: { sendOtp?: boolean }) => Promise<{ hasPasskey: boolean }>;
+	/** Step 2: Verify OTP → session created */
+	verifyOTP: (email: string, code: string) => Promise<{ userId: string }>;
+	/** Passkey login for returning users (Touch ID) */
+	passkeyLogin: (email: string) => Promise<void>;
+	/** Optional: Set up passkey for dashboard signing. Returns PRF output if available. */
+	setupPasskey: () => Promise<Uint8Array | null>;
 	/** Logout */
 	logout: () => Promise<void>;
 	/** Refresh session */
@@ -48,22 +43,18 @@ export const AuthContext = createContext<AuthContextValue>({
 	address: undefined,
 	email: undefined,
 	userId: undefined,
+	hasPasskey: false,
 	prfSupported: false,
-	register: async () => ({ userId: '', isNewUser: true }),
-	verifyOTP: async () => ({ userId: '', registrationOptions: {} }),
-	completeRegistration: async () => {},
-	loginChallenge: async () => {},
+	login: async () => ({ hasPasskey: false }),
+	verifyOTP: async () => ({ userId: '' }),
+	passkeyLogin: async () => {},
+	setupPasskey: async () => null,
 	logout: async () => {},
 	checkSession: async () => {},
 	refreshPRF: async () => {
 		throw new Error('AuthContext not initialized');
 	},
 });
-
-// Cached RP_ID — in production this comes from the server/env, for now use window.location.hostname
-function getRpId(): string {
-	return window.location.hostname;
-}
 
 export function useAuthState(): AuthContextValue {
 	const [state, setState] = useState<AuthState>({
@@ -72,13 +63,12 @@ export function useAuthState(): AuthContextValue {
 		address: undefined,
 		email: undefined,
 		userId: undefined,
+		hasPasskey: false,
 		prfSupported: false,
 	});
 
-	// Store pending registration options from verifyOTP
-	const registrationOptionsRef = useRef<unknown>(null);
-	// Store login state for two-step login flow
-	const loginStateRef = useRef<{ email: string; authOptions: unknown } | null>(null);
+	// Store passkey setup options
+	const setupOptionsRef = useRef<unknown>(null);
 
 	// Check PRF support on mount
 	useEffect(() => {
@@ -89,9 +79,12 @@ export function useAuthState(): AuthContextValue {
 
 	const checkSession = useCallback(async () => {
 		try {
-			const result = await api.get<{ address?: string; email?: string; userId?: string }>(
-				'/auth/me',
-			);
+			const result = await api.get<{
+				address?: string;
+				email?: string;
+				userId?: string;
+				hasPasskey?: boolean;
+			}>('/auth/me');
 			setState((prev) => ({
 				...prev,
 				isAuthenticated: true,
@@ -99,6 +92,7 @@ export function useAuthState(): AuthContextValue {
 				address: result.address,
 				email: result.email,
 				userId: result.userId,
+				hasPasskey: result.hasPasskey ?? false,
 			}));
 		} catch {
 			setState((prev) => ({
@@ -108,6 +102,7 @@ export function useAuthState(): AuthContextValue {
 				address: undefined,
 				email: undefined,
 				userId: undefined,
+				hasPasskey: false,
 			}));
 		}
 	}, []);
@@ -116,7 +111,7 @@ export function useAuthState(): AuthContextValue {
 		checkSession();
 	}, [checkSession]);
 
-	// Listen for 401/403 from API client → clear local auth state and redirect
+	// Listen for 401/403 from API client → clear local auth state
 	useEffect(() => {
 		const handler = () => {
 			setState((prev) => ({
@@ -126,198 +121,156 @@ export function useAuthState(): AuthContextValue {
 				address: undefined,
 				email: undefined,
 				userId: undefined,
+				hasPasskey: false,
 			}));
 		};
 		authEvents.addEventListener(AUTH_EXPIRED_EVENT, handler);
 		return () => authEvents.removeEventListener(AUTH_EXPIRED_EVENT, handler);
 	}, []);
 
-	const register = useCallback(async (email: string) => {
-		const result = await api.post<{ userId: string; isNewUser: boolean }>('/auth/register', {
-			email,
-		});
-		return result;
-	}, []);
+	/** Login — checks user, sends OTP only when needed.
+	 *  Passkey users: no OTP sent (unless sendOtp: true for "Use email code" fallback). */
+	const login = useCallback(
+		async (email: string, options?: { sendOtp?: boolean }): Promise<{ hasPasskey: boolean }> => {
+			const result = await api.post<{ hasPasskey?: boolean }>('/auth/login', {
+				email,
+				sendOtp: options?.sendOtp,
+			});
+			return { hasPasskey: result.hasPasskey ?? false };
+		},
+		[],
+	);
 
+	/** Step 2: Verify OTP → session created (POST /auth/verify-otp) */
 	const verifyOTP = useCallback(async (email: string, code: string) => {
-		const result = await api.post<{ userId: string; registrationOptions: unknown }>(
-			'/auth/verify-email',
-			{ email, code },
-		);
-		// Store registration options for the next step
-		registrationOptionsRef.current = result.registrationOptions;
-		return result;
+		const result = await api.post<{
+			userId: string;
+			email: string;
+			address?: string;
+		}>('/auth/verify-otp', { email, code });
+
+		setState((prev) => ({
+			...prev,
+			isAuthenticated: true,
+			loading: false,
+			address: result.address,
+			email: result.email,
+			userId: result.userId,
+			hasPasskey: false,
+		}));
+
+		return { userId: result.userId };
 	}, []);
 
-	const completeRegistration = useCallback(async (userId: string) => {
-		const options = registrationOptionsRef.current;
-		if (!options) throw new Error('No registration options available. Call verifyOTP first.');
+	/** Passkey login for returning users — Touch ID, no OTP needed. */
+	const passkeyLogin = useCallback(async (email: string): Promise<void> => {
+		// Step 1: Get challenge with credential IDs
+		const { authOptions } = await api.post<{
+			authOptions: { rpId: string; challenge: string; allowCredentials?: { id: string }[] };
+		}>('/auth/passkey/login-challenge', { email });
 
-		// Register passkey with PRF using the server-generated options directly
-		let regResult: WebAuthnRegistrationResult;
-		try {
-			regResult = await registerPasskeyWithPRF(
-				options as Parameters<typeof registerPasskeyWithPRF>[0],
-			);
-		} catch (err) {
-			registrationOptionsRef.current = null;
-			throw err;
+		// Step 2: Trigger Touch ID / passkey ceremony
+		const authResult = await authenticateWithPRF({
+			rpId: authOptions.rpId,
+			challenge: authOptions.challenge,
+			allowCredentialIds: authOptions.allowCredentials?.map((c) => c.id) ?? [],
+		});
+
+		// Step 3: Verify on server → get JWT (cookie set automatically)
+		const result = await api.post<{
+			userId: string;
+			email: string;
+			address?: string;
+		}>('/auth/passkey/login-verify', {
+			email,
+			response: authResult.authenticationResponseJSON,
+		});
+
+		// Step 4: Update auth state
+		setState((prev) => ({
+			...prev,
+			isAuthenticated: true,
+			loading: false,
+			address: result.address,
+			email: result.email,
+			userId: result.userId,
+			hasPasskey: true,
+		}));
+
+		// Wipe PRF output if present (not needed for login)
+		if (authResult.prfOutput) {
+			wipePRF(authResult.prfOutput);
 		}
+	}, []);
 
-		registrationOptionsRef.current = null;
+	/** Optional: Set up passkey for dashboard signing (PRF-based share encryption).
+	 *  Returns the PRF output from registration so callers can use it immediately
+	 *  without triggering a second passkey ceremony. Caller must wipe when done. */
+	const setupPasskey = useCallback(async (): Promise<Uint8Array | null> => {
+		// Step 1: Get setup challenge
+		const { registrationOptions } = await api.post<{ registrationOptions: unknown }>(
+			'/auth/passkey/setup-challenge',
+		);
+		setupOptionsRef.current = registrationOptions;
 
-		// Derive wallet from PRF if available, then wipe immediately
+		// Step 2: Register passkey with PRF
+		const regResult = await registerPasskeyWithPRF(
+			registrationOptions as Parameters<typeof registerPasskeyWithPRF>[0],
+		);
+		setupOptionsRef.current = null;
+
+		// Derive wallet from PRF if available
 		let prfDerivedAddress: string | undefined;
+		let prfOutput: Uint8Array | null = null;
 		if (regResult.prfOutput) {
 			const wallet = deriveEOAFromPRF(regResult.prfOutput);
 			prfDerivedAddress = wallet.address;
 			wipeKey(wallet);
-			wipePRF(regResult.prfOutput);
+			// Return PRF output to caller instead of wiping — caller is responsible for cleanup
+			prfOutput = regResult.prfOutput;
 		}
 
-		// Forward the raw RegistrationResponseJSON from @simplewebauthn/browser to the server
-		const serverResult = await api.post<{ email: string; address?: string; userId: string }>(
-			'/auth/passkey/register',
-			{
-				userId,
-				response: regResult.registrationResponseJSON,
-				prfDerivedAddress,
-			},
-		);
-
-		setState((prev) => ({
-			...prev,
-			isAuthenticated: true,
-			loading: false,
-			address: serverResult.address,
-			email: serverResult.email,
-			userId: serverResult.userId,
-		}));
-	}, []);
-
-	const loginChallenge = useCallback(async (email: string) => {
-		// Step 1: Get challenge from server
-		const { authOptions } = await api.post<{ userId: string; authOptions: unknown }>(
-			'/auth/passkey/login-challenge',
-			{ email },
-		);
-
-		const opts = authOptions as {
-			rpId: string;
-			challenge: string;
-			allowCredentials?: { id: string }[];
-		};
-
-		// Step 2: Authenticate with passkey + PRF
-		let authResult: WebAuthnAuthResult;
-		authResult = await authenticateWithPRF({
-			rpId: opts.rpId,
-			challenge: opts.challenge,
-			allowCredentialIds: opts.allowCredentials?.map((c) => c.id) ?? [],
+		// Step 3: Complete setup on server
+		await api.post('/auth/passkey/setup-complete', {
+			response: regResult.registrationResponseJSON,
+			prfDerivedAddress,
 		});
 
-		// Wipe PRF immediately — never stored in memory
-		if (authResult.prfOutput) {
-			wipePRF(authResult.prfOutput);
-		}
-
-		// Forward the raw AuthenticationResponseJSON from @simplewebauthn/browser to the server
-		const serverResult = await api.post<{ email: string; address?: string; userId: string }>(
-			'/auth/passkey/login',
-			{
-				email,
-				response: authResult.authenticationResponseJSON,
-			},
-		);
-
-		setState((prev) => ({
-			...prev,
-			isAuthenticated: true,
-			loading: false,
-			address: serverResult.address,
-			email: serverResult.email,
-			userId: serverResult.userId,
-		}));
+		setState((prev) => ({ ...prev, hasPasskey: true }));
+		return prfOutput;
 	}, []);
 
 	/**
 	 * Always-fresh PRF: triggers a passkey ceremony to get PRF output.
-	 * The output is returned directly — it is NOT stored in memory.
+	 * The output is returned directly — NOT stored in memory.
 	 * Caller is responsible for wiping it after use.
+	 *
+	 * IMPORTANT: Callers must check `hasPasskey` and call `setupPasskey()` first
+	 * if no passkey is registered. This avoids stale-closure issues when chaining
+	 * setupPasskey → refreshPRF in the same async flow.
 	 */
 	const refreshPRF = useCallback(async (): Promise<Uint8Array> => {
 		const email = state.email;
-		console.log('[refreshPRF] Starting — email:', email, 'isAuthenticated:', state.isAuthenticated);
 		if (!email) throw new Error('Not authenticated — no email on file.');
 
-		// Get challenge from server
-		console.log('[refreshPRF] Requesting login challenge...');
-		let authOptions: unknown;
-		try {
-			const res = await api.post<{ userId: string; authOptions: unknown }>(
-				'/auth/passkey/login-challenge',
-				{ email },
-			);
-			authOptions = res.authOptions;
-			console.log(
-				'[refreshPRF] Got challenge, authOptions keys:',
-				Object.keys(authOptions as Record<string, unknown>),
-			);
-		} catch (err) {
-			console.error('[refreshPRF] login-challenge failed:', err);
-			throw err;
-		}
+		// Get auth challenge with credential IDs so the browser auto-selects the passkey
+		const { authOptions } = await api.post<{
+			authOptions: { rpId: string; challenge: string; allowCredentials?: { id: string }[] };
+		}>('/auth/passkey/auth-challenge');
 
-		const opts = authOptions as {
-			rpId: string;
-			challenge: string;
-			allowCredentials?: { id: string }[];
-		};
-
-		console.log(
-			'[refreshPRF] Triggering passkey dialog — rpId:',
-			opts.rpId,
-			'allowCredentials:',
-			opts.allowCredentials?.length ?? 0,
-		);
-		// Trigger passkey dialog
-		let authResult: WebAuthnAuthResult;
-		try {
-			authResult = await authenticateWithPRF({
-				rpId: opts.rpId,
-				challenge: opts.challenge,
-				allowCredentialIds: opts.allowCredentials?.map((c) => c.id) ?? [],
-			});
-			console.log(
-				'[refreshPRF] Passkey dialog completed — hasPRF:',
-				!!authResult.prfOutput,
-				'credentialId:',
-				authResult.credentialId?.slice(0, 10),
-			);
-		} catch (err) {
-			console.error('[refreshPRF] authenticateWithPRF failed:', err);
-			throw err;
-		}
+		// Trigger passkey dialog — credential IDs enable auto-select (no picker)
+		const authResult: WebAuthnAuthResult = await authenticateWithPRF({
+			rpId: authOptions.rpId,
+			challenge: authOptions.challenge,
+			allowCredentialIds: authOptions.allowCredentials?.map((c) => c.id) ?? [],
+		});
 
 		if (!authResult.prfOutput) {
 			throw new Error('Passkey does not support PRF extension. Please re-register.');
 		}
 
-		// Validate with server (refreshes session too)
-		console.log('[refreshPRF] Validating with server...');
-		try {
-			await api.post('/auth/passkey/login', {
-				email,
-				response: authResult.authenticationResponseJSON,
-			});
-			console.log('[refreshPRF] Server validation OK — session refreshed');
-		} catch (err) {
-			console.error('[refreshPRF] passkey/login validation failed:', err);
-			throw err;
-		}
-
 		return authResult.prfOutput;
-	}, [state.email, state.isAuthenticated]);
+	}, [state.email]);
 
 	const logout = useCallback(async () => {
 		try {
@@ -332,15 +285,16 @@ export function useAuthState(): AuthContextValue {
 			address: undefined,
 			email: undefined,
 			userId: undefined,
+			hasPasskey: false,
 		}));
 	}, []);
 
 	return {
 		...state,
-		register,
+		login,
 		verifyOTP,
-		completeRegistration,
-		loginChallenge,
+		passkeyLogin,
+		setupPasskey,
 		logout,
 		checkSession,
 		refreshPRF,

@@ -4,7 +4,11 @@ import { balanceCommand } from './commands/balance.command.js';
 import { deployCommand } from './commands/deploy.command.js';
 import { infoCommand } from './commands/info.command.js';
 import { initCommand } from './commands/init.command.js';
+import { linkCommand } from './commands/link.command.js';
+import { loginCommand, logoutCommand } from './commands/login.command.js';
+import { networkCommand } from './commands/network.command.js';
 import { proxyCommand } from './commands/proxy.command.js';
+import { receiveCommand } from './commands/receive.command.js';
 import { sendCommand } from './commands/send.command.js';
 import { signMessageCommand } from './commands/sign.command.js';
 import { statusCommand } from './commands/status.command.js';
@@ -22,15 +26,19 @@ export async function runCli(): Promise<void> {
 			'after',
 			`
 ${dim('Getting started:')}
+  $ gw login             Log in with email + OTP
   $ gw init              Create your first wallet
   $ gw status            See all your wallets
   $ gw send 0x... 0.01   Send ETH
-  $ gw admin unlock      Enable admin access (policies, pause/resume)
+  $ gw link <name>       Export share to another device
+  $ gw receive <name>    Import share from another device
 
 ${dim('Docs: https://github.com/agentokratia/guardian-wallet')}
 `,
 		);
 
+	program.addCommand(loginCommand);
+	program.addCommand(logoutCommand);
 	program.addCommand(initCommand);
 	program.addCommand(statusCommand);
 	program.addCommand(infoCommand);
@@ -39,6 +47,9 @@ ${dim('Docs: https://github.com/agentokratia/guardian-wallet')}
 	program.addCommand(signMessageCommand);
 	program.addCommand(deployCommand);
 	program.addCommand(proxyCommand);
+	program.addCommand(networkCommand);
+	program.addCommand(linkCommand);
+	program.addCommand(receiveCommand);
 	program.addCommand(adminCommand);
 
 	await program.parseAsync();

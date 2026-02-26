@@ -13,6 +13,7 @@ import {
 	NotFoundException,
 	type OnModuleDestroy,
 	type OnModuleInit,
+	ServiceUnavailableException,
 } from '@nestjs/common';
 import { hashApiKey, wipeBuffer } from '../common/crypto-utils.js';
 import { SHARE_STORE } from '../common/share-store.module.js';
@@ -153,26 +154,16 @@ export class DKGService implements OnModuleInit, OnModuleDestroy {
 		}
 		this.pendingSessions.delete(input.sessionId);
 
-		let poolAuxInfo: string | null = null;
-		try {
-			poolAuxInfo = await this.auxInfoPool.take();
-		} catch (err) {
-			this.logger.warn(`Pool take() failed: ${String(err)} — falling back to cold start`);
+		const poolAuxInfo = await this.auxInfoPool.take();
+		if (!poolAuxInfo) {
+			throw new ServiceUnavailableException('AuxInfo pool is empty — try again in a few minutes.');
 		}
 
-		if (poolAuxInfo) {
-			this.logger.log(`Starting DKG for signer ${input.signerId}... (pool AuxInfo — ~1s)`);
-		} else {
-			this.logger.log(`Starting DKG for signer ${input.signerId}... (cold start — ~120s)`);
-		}
+		this.logger.log(`Starting DKG for signer ${input.signerId}... (pool AuxInfo — ~1s)`);
 
 		const startTime = Date.now();
 
-		const dkgResult = await this.scheme.runDkg(
-			3,
-			2,
-			poolAuxInfo ? { cachedAuxInfo: poolAuxInfo } : undefined,
-		);
+		const dkgResult = await this.scheme.runDkg(3, 2, { cachedAuxInfo: poolAuxInfo });
 
 		const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 		this.logger.log(`DKG complete in ${elapsed}s — ${dkgResult.shares.length} shares generated`);
@@ -230,20 +221,19 @@ export class DKGService implements OnModuleInit, OnModuleDestroy {
 	}
 
 	/**
-	 * Atomic create + DKG for public (anonymous) signer creation.
+	 * Atomic create + DKG for authenticated signer creation.
 	 *
-	 * 1. Creates signer record with ownerAddress = 'pending'
-	 * 2. Runs full DKG ceremony
-	 * 3. Computes double-hash of userShare → sets ownerAddress = 'sha256:<hash>'
-	 * 4. Returns all credentials (signerId, ethAddress, apiKey, signerShare, userShare)
-	 *
-	 * On DKG failure, the signer record is cleaned up.
+	 * 1. Claims auxInfo from pool FIRST (no DB record if pool empty)
+	 * 2. Creates signer record with ownerId from session
+	 * 3. Runs DKG with the pre-claimed auxInfo
+	 * 4. On failure, hard-deletes the signer (no ghost records)
 	 */
 	async createWithDKG(input: {
 		name: string;
 		type: SignerType;
 		scheme: SchemeName;
 		network: string;
+		ownerId: string;
 	}): Promise<{
 		signerId: string;
 		ethAddress: string;
@@ -251,44 +241,85 @@ export class DKGService implements OnModuleInit, OnModuleDestroy {
 		signerShare: string;
 		userShare: string;
 	}> {
+		// 1. Claim auxInfo BEFORE creating signer — no ghost records if pool empty
+		const poolAuxInfo = await this.auxInfoPool.take();
+		if (!poolAuxInfo) {
+			throw new ServiceUnavailableException(
+				'AuxInfo pool is empty — the system is warming up. Try again in a minute.',
+			);
+		}
+
+		// 2. Create signer record (pool entry already claimed)
 		const { signer, apiKey } = await this.signerService.create({
 			name: input.name,
 			type: input.type,
 			chain: ChainName.ETHEREUM,
 			scheme: input.scheme,
 			network: input.network,
-			ownerAddress: 'pending',
+			ownerId: input.ownerId,
 		});
 
 		try {
-			// Init + finalize DKG
-			const { sessionId } = await this.init({ signerId: signer.id });
-			const result = await this.finalize({ sessionId, signerId: signer.id });
+			// 3. Run DKG with pre-claimed auxInfo
+			this.logger.log(`Starting DKG for signer ${signer.id}... (pool AuxInfo — ~1s)`);
+			const startTime = Date.now();
 
-			// Compute admin credential (Bitwarden double-hash model)
-			// Server has userShare transiently during DKG — compute before returning
-			const singleHash = hashApiKey(result.userShare); // SHA256(base64 string)
-			const doubleHash = hashApiKey(singleHash); // SHA256(SHA256(...))
-			await this.signerRepo.update(signer.id, {
-				ownerAddress: `sha256:${doubleHash}`,
-			});
+			const dkgResult = await this.scheme.runDkg(3, 2, { cachedAuxInfo: poolAuxInfo });
 
-			return {
-				signerId: signer.id,
-				ethAddress: result.ethAddress,
-				apiKey,
-				signerShare: result.signerShare,
-				userShare: result.userShare,
-			};
-		} catch (error) {
-			// Cleanup: delete signer record on DKG failure
-			this.logger.error(
-				`createWithDKG failed for "${input.name}", cleaning up signer ${signer.id}`,
-			);
+			const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+			this.logger.log(`DKG complete in ${elapsed}s — ${dkgResult.shares.length} shares generated`);
+
+			if (dkgResult.shares.length < 3) {
+				throw new BadRequestException(`Expected 3 shares, got ${dkgResult.shares.length}`);
+			}
+
+			const [share0, share1, share2] = dkgResult.shares;
+			if (!share0 || !share1 || !share2) {
+				throw new BadRequestException(`Expected 3 shares, got ${dkgResult.shares.length}`);
+			}
+
+			const signerKeyMaterial = bundleKeyMaterial(share0.coreShare, share0.auxInfo);
+			const serverKeyMaterial = bundleKeyMaterial(share1.coreShare, share1.auxInfo);
+			const userKeyMaterial = bundleKeyMaterial(share2.coreShare, share2.auxInfo);
+
 			try {
-				await this.signerRepo.update(signer.id, { status: 'revoked' } as never);
+				const ethAddress = this.scheme.deriveAddress(dkgResult.publicKey);
+
+				// Store server share + update signer record
+				await this.shareStore.storeShare(signer.id, serverKeyMaterial);
+				await this.signerRepo.update(signer.id, {
+					ethAddress,
+					dkgCompleted: true,
+					vaultSharePath: signer.id,
+				});
+
+				this.logger.log(`DKG finalized for signer ${signer.id}, address: ${ethAddress}`);
+
+				return {
+					signerId: signer.id,
+					ethAddress,
+					apiKey,
+					signerShare: Buffer.from(signerKeyMaterial).toString('base64'),
+					userShare: Buffer.from(userKeyMaterial).toString('base64'),
+				};
+			} finally {
+				// CRITICAL: Wipe all key material buffers
+				wipeBuffer(serverKeyMaterial);
+				wipeBuffer(signerKeyMaterial);
+				wipeBuffer(userKeyMaterial);
+				for (const share of dkgResult.shares) {
+					wipeBuffer(share.coreShare);
+					wipeBuffer(share.auxInfo);
+				}
+				wipeBuffer(dkgResult.publicKey);
+			}
+		} catch (error) {
+			// Hard delete — no ghost records
+			this.logger.error(`createWithDKG failed for "${input.name}", deleting signer ${signer.id}`);
+			try {
+				await this.signerRepo.delete(signer.id);
 			} catch {
-				this.logger.error(`Failed to cleanup signer ${signer.id} after DKG failure`);
+				this.logger.error(`Failed to delete signer ${signer.id} after DKG failure`);
 			}
 			throw error;
 		}

@@ -29,88 +29,12 @@ export class PolicyDocumentRepository {
 		return this.toDomain(data[0] as PolicyDocumentRow);
 	}
 
-	async findDraftBySigner(signerId: string): Promise<PolicyDocumentEntity | null> {
-		const { data, error } = await this.supabase.client
-			.from(this.tableName)
-			.select('*')
-			.eq('signer_id', signerId)
-			.eq('status', 'draft')
-			.single();
-
-		if (error || !data) return null;
-		return this.toDomain(data as PolicyDocumentRow);
-	}
-
-	async findAnyBySigner(signerId: string): Promise<PolicyDocumentEntity | null> {
-		// Return active first, fall back to draft. Two explicit queries
-		// to avoid relying on alphabetical sort order of status values.
-		const active = await this.findBySigner(signerId);
-		if (active) return active;
-		return this.findDraftBySigner(signerId);
-	}
-
 	async upsert(
 		signerId: string,
 		rules: readonly PolicyRule[],
 		description?: string,
 	): Promise<PolicyDocumentEntity> {
 		return this.upsertWithStatus(signerId, rules, 'active', description);
-	}
-
-	async saveDraft(
-		signerId: string,
-		rules: readonly PolicyRule[],
-		description?: string,
-	): Promise<PolicyDocumentEntity> {
-		return this.upsertWithStatus(signerId, rules, 'draft', description);
-	}
-
-	async activate(signerId: string): Promise<PolicyDocumentEntity> {
-		// Atomic RPC: delete old active + promote draft → active in one transaction.
-		// Falls back to client-side logic if RPC is not deployed yet.
-		const { data: rpcData, error: rpcError } = await this.supabase.client.rpc(
-			'activate_policy_draft',
-			{ p_signer_id: signerId },
-		);
-
-		if (!rpcError && rpcData && (Array.isArray(rpcData) ? rpcData.length > 0 : rpcData)) {
-			const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-			return this.toDomain(row as PolicyDocumentRow);
-		}
-
-		// Fallback: client-side for environments without the RPC.
-		// Order: promote draft FIRST, then delete old active.
-		// If crash between steps: signer has two active docs — findBySigner
-		// picks latest by activated_at DESC, so the new one wins. Safe.
-		const draft = await this.findDraftBySigner(signerId);
-		if (!draft) {
-			throw new Error('No draft policy to activate');
-		}
-
-		const { data, error } = await this.supabase.client
-			.from(this.tableName)
-			.update({
-				status: 'active',
-				activated_at: new Date().toISOString(),
-				version: draft.version + 1,
-			})
-			.eq('id', draft.id)
-			.select('*')
-			.single();
-
-		if (error || !data) {
-			throw new Error(`Failed to activate policy: ${error?.message ?? 'unknown'}`);
-		}
-
-		// Now safe to delete old active (the new one is already promoted)
-		await this.supabase.client
-			.from(this.tableName)
-			.delete()
-			.eq('signer_id', signerId)
-			.eq('status', 'active')
-			.neq('id', draft.id);
-
-		return this.toDomain(data as PolicyDocumentRow);
 	}
 
 	private async upsertWithStatus(

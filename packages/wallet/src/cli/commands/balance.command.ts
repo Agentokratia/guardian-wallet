@@ -6,7 +6,7 @@ import { type SignerConfig, createClientFromConfig, loadSignerConfig } from '../
 import { brand, danger, dim, statusColor, warn } from '../theme.js';
 
 export const balanceCommand = new Command('balance')
-	.description('Show ETH balance for the configured signer')
+	.description('Show ETH balance for the configured account')
 	.option('-n, --network <network>', 'Override default network')
 	.action(async (options: { network?: string }, command: CommandType) => {
 		const spinner = ora({ text: 'Loading configuration...', indent: 2 }).start();
@@ -23,7 +23,7 @@ export const balanceCommand = new Command('balance')
 
 		const network = options.network ?? config.network;
 		if (!network) {
-			console.error(danger('\n  Error: No network specified. Use --network <name>.\n'));
+			spinner.fail('No network specified. Use --network <name> or set it in signer config.');
 			process.exitCode = 1;
 			return;
 		}

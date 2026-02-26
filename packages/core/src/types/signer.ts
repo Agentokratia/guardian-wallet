@@ -14,7 +14,7 @@ export interface Signer {
 	readonly scheme: SchemeName;
 	readonly network?: NetworkName;
 	readonly status: SignerStatus;
-	readonly ownerAddress: string;
+	readonly ownerId: string;
 	readonly apiKeyHash: string;
 	readonly vaultSharePath: string;
 	readonly dkgCompleted: boolean;

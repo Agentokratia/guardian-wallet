@@ -38,7 +38,7 @@ const MAX_CONCURRENT_SESSIONS = 1_000;
 interface BaseSessionState {
 	readonly signerId: string;
 	readonly ethAddress: string;
-	readonly ownerAddress: string;
+	readonly ownerId: string;
 	readonly expectedPublicKey: Uint8Array;
 	readonly signingPath: SigningPath;
 	readonly serverKeyMaterialBytes: Uint8Array;
@@ -261,7 +261,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			await this.signingRequestRepo
 				.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_TX,
 					signingPath,
 					status: RequestStatus.BLOCKED,
@@ -301,7 +301,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			await this.signingRequestRepo
 				.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_TX,
 					signingPath,
 					status: RequestStatus.BLOCKED,
@@ -385,7 +385,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 				type: 'tx',
 				signerId: signer.id,
 				ethAddress: signer.ethAddress,
-				ownerAddress: signer.ownerAddress,
+				ownerId: signer.ownerId,
 				expectedPublicKey,
 				signingPath,
 				serverKeyMaterialBytes,
@@ -424,7 +424,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			if (!(error instanceof ForbiddenException) && !(error instanceof NotFoundException)) {
 				await this.signingRequestRepo.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_TX,
 					signingPath,
 					status: RequestStatus.FAILED,
@@ -528,7 +528,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			// Log success to audit
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
-				ownerAddress: state.ownerAddress,
+				ownerId: state.ownerId,
 				requestType: RequestType.SIGN_TX,
 				signingPath: state.signingPath,
 				status: RequestStatus.APPROVED,
@@ -551,7 +551,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			}
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
-				ownerAddress: state.ownerAddress,
+				ownerId: state.ownerId,
 				requestType: RequestType.SIGN_TX,
 				signingPath: state.signingPath,
 				status: RequestStatus.FAILED,
@@ -612,7 +612,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			await this.signingRequestRepo
 				.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_MESSAGE,
 					signingPath,
 					status: RequestStatus.BLOCKED,
@@ -635,7 +635,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			await this.signingRequestRepo
 				.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_MESSAGE,
 					signingPath,
 					status: RequestStatus.BLOCKED,
@@ -708,7 +708,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 				type: 'message',
 				signerId: signer.id,
 				ethAddress: signer.ethAddress,
-				ownerAddress: signer.ownerAddress,
+				ownerId: signer.ownerId,
 				expectedPublicKey,
 				signingPath,
 				serverKeyMaterialBytes,
@@ -736,7 +736,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 			if (!(error instanceof ForbiddenException) && !(error instanceof NotFoundException)) {
 				await this.signingRequestRepo.create({
 					signerId: signer.id,
-					ownerAddress: signer.ownerAddress,
+					ownerId: signer.ownerId,
 					requestType: RequestType.SIGN_MESSAGE,
 					signingPath,
 					status: RequestStatus.FAILED,
@@ -766,7 +766,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
-				ownerAddress: state.ownerAddress,
+				ownerId: state.ownerId,
 				requestType: RequestType.SIGN_MESSAGE,
 				signingPath: state.signingPath,
 				status: RequestStatus.APPROVED,
@@ -778,7 +778,7 @@ export class InteractiveSignService implements OnModuleDestroy {
 		} catch (error) {
 			await this.signingRequestRepo.create({
 				signerId: state.signerId,
-				ownerAddress: state.ownerAddress,
+				ownerId: state.ownerId,
 				requestType: RequestType.SIGN_MESSAGE,
 				signingPath: state.signingPath,
 				status: RequestStatus.FAILED,

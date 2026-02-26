@@ -1,8 +1,7 @@
-import { execFile } from 'node:child_process';
+import { type ChildProcess, execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { IShareStore } from '@agentokratia/guardian-core';
 import {
 	Inject,
 	Injectable,
@@ -11,22 +10,11 @@ import {
 	type OnModuleInit,
 } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
-import { SHARE_STORE } from '../common/share-store.module.js';
+import { AuxInfoPoolRepository } from './aux-info-pool.repository.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface PoolEntry {
-	id: string;
-	auxInfoJson: string;
-	createdAt: string;
-}
-
-interface ManifestData {
-	version: number;
-	entries: Array<{ id: string; createdAt: string }>;
-}
 
 export interface AuxInfoPoolStatus {
 	size: number;
@@ -41,8 +29,6 @@ export interface AuxInfoPoolStatus {
 // Constants
 // ---------------------------------------------------------------------------
 
-const POOL_PREFIX = 'auxinfo-pool';
-const MANIFEST_KEY = `${POOL_PREFIX}/_manifest`;
 const MONITOR_INTERVAL_MS = 30_000;
 const GENERATOR_TIMEOUT_MS = 600_000;
 
@@ -81,26 +67,25 @@ function resolveNativeBinary(): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * AuxInfo pool with background regeneration, persisted via share store.
+ * AuxInfo pool with background regeneration, persisted in PostgreSQL.
  *
  * AuxInfo = Paillier keypairs + ZK proofs. NOT ECDSA key material.
  * Pre-generating is cryptographically safe per CGGMP24 spec (separable sub-protocol).
  *
- * Security: encrypted at rest via share store, consumed entries deleted synchronously
- * to prevent crash-reuse. Paillier private keys are JS strings (not wipeable) —
- * same limitation as any JS string. Exploitation needs: memory dump + signing
- * transcripts + one ECDSA share.
+ * Pool entries persist across restarts and support atomic claiming across
+ * multiple server instances via FOR UPDATE SKIP LOCKED.
  */
 @Injectable()
 export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 	private readonly logger = new Logger(AuxInfoPoolService.name);
-	private readonly pool: PoolEntry[] = [];
+	private cachedPoolSize = 0;
 	private activeGenerators = 0;
 	private monitorTimer: ReturnType<typeof setInterval> | null = null;
 	private nativeBinaryPath: string | null = null;
+	private readonly activeChildren = new Set<ChildProcess>();
 
 	constructor(
-		@Inject(SHARE_STORE) private readonly shareStore: IShareStore,
+		@Inject(AuxInfoPoolRepository) private readonly repo: AuxInfoPoolRepository,
 		@Inject(APP_CONFIG) private readonly config: AppConfig,
 	) {}
 
@@ -108,14 +93,17 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 
 	async onModuleInit(): Promise<void> {
 		this.nativeBinaryPath = resolveNativeBinary();
+
+		// Always load current pool size — useful for monitoring even when generator is disabled
+		this.cachedPoolSize = await this.repo.countUnclaimed();
+
 		if (!this.nativeBinaryPath) {
 			this.logger.warn('Native binary not found — pool disabled, DKG falls back to cold start');
 			return;
 		}
 
-		await this.loadPool();
 		this.logger.log(
-			`AuxInfo pool loaded: ${this.pool.length}/${this.config.AUXINFO_POOL_TARGET} entries`,
+			`AuxInfo pool loaded: ${this.cachedPoolSize}/${this.config.AUXINFO_POOL_TARGET} entries`,
 		);
 
 		this.monitorTimer = setInterval(() => this.monitorTick(), MONITOR_INTERVAL_MS);
@@ -127,56 +115,87 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 			clearInterval(this.monitorTimer);
 			this.monitorTimer = null;
 		}
-		for (const entry of this.pool) {
-			entry.auxInfoJson = '';
+		// Kill all running generator child processes to prevent orphans on restart
+		for (const child of this.activeChildren) {
+			child.kill('SIGTERM');
 		}
-		this.pool.length = 0;
+		this.activeChildren.clear();
+		this.activeGenerators = 0;
 	}
 
 	// ---- Public API ----
 
 	/**
-	 * Consume one AuxInfo entry (FIFO). Returns JSON string or null if empty.
+	 * Consume one AuxInfo entry (FIFO, atomic). Returns JSON string or null if empty.
 	 *
-	 * Deletion is synchronous to prevent crash-reuse — two signers sharing
-	 * identical Paillier (N, p, q) would be a cross-contamination risk.
+	 * Uses FOR UPDATE SKIP LOCKED in the DB — safe across multiple instances.
 	 */
 	async take(): Promise<string | null> {
-		const entry = this.pool.shift();
-		if (!entry) return null;
+		const auxInfoJson = await this.repo.claimOne();
+		if (!auxInfoJson) return null;
 
+		this.cachedPoolSize = Math.max(0, this.cachedPoolSize - 1);
 		this.logger.log(
-			`Pool: consumed ${entry.id} — ${this.pool.length}/${this.config.AUXINFO_POOL_TARGET} remaining`,
+			`Pool: consumed entry — ~${this.cachedPoolSize}/${this.config.AUXINFO_POOL_TARGET} remaining`,
 		);
 
-		try {
-			await this.removeEntry(entry.id);
-		} catch (err) {
-			this.logger.warn(`Failed to remove pool entry ${entry.id}: ${String(err)}`);
-		}
-
 		this.monitorTick();
-		return entry.auxInfoJson;
+		return auxInfoJson;
 	}
 
 	getStatus(): AuxInfoPoolStatus {
 		return {
-			size: this.pool.length,
+			size: this.cachedPoolSize,
 			target: this.config.AUXINFO_POOL_TARGET,
 			lowWatermark: this.config.AUXINFO_POOL_LOW_WATERMARK,
 			activeGenerators: this.activeGenerators,
 			maxGenerators: this.config.AUXINFO_POOL_MAX_GENERATORS,
-			healthy: this.pool.length > 0 || !this.nativeBinaryPath,
+			// Unhealthy only when pool is stuck: empty, no generators running, and binary exists.
+			// size=0 with active generators is normal (filling up) — don't trigger K8s restart.
+			healthy: this.cachedPoolSize > 0 || this.activeGenerators > 0 || !this.nativeBinaryPath,
 		};
+	}
+
+	/**
+	 * Batch-generate pool entries. For CLI pre-fill before launches.
+	 * Returns the number of generators spawned.
+	 */
+	generate(count: number): { spawned: number } {
+		if (!this.nativeBinaryPath || count <= 0) return { spawned: 0 };
+
+		const slots = this.config.AUXINFO_POOL_MAX_GENERATORS - this.activeGenerators;
+		const toSpawn = Math.min(count, slots);
+
+		for (let i = 0; i < toSpawn; i++) {
+			this.spawnGenerator();
+		}
+
+		return { spawned: toSpawn };
 	}
 
 	// ---- Background Monitor ----
 
 	private monitorTick(): void {
 		if (!this.nativeBinaryPath) return;
-		if (this.pool.length > this.config.AUXINFO_POOL_LOW_WATERMARK) return;
 
-		const currentSize = this.pool.length + this.activeGenerators;
+		// Refresh cached pool size from DB every tick (every 30s)
+		this.repo
+			.countUnclaimed()
+			.then((count) => {
+				this.cachedPoolSize = count;
+			})
+			.catch((err) => {
+				this.logger.warn(`Failed to refresh pool count: ${String(err)}`);
+			});
+
+		// Prune claimed entries older than 7 days
+		this.repo.pruneOldClaimed().catch((err) => {
+			this.logger.debug(`Prune old claimed entries: ${String(err)}`);
+		});
+
+		if (this.cachedPoolSize > this.config.AUXINFO_POOL_LOW_WATERMARK) return;
+
+		const currentSize = this.cachedPoolSize + this.activeGenerators;
 		if (currentSize >= this.config.AUXINFO_POOL_TARGET) return;
 
 		const deficit = this.config.AUXINFO_POOL_TARGET - currentSize;
@@ -203,22 +222,15 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 					return;
 				}
 
-				const entry: PoolEntry = {
-					id: `entry-${crypto.randomUUID()}`,
-					auxInfoJson,
-					createdAt: new Date().toISOString(),
-				};
-
-				this.pool.push(entry);
-				const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-				this.logger.log(
-					`AuxInfo generated in ${elapsed}s. Pool: ${this.pool.length}/${this.config.AUXINFO_POOL_TARGET}`,
-				);
-
 				try {
-					await this.persistEntry(entry);
+					await this.repo.insert(auxInfoJson);
+					this.cachedPoolSize++;
+					const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+					this.logger.log(
+						`AuxInfo generated in ${elapsed}s. Pool: ~${this.cachedPoolSize}/${this.config.AUXINFO_POOL_TARGET}`,
+					);
 				} catch (err) {
-					this.logger.warn(`Persist failed for ${entry.id}: ${String(err)} — in-memory only`);
+					this.logger.error(`Failed to persist auxinfo entry: ${String(err)}`);
 				}
 			})
 			.catch((err) => {
@@ -229,11 +241,12 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 
 	private runGenAux(): Promise<string> {
 		return new Promise<string>((resolve, reject) => {
-			execFile(
-				this.nativeBinaryPath!,
+			const child = execFile(
+				this.nativeBinaryPath as string,
 				['gen-aux', '3', '1'],
 				{ maxBuffer: 50 * 1024 * 1024, timeout: GENERATOR_TIMEOUT_MS },
 				(err, stdout, stderr) => {
+					this.activeChildren.delete(child);
 					if (stderr) {
 						for (const line of stderr.split('\n').filter((l) => l.trim())) {
 							this.logger.debug(`[gen-aux] ${line}`);
@@ -246,72 +259,7 @@ export class AuxInfoPoolService implements OnModuleInit, OnModuleDestroy {
 					resolve(stdout.trim());
 				},
 			);
+			this.activeChildren.add(child);
 		});
-	}
-
-	// ---- Persistence ----
-
-	private async loadPool(): Promise<void> {
-		let manifest: ManifestData;
-		try {
-			const raw = await this.shareStore.getShare(MANIFEST_KEY);
-			manifest = JSON.parse(new TextDecoder().decode(raw)) as ManifestData;
-		} catch {
-			this.logger.debug('No manifest found — starting with empty pool');
-			return;
-		}
-
-		if (manifest.version !== 1 || !Array.isArray(manifest.entries)) {
-			this.logger.warn('Manifest corrupted — starting with empty pool');
-			return;
-		}
-
-		let loaded = 0;
-		for (const meta of manifest.entries) {
-			try {
-				const raw = await this.shareStore.getShare(`${POOL_PREFIX}/${meta.id}`);
-				const auxInfoJson = new TextDecoder().decode(raw);
-
-				if (!isValidAuxInfoJson(auxInfoJson)) {
-					this.logger.warn(`Skipping invalid pool entry ${meta.id}`);
-					continue;
-				}
-
-				this.pool.push({ id: meta.id, auxInfoJson, createdAt: meta.createdAt });
-				loaded++;
-			} catch (err) {
-				this.logger.warn(`Failed to load pool entry ${meta.id}: ${String(err)}`);
-			}
-		}
-
-		if (loaded !== manifest.entries.length) {
-			await this.saveManifest().catch((err) => {
-				this.logger.warn(`Failed to reconcile manifest: ${String(err)}`);
-			});
-		}
-	}
-
-	private async saveManifest(): Promise<void> {
-		const manifest: ManifestData = {
-			version: 1,
-			entries: this.pool.map((e) => ({ id: e.id, createdAt: e.createdAt })),
-		};
-		await this.shareStore.storeShare(
-			MANIFEST_KEY,
-			new TextEncoder().encode(JSON.stringify(manifest)),
-		);
-	}
-
-	private async persistEntry(entry: PoolEntry): Promise<void> {
-		await this.shareStore.storeShare(
-			`${POOL_PREFIX}/${entry.id}`,
-			new TextEncoder().encode(entry.auxInfoJson),
-		);
-		await this.saveManifest();
-	}
-
-	private async removeEntry(id: string): Promise<void> {
-		await this.shareStore.deleteShare(`${POOL_PREFIX}/${id}`);
-		await this.saveManifest();
 	}
 }

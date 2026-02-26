@@ -1,34 +1,56 @@
+<div align="center">
+
 # Guardian Wallet
 
-**The wallet where the key never exists.**
+### The wallet where the key never exists.
 
+Self-hosted. Open-source. 2-of-3 threshold ECDSA.
+
+The full private key is never constructed — not during creation, not during signing, not ever.
+
+[![GitHub stars](https://img.shields.io/github/stars/agentokratia/guardian-wallet?style=social)](https://github.com/agentokratia/guardian-wallet)
+&nbsp;
 [![License: Apache-2.0](https://img.shields.io/badge/SDK-Apache--2.0-green.svg)](LICENSE-APACHE)
 [![License: AGPL-3.0](https://img.shields.io/badge/Server-AGPL--3.0-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6.svg)](https://www.typescriptlang.org)
 [![MPC](https://img.shields.io/badge/MPC-CGGMP24-8B5CF6.svg)](https://eprint.iacr.org/2021/060)
 
-2-of-3 threshold ECDSA signing for AI agents and automated systems. The full private key is never constructed -- not during creation, not during signing, not ever. Agents get spending power. Operators keep control. Math enforces the rules.
+[Quick Start](#quick-start) · [Why Guardian](#why-guardian) · [Docs](#how-it-works) · [Website](https://agentokratia.com)
+
+</div>
 
 ---
 
-## Table of Contents
+## Quick Start
 
-- [The Problem](#the-problem)
-- [How It Works](#how-it-works)
-- [Quick Start](#quick-start)
-- [CLI Reference](#cli-reference)
-- [SDK and Integrations](#sdk-and-integrations)
-- [Dashboard](#dashboard)
-- [Architecture](#architecture)
-- [Policy Engine](#policy-engine)
-- [Security Model](#security-model)
-- [Supported Networks](#supported-networks)
-- [Self-Hosting](#self-hosting)
-- [Contributing](#contributing)
-- [Research](#research)
-- [License](#license)
-- [Links](#links)
+```bash
+git clone https://github.com/agentokratia/guardian-wallet.git && cd guardian-wallet
+docker compose up -d          # Starts server, database, vault
+guardian-wallet init           # Interactive setup — generates keys, configures policies
+guardian-wallet send 0xRecipient 0.1   # Send ETH. Threshold-signed. Policy-checked. Audited.
+```
+
+It's free. It's open-source. Clone the repo. Run it.
+
+> **Development setup?** See the [full install guide](#install-and-run) for building from source with pnpm.
+
+---
+
+## Why Guardian
+
+Your AI agent needs a wallet. Here's what's out there:
+
+| | **Raw private key** | **Fireblocks** | **Guardian Wallet** |
+|---|---|---|---|
+| **Security** | One leaked `.env` = everything gone | MPC, but they hold the shares | 2-of-3 threshold — you hold all shares |
+| **Policy engine** | None | External rules only | 9 built-in policy types |
+| **Audit log** | None | Dashboard | Full log + CSV export |
+| **Self-hosted** | N/A | No — cloud SaaS | Yes — your infra, your data |
+| **Setup** | 1 line of code, 0 safety | Weeks (enterprise sales) | 10 minutes (Docker) |
+| **Cost** | Free (and you get what you pay for) | $50k–$500k/yr | Free and open-source |
+| **Open source** | N/A | No | Yes (AGPL + Apache 2.0) |
+| **Agent-native** | Copy-paste a key into `.env` | API, not built for agents | CLI + SDK + MCP server |
+
+Guardian splits every private key into 3 shares. Any 2 can co-sign a transaction. The full key is never reconstructed — not in memory, not in logs, not anywhere. Agents get spending power. Operators keep control.
 
 ---
 
@@ -74,29 +96,32 @@ Any 2 of the 3 shares can co-sign a transaction:
 
 ### Architecture
 
-```
-                    +---------------+
-                    |   3 Shares    |
-                    |   (CGGMP24)   |
-                    +-------+-------+
-                            |
-               +------------+------------+
-               v            v            v
-         +----------+ +----------+ +----------+
-         |  Signer  | |  Server  | |   User   |
-         |  Share   | |  Share   | |  Share   |
-         | (agent)  | | (vault)  | |(browser) |
-         +----------+ +----------+ +----------+
-               |            |            |
-               +------+-----+            |
-                      v                  |
-               2-of-3 Sign              |
-               (any pair)---------------+
+```mermaid
+graph TD
+    DKG["🔑 Distributed Key Generation (CGGMP24)"]
+    DKG --> S1["<b>Signer Share</b><br/>API Secret (copy from dashboard)"]
+    DKG --> S2["<b>Server Share</b><br/>HashiCorp Vault (KV v2)"]
+    DKG --> S3["<b>User Share</b><br/>Browser (passkey-encrypted)"]
+
+    S1 -. "any 2 of 3" .-> SIGN["✍️ Threshold Signature"]
+    S2 -. "any 2 of 3" .-> SIGN
+    S3 -. "any 2 of 3" .-> SIGN
+
+    SIGN --> POLICY["🛡️ Policy Engine<br/>9 rule types evaluated before signing"]
+    POLICY --> TX["📡 Broadcast Transaction"]
+
+    style DKG fill:#1e1e2e,stroke:#6366f1,color:#fff
+    style SIGN fill:#1e1e2e,stroke:#22c55e,color:#fff
+    style POLICY fill:#1e1e2e,stroke:#f59e0b,color:#fff
+    style TX fill:#1e1e2e,stroke:#22c55e,color:#fff
+    style S1 fill:#12121a,stroke:#6366f1,color:#fff
+    style S2 fill:#12121a,stroke:#6366f1,color:#fff
+    style S3 fill:#12121a,stroke:#6366f1,color:#fff
 ```
 
 ---
 
-## Quick Start
+## Install and Run
 
 ### Prerequisites
 
@@ -105,7 +130,7 @@ Any 2 of the 3 shares can co-sign a transaction:
 - Docker (for Supabase local dev)
 - Rust and wasm-pack (for building the WASM MPC library)
 
-### Install and Run
+### From Source
 
 ```bash
 git clone https://github.com/agentokratia/guardian-wallet.git
@@ -287,7 +312,7 @@ forge script script/Deploy.s.sol \
 The Guardian dashboard is a React SPA with 8 pages:
 
 - **Login** -- Email + passkey authentication (WebAuthn). No wallet extension required.
-- **Create Signer** -- Wizard: name, chain, DKG ceremony, policy setup, credential download.
+- **Create Signer** -- Wizard: name, chain, DKG ceremony, policy setup, credentials (API Key + API Secret).
 - **Signers** -- Grid of signer cards with balances, status indicators, and recent activity.
 - **Signer Detail** -- Balance, policies with toggles, signing activity log.
 - **Sign** -- Transaction form with simulation preview, browser-side WASM signing (User + Server path).
@@ -441,7 +466,7 @@ A declarative rules engine with 10 criterion types for complex policy logic:
 |-------|---------|------------|
 | Server share | KMS provider (Vault KV v2 or local-file AES-256-GCM) | Encrypted at rest via KMS |
 | User share | Server-side (opaque blob) | AES-256-GCM, key derived from passkey PRF via HKDF |
-| Signer share | Agent filesystem (`.share.enc`) | AES-256-GCM, scrypt KDF from passphrase |
+| Signer share | Agent environment variable or CLI config | Base64 text (API Secret from dashboard) |
 
 ### Guarantees
 

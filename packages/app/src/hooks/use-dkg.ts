@@ -2,13 +2,11 @@ import { api } from '@/lib/api-client';
 import { useMutation } from '@tanstack/react-query';
 
 interface CreateSignerResult {
-	signer: {
-		id: string;
-		name: string;
-		ethAddress: string;
-		status: string;
-	};
+	signerId: string;
+	ethAddress: string;
 	apiKey: string;
+	signerShare: string;
+	userShare: string;
 }
 
 interface DKGInitResult {
@@ -35,9 +33,8 @@ export function useCreateSigner() {
 	});
 }
 
-// DKG cold start (empty AuxInfo pool) takes ~120s for prime generation.
-// Use 3-minute timeout to accommodate worst case.
-const DKG_TIMEOUT_MS = 180_000;
+// DKG with pool entries takes ~1s. Use generous timeout for safety.
+const DKG_TIMEOUT_MS = 30_000;
 
 export function useDKGInit() {
 	return useMutation({

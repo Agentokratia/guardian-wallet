@@ -32,7 +32,7 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 						content: [
 							{
 								type: 'text' as const,
-								text: 'No wallet found. Create a signer first via the Guardian dashboard.',
+								text: 'No wallet found. Create an account first in Guardian.',
 							},
 						],
 					};
@@ -91,7 +91,9 @@ export function registerWalletOverview(server: McpServer, signerManager: SignerM
 						}
 
 						if (!tokenBalances.length) {
-							lines.push('No tracked tokens. Add tokens via dashboard or guardian_call_contract.');
+							lines.push(
+								'No tracked tokens. Add tokens in Guardian or use guardian_call_contract.',
+							);
 						}
 					}
 				} catch {

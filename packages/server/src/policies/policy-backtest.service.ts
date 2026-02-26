@@ -1,8 +1,8 @@
 /**
- * Policy backtest service — re-evaluates a draft policy against recent signing requests.
+ * Policy backtest service — re-evaluates policy rules against recent signing requests.
  *
  * "This policy would have blocked N of your last 20 transactions."
- * Gives traders confidence before activating a new policy.
+ * Gives traders confidence before saving a new policy.
  *
  * Limitation: Rolling spend context is approximated from the fetched batch only.
  * The real rolling spend at each historical tx's timestamp is not reconstructed

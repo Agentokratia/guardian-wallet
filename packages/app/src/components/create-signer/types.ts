@@ -5,14 +5,14 @@ import type { LucideIcon } from 'lucide-react';
 /*  Types                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type Phase = 'input' | 'creating' | 'encrypt' | 'done' | 'error';
+export type Phase = 'input' | 'creating' | 'done' | 'error';
 
 /** Intermediate result after DKG — before passkey encryption */
 export interface DKGResult {
 	signerId: string;
 	ethAddress: string;
 	apiKey: string;
-	shareData: string;
+	apiSecret: string;
 	userShare: string;
 }
 
@@ -21,7 +21,7 @@ export interface CreationResult {
 	signerId: string;
 	ethAddress: string;
 	apiKey: string;
-	shareData: string;
+	apiSecret: string;
 	backupStored: boolean;
 	backupPayload: string;
 }

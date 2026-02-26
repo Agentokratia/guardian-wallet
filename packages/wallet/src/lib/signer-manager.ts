@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { CGGMP24Scheme } from '@agentokratia/guardian-schemes';
 import { GuardianApi, HttpClient, ThresholdSigner } from '@agentokratia/guardian-signer';
 
@@ -9,14 +8,9 @@ export class SignerManager {
 	private api: GuardianApi | null = null;
 
 	private getConfig() {
-		let apiSecret = process.env.GUARDIAN_API_SECRET;
-		const secretFile = process.env.GUARDIAN_API_SECRET_FILE;
+		const apiSecret = process.env.GUARDIAN_API_SECRET;
 		const serverUrl = process.env.GUARDIAN_SERVER || 'http://localhost:8080';
 		const apiKey = process.env.GUARDIAN_API_KEY;
-
-		if (!apiSecret && secretFile) {
-			apiSecret = readFileSync(secretFile, 'utf-8').trim();
-		}
 
 		if (!apiSecret) throw new Error('GUARDIAN_API_SECRET is required');
 		if (!apiKey) throw new Error('GUARDIAN_API_KEY is required');

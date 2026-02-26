@@ -51,13 +51,6 @@ gw.destroy();
 ```typescript
 import { ThresholdSigner } from '@agentokratia/guardian-signer';
 
-// Load from a .secret file (CLI path)
-const signer = await ThresholdSigner.fromFile({
-  configPath: '~/.gw/config.json',
-  secretPath: '~/.gw/my-agent.secret',
-});
-
-// Or from environment variables
 const signer = await ThresholdSigner.fromSecret({
   apiSecret: process.env.GUARDIAN_API_SECRET,
   serverUrl: 'http://localhost:8080',
@@ -126,8 +119,7 @@ gw.destroy();
 
 | Method | Description |
 |--------|-------------|
-| `ThresholdSigner.fromFile(opts)` | Load signer from config + secret file |
-| `ThresholdSigner.fromSecret(opts)` | Load signer from environment/inline secret |
+| `ThresholdSigner.fromSecret(opts)` | Load signer from API Secret (base64 key share) |
 | `signer.signTransaction(tx)` | Sign and broadcast |
 | `signer.signMessage(msg)` | Sign EIP-191 message |
 | `signer.toViemAccount()` | viem account adapter |

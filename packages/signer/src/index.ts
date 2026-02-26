@@ -5,11 +5,10 @@ export { GuardianApi } from './guardian-api.js';
 export { Guardian } from './guardian.js';
 
 // Functions (share-loader)
-export { saveShareToFile, loadShareFromFile, wipeShare } from './share-loader.js';
+export { wipeShare } from './share-loader.js';
 
 // Types — ThresholdSigner
 export type {
-	FromFileOptions,
 	FromSecretOptions,
 	SignMessageResult,
 	SignTransactionResult,

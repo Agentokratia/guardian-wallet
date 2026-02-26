@@ -25,7 +25,7 @@ pnpm --filter @agentokratia/guardian-app dev       # terminal 2
 
 # 3. Create a signer
 #    Open http://localhost:3000, sign in, create a signer.
-#    The wizard gives you an API key and a .secret file.
+#    The wizard gives you an API Key and API Secret (copy both).
 
 # 4. Configure examples
 cp examples/.env.example examples/.env
@@ -41,7 +41,7 @@ pnpm example:viem 0xRecipient 0.001
 |----------|----------|-----------------|
 | `GUARDIAN_SERVER` | Yes | Default: `http://localhost:8080` |
 | `GUARDIAN_API_KEY` | Yes | Shown when you create a signer in the dashboard |
-| `GUARDIAN_API_SECRET` | Yes | Contents of the `.secret` file downloaded during signer creation |
+| `GUARDIAN_API_SECRET` | Yes | API Secret copied from the dashboard during signer creation |
 | `GOOGLE_API_KEY` | LangChain / Vercel AI only | [aistudio.google.com](https://aistudio.google.com/apikey) |
 | `ANTHROPIC_API_KEY` | Claude agent / MCP agent only | [console.anthropic.com](https://console.anthropic.com) |
 

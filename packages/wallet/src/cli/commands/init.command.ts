@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { input, password, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { Command } from 'commander';
@@ -14,7 +15,7 @@ import {
 	setDefaultSigner,
 	validateSignerName,
 } from '../../lib/config.js';
-import { isKeychainAvailable, storeUserShare } from '../../lib/keychain.js';
+import { getSession, isKeychainAvailable, storeUserShare } from '../../lib/keychain.js';
 import {
 	BRAND_BANNER,
 	brand,
@@ -87,7 +88,7 @@ export const initCommand = new Command('init')
 				{
 					name: 'I already have a wallet',
 					value: 'import',
-					description: 'Connect using an API key and secret file',
+					description: 'Connect using an API Key and API Secret',
 				},
 			];
 			if (existing.length > 1) {
@@ -132,6 +133,16 @@ export const initCommand = new Command('init')
 // ---------------------------------------------------------------------------
 
 async function handleCreate(): Promise<void> {
+	// ── 0. Require login ─────────────────────────────────────────────────
+	const token = await getSession();
+	if (!token) {
+		console.log('');
+		console.log(`  ${failMark(`Not logged in. Run ${chalk.bold('gw login')} first.`)}`);
+		console.log('');
+		process.exitCode = 1;
+		return;
+	}
+
 	// ── 1. Basics ─────────────────────────────────────────────────────────
 	section('Basics');
 
@@ -150,7 +161,7 @@ async function handleCreate(): Promise<void> {
 	console.log('');
 
 	const serverUrl = await input({
-		message: 'Policy engine URL',
+		message: 'Guardian server URL',
 		default: 'http://localhost:8080',
 		theme: promptTheme,
 	});
@@ -191,10 +202,13 @@ async function handleCreate(): Promise<void> {
 	console.log('');
 	const spinner = ora({ text: 'Generating wallet…', indent: 2 }).start();
 
-	const url = `${serverUrl.replace(/\/+$/, '')}/api/v1/signers/public`;
+	const url = `${serverUrl.replace(/\/+$/, '')}/api/v1/signers`;
 	const response = await fetch(url, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`,
+		},
 		body: JSON.stringify({ name }),
 		signal: AbortSignal.timeout(120_000),
 	});
@@ -242,8 +256,59 @@ async function handleCreate(): Promise<void> {
 	console.log(`  ${dim(`Config: ${getSignerConfigPath(name)}`)}`);
 	console.log('');
 	console.log(`  ${success('Done!')} Run ${chalk.bold('gw status')} to see your wallets.`);
-	console.log(`         Run ${chalk.bold('gw admin unlock')} to manage policies.`);
+	console.log(`         Run ${chalk.bold('gw admin policies')} to manage policies.`);
 	console.log('');
+}
+
+// ---------------------------------------------------------------------------
+// Secret input — hidden with live character counter
+// ---------------------------------------------------------------------------
+
+function readSecret(label: string): Promise<string> {
+	return new Promise((resolve) => {
+		const rl = createInterface({ input: process.stdin, terminal: false });
+
+		// Mute stdin echo so the huge base64 blob never renders
+		if (process.stdin.isTTY) process.stdin.setRawMode(true);
+		process.stdout.write(`  ${chalk.bold('?')} ${chalk.bold(label)}: `);
+
+		let buf = '';
+		const onData = (key: Buffer) => {
+			const ch = key.toString();
+			// Enter
+			if (ch === '\r' || ch === '\n') {
+				if (process.stdin.isTTY) process.stdin.setRawMode(false);
+				process.stdin.removeListener('data', onData);
+				rl.close();
+				// Clear the counter line and move to next line
+				process.stdout.write('\r\x1b[K');
+				process.stdout.write(
+					`  ${chalk.bold('?')} ${chalk.bold(label)}: ${chalk.dim(`[${buf.length.toLocaleString()} chars]`)}\n`,
+				);
+				resolve(buf);
+				return;
+			}
+			// Ctrl+C
+			if (ch === '\x03') {
+				if (process.stdin.isTTY) process.stdin.setRawMode(false);
+				rl.close();
+				process.exit(1);
+			}
+			// Backspace
+			if (ch === '\x7f' || ch === '\b') {
+				buf = buf.slice(0, -1);
+			} else {
+				buf += ch;
+			}
+			// Rewrite the prompt with live char count
+			process.stdout.write('\r\x1b[K');
+			process.stdout.write(
+				`  ${chalk.bold('?')} ${chalk.bold(label)}: ${chalk.dim(`[${buf.length.toLocaleString()} chars]`)}`,
+			);
+		};
+		process.stdin.on('data', onData);
+		process.stdin.resume();
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -269,56 +334,29 @@ async function handleImport(): Promise<void> {
 	console.log('');
 
 	const serverUrl = await input({
-		message: 'Policy engine URL',
+		message: 'Guardian server URL',
 		default: 'http://localhost:8080',
 		theme: promptTheme,
 	});
 
 	// ── 2. Credentials ───────────────────────────────────────────────────
 	section('Credentials');
-	hint('Find your API key and secret in the Guardian dashboard.');
+	hint('Find your API Key and API Secret in Guardian.');
 	console.log('');
 
-	const apiKey = await password({
-		message: 'API key',
-		mask: '*',
+	const apiKey = await input({
+		message: 'API Key',
 		theme: promptTheme,
-	});
-	if (!apiKey) throw new Error('API key is required.');
-
-	console.log('');
-
-	const secretSource = await select({
-		message: 'Signer secret',
-		choices: [
-			{
-				name: 'Point to a file on disk',
-				value: 'file',
-				description: 'e.g. ~/Downloads/my-wallet.secret',
-			},
-			{
-				name: 'Paste the contents directly',
-				value: 'paste',
-				description: 'Copy from the dashboard',
-			},
-		],
-		theme: promptTheme,
+		validate: (v) => (v.trim() ? true : 'API Key is required.'),
 	});
 
 	console.log('');
 
-	let apiSecret: string | undefined;
-	let apiSecretFile: string | undefined;
-
-	if (secretSource === 'file') {
-		apiSecretFile = await input({ message: 'Path to secret file', theme: promptTheme });
-	} else {
-		apiSecret = await password({ message: 'Paste secret contents', mask: '*', theme: promptTheme });
-	}
-
-	if (!apiSecret && !apiSecretFile) {
-		throw new Error('A secret file or value is required.');
-	}
+	const apiSecret = await readSecret('API Secret');
+	if (!apiSecret) throw new Error('API Secret is required.');
+	console.log(
+		`  ${chalk.green('✓')} Received ${apiSecret.length.toLocaleString()} chars ${chalk.dim(`(${apiSecret.slice(0, 8)}…${apiSecret.slice(-4)})`)}`,
+	);
 
 	// ── 3. Connect ────────────────────────────────────────────────────────
 	section('Connecting');
@@ -346,7 +384,6 @@ async function handleImport(): Promise<void> {
 		serverUrl,
 		apiKey,
 		apiSecret,
-		apiSecretFile,
 		signerName: name,
 		ethAddress,
 		signerId,

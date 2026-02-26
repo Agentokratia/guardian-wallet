@@ -16,7 +16,7 @@ import {
 	UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
-import { EitherAdminGuard } from '../common/either-admin.guard.js';
+import { SessionGuard } from '../common/session.guard.js';
 import { SignerService } from '../signers/signer.service.js';
 import { CreatePolicyDto } from './dto/create-policy.dto.js';
 import { SavePolicyDocumentDto } from './dto/save-policy-document.dto.js';
@@ -26,7 +26,7 @@ import { PolicyDocumentService } from './policy-document.service.js';
 import { PolicyService } from './policy.service.js';
 
 @Controller()
-@UseGuards(EitherAdminGuard)
+@UseGuards(SessionGuard)
 export class PolicyController {
 	constructor(
 		@Inject(PolicyService) private readonly policyService: PolicyService,
@@ -36,14 +36,11 @@ export class PolicyController {
 	) {}
 
 	private async verifySignerOwnership(signerId: string, req: AuthenticatedRequest) {
-		if (!req.signerId && !req.sessionUser) {
+		if (!req.sessionUserId) {
 			throw new ForbiddenException('No authenticated identity');
 		}
-		if (req.signerId && req.signerId !== signerId) {
-			throw new ForbiddenException('API key does not match this signer');
-		}
 		const signer = await this.signerService.get(signerId);
-		if (req.sessionUser && signer.ownerAddress.toLowerCase() !== req.sessionUser.toLowerCase()) {
+		if (signer.ownerId !== req.sessionUserId) {
 			throw new ForbiddenException('You do not own this signer');
 		}
 		return signer;
@@ -72,35 +69,7 @@ export class PolicyController {
 		);
 	}
 
-	// ─── Draft / Activate / Backtest ──────────────────────────────────────────
-
-	@Get('signers/:id/policy/draft')
-	async getDraft(@Param('id') signerId: string, @Req() req: AuthenticatedRequest) {
-		await this.verifySignerOwnership(signerId, req);
-		const doc = await this.policyDocService.getDraft(signerId);
-		return doc ?? { rules: [], description: null, status: 'draft' };
-	}
-
-	@Put('signers/:id/policy/draft')
-	async saveDraft(
-		@Param('id') signerId: string,
-		@Body() body: SavePolicyDocumentDto,
-		@Req() req: AuthenticatedRequest,
-	) {
-		await this.verifySignerOwnership(signerId, req);
-		return this.policyDocService.saveDraft(
-			signerId,
-			body.rules as unknown as PolicyRule[],
-			body.description,
-		);
-	}
-
-	@Post('signers/:id/policy/activate')
-	@HttpCode(HttpStatus.OK)
-	async activate(@Param('id') signerId: string, @Req() req: AuthenticatedRequest) {
-		await this.verifySignerOwnership(signerId, req);
-		return this.policyDocService.activate(signerId);
-	}
+	// ─── Backtest ────────────────────────────────────────────────────────────────
 
 	@Post('signers/:id/policy/backtest')
 	@HttpCode(HttpStatus.OK)
@@ -112,14 +81,14 @@ export class PolicyController {
 		await this.verifySignerOwnership(signerId, req);
 
 		// Prefer rules from the request body (live editor state),
-		// fall back to saved draft, then to empty result.
+		// fall back to active policy, then to empty result.
 		let rules: readonly PolicyRule[] | undefined = body.rules;
 		if (rules && rules.length > 0) {
 			this.policyDocService.validateRules(rules);
 		}
 		if (!rules || rules.length === 0) {
-			const draft = await this.policyDocService.getDraft(signerId);
-			rules = draft?.rules;
+			const active = await this.policyDocService.get(signerId);
+			rules = active?.rules;
 		}
 		if (!rules || rules.length === 0) {
 			return { totalAnalyzed: 0, wouldPass: 0, wouldBlock: 0, blockedRequests: [] };

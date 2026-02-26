@@ -214,7 +214,7 @@ class NativeSignProcess {
 		});
 
 		// Create async line iterator on stdout
-		const rl = createInterface({ input: child.stdout! });
+		const rl = createInterface({ input: child.stdout as NodeJS.ReadableStream });
 		const lineIterator = (rl as unknown as AsyncIterable<string>)[Symbol.asyncIterator]();
 
 		const nativeProcess = new NativeSignProcess(child, lineIterator);
@@ -559,8 +559,9 @@ export class CGGMP24Scheme implements IThresholdScheme {
 			throw new Error(`messageHash must be 32 bytes, got ${String(messageHash.length)}`);
 		}
 
-		const coreShare = keyMaterialBytes[0]!;
-		const auxInfo = keyMaterialBytes[1]!;
+		// Safe: guarded by length check above
+		const coreShare = keyMaterialBytes[0] as Uint8Array;
+		const auxInfo = keyMaterialBytes[1] as Uint8Array;
 
 		const partyIndex = options?.partyIndex ?? 0;
 		const partiesAtKeygen = options?.partiesAtKeygen ?? [0, 1];
@@ -581,7 +582,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 		// are incompatible between rug/GMP and num-bigint backends).
 		if (!options?.forceWasm && (await this.nativeBinaryAvailable())) {
 			const { nativeProcess, firstMessages: nativeMsgs } = await NativeSignProcess.create(
-				this._nativeBinPath!,
+				this._nativeBinPath as string,
 				coreShare,
 				auxInfo,
 				messageHash,
@@ -682,7 +683,7 @@ export class CGGMP24Scheme implements IThresholdScheme {
 
 		// Call WASM to process the round
 		const wasmResult = wasmModule.sign_process_round(
-			state.wasmSessionId!,
+			state.wasmSessionId as string,
 			incoming,
 		) as WasmProcessRoundResult;
 

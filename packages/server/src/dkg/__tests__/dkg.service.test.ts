@@ -6,7 +6,11 @@ import {
 	SignerStatus,
 	SignerType,
 } from '@agentokratia/guardian-core';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+	BadRequestException,
+	NotFoundException,
+	ServiceUnavailableException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as cryptoUtils from '../../common/crypto-utils.js';
 import type { SignerRepository } from '../../signers/signer.repository.js';
@@ -49,7 +53,7 @@ function makeSigner(overrides: Partial<Signer> = {}): Signer {
 		scheme: SchemeName.CGGMP24,
 		network: NetworkName.SEPOLIA,
 		status: SignerStatus.ACTIVE,
-		ownerAddress: '0xTestOwner',
+		ownerId: 'test-user-id',
 		apiKeyHash: 'hash123',
 		vaultSharePath: '',
 		dkgCompleted: false,
@@ -76,9 +80,9 @@ function createMocks() {
 	};
 
 	const auxInfoPool = {
-		take: vi.fn().mockResolvedValue(null),
+		take: vi.fn().mockResolvedValue('{"aux_infos":[{},{},{}]}'),
 		getStatus: vi.fn().mockReturnValue({
-			size: 0,
+			size: 3,
 			target: 5,
 			lowWatermark: 2,
 			activeGenerators: 0,
@@ -217,9 +221,11 @@ describe('DKGService', () => {
 				signerId: 'signer-1',
 			});
 
-			// runDkg called exactly once with (3, 2)
+			// runDkg called exactly once with (3, 2, { cachedAuxInfo })
 			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
-			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, undefined);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, {
+				cachedAuxInfo: '{"aux_infos":[{},{},{}]}',
+			});
 			// Server share stored in Vault (bundled as JSON key material)
 			expect(mocks.vault.storeShare).toHaveBeenCalledTimes(1);
 			expect(mocks.vault.storeShare).toHaveBeenCalledWith('signer-1', expect.any(Uint8Array));
@@ -349,6 +355,25 @@ describe('DKGService', () => {
 				expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(aux);
 			}
 			expect(cryptoUtils.wipeBuffer).toHaveBeenCalledWith(publicKey);
+		});
+
+		it('throws 503 when pool is empty (fail fast — no cold start)', async () => {
+			mocks.signerRepo.findById.mockResolvedValue(makeSigner());
+			mocks.auxInfoPool.take.mockResolvedValueOnce(null);
+
+			const initResult = await service.init({ signerId: 'signer-1' });
+
+			await expect(
+				service.finalize({
+					sessionId: initResult.sessionId,
+					signerId: 'signer-1',
+				}),
+			).rejects.toThrow(ServiceUnavailableException);
+
+			// DKG never ran — no cold start fallback
+			expect(mockScheme.runDkg).not.toHaveBeenCalled();
+			// No share stored in Vault
+			expect(mocks.vault.storeShare).not.toHaveBeenCalled();
 		});
 	});
 });

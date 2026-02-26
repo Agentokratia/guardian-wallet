@@ -71,7 +71,7 @@ export function ApiKeyCard({ apiKey }: ApiKeyCardProps) {
 					<CopyButton text={apiKey} />
 				</div>
 				<p className="text-[11px] text-text-dim leading-relaxed">
-					Your bots and scripts use this to authenticate.
+					Paste this into your bot or script configuration to authenticate.
 				</p>
 			</CardContent>
 		</Card>
@@ -79,59 +79,7 @@ export function ApiKeyCard({ apiKey }: ApiKeyCardProps) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Secret File Card                                                           */
-/* -------------------------------------------------------------------------- */
-
-interface SecretFileCardProps {
-	name: string;
-	secretDownloaded: boolean;
-	onDownload: () => void;
-}
-
-export function SecretFileCard({ name, secretDownloaded, onDownload }: SecretFileCardProps) {
-	return (
-		<Card
-			className={cn(
-				'border-border bg-surface transition-colors',
-				!secretDownloaded && 'border-warning/40',
-			)}
-		>
-			<CardContent className="p-4 space-y-2.5">
-				<div className="flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<Shield className="h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
-						<span className="text-[13px] font-semibold text-text">Secret File</span>
-					</div>
-					{secretDownloaded ? (
-						<span className="text-[10px] font-medium text-success px-1.5 py-0.5 rounded bg-success/10 flex items-center gap-1">
-							<Check className="h-3 w-3" aria-hidden="true" /> saved
-						</span>
-					) : (
-						<span className="text-[10px] font-medium text-warning px-1.5 py-0.5 rounded bg-warning/10">
-							required
-						</span>
-					)}
-				</div>
-				<Button
-					variant={secretDownloaded ? 'outline' : 'default'}
-					className="w-full"
-					onClick={onDownload}
-				>
-					<Download className="h-3.5 w-3.5" aria-hidden="true" />
-					{secretDownloaded ? 'Download Again' : `Download ${name}.secret`}
-				</Button>
-				<p className="text-[11px] text-text-dim leading-relaxed">
-					{secretDownloaded
-						? 'Store this file securely. You can re-download now, but not after leaving this page.'
-						: 'This is your account\u2019s secret key \u2014 needed to sign transactions. Download it before continuing.'}
-				</p>
-			</CardContent>
-		</Card>
-	);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Backup Key Card                                                            */
+/*  Dashboard Access Card (backup key)                                         */
 /* -------------------------------------------------------------------------- */
 
 interface BackupKeyCardProps {
@@ -157,23 +105,23 @@ export function BackupKeyCard({ name, backupStored, backupPayload }: BackupKeyCa
 			<CardContent className="p-4 space-y-2.5">
 				<div className="flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<Lock className="h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
-						<span className="text-[13px] font-semibold text-text">Backup Key</span>
+						<Shield className="h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
+						<span className="text-[13px] font-semibold text-text">Dashboard Signing</span>
 					</div>
 					{backupStored ? (
 						<span className="text-[10px] font-medium text-success px-1.5 py-0.5 rounded bg-success/10 flex items-center gap-1">
-							<Check className="h-3 w-3" aria-hidden="true" /> encrypted
+							<Lock className="h-3 w-3" aria-hidden="true" /> secured
 						</span>
 					) : (
 						<span className="text-[10px] font-medium text-warning px-1.5 py-0.5 rounded bg-warning/10">
-							failed
+							not set up
 						</span>
 					)}
 				</div>
 				{backupStored ? (
 					<>
 						<p className="text-[11px] text-text-dim leading-relaxed">
-							Encrypted with your passkey and stored server-side. Keep a local copy for recovery.
+							Protected by Touch ID. You can sign transactions directly from this dashboard.
 						</p>
 						<Button
 							variant="outline"
@@ -182,15 +130,15 @@ export function BackupKeyCard({ name, backupStored, backupPayload }: BackupKeyCa
 							disabled={!backupPayload}
 						>
 							<Download className="h-3.5 w-3.5" aria-hidden="true" />
-							Download backup
+							Download backup copy
 						</Button>
 					</>
 				) : (
 					<div className="flex items-center gap-2">
 						<AlertTriangle className="h-4 w-4 text-warning shrink-0" aria-hidden="true" />
 						<p className="text-[11px] text-warning leading-relaxed">
-							Passkey encryption was skipped. Dashboard signing won&apos;t be available for this
-							account.
+							Touch ID setup was skipped. You can still sign from the CLI, but not from this
+							dashboard.
 						</p>
 					</div>
 				)}

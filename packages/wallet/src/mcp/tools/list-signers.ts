@@ -17,7 +17,7 @@ export function registerListSigners(server: McpServer, signerManager: SignerMana
 
 				if (!signers.length) {
 					return {
-						content: [{ type: 'text' as const, text: 'No signers found.' }],
+						content: [{ type: 'text' as const, text: 'No accounts found.' }],
 					};
 				}
 
@@ -36,7 +36,7 @@ export function registerListSigners(server: McpServer, signerManager: SignerMana
 					content: [
 						{
 							type: 'text' as const,
-							text: `${signers.length} signer(s):\n\n${lines.join('\n\n')}`,
+							text: `${signers.length} account(s):\n\n${lines.join('\n\n')}`,
 						},
 					],
 				};

@@ -29,6 +29,8 @@ export interface AppConfig {
 	// Auth
 	readonly JWT_SECRET: string;
 	readonly JWT_EXPIRY: string;
+	/** Pre-parsed JWT_EXPIRY in milliseconds (for cookie maxAge). */
+	readonly JWT_EXPIRY_MS: number;
 
 	// WebAuthn
 	readonly RP_ID: string;
@@ -64,10 +66,39 @@ function parsePoolMaxGenerators(name: string, fallback: string): number {
 	return val;
 }
 
+/** Validate JWT_EXPIRY format matches what both jsonwebtoken and cookie maxAge can use. */
+function parseAndValidateExpiry(expiry: string): string {
+	if (!/^\d+[smhd]$/.test(expiry)) {
+		throw new Error(
+			`Invalid JWT_EXPIRY format: "${expiry}". Must be a number followed by s/m/h/d (e.g. "15m", "1h", "7d").`,
+		);
+	}
+	return expiry;
+}
+
+/** Convert shorthand expiry (e.g. '15m', '1h', '7d') to milliseconds. */
+function parseExpiryToMs(expiry: string): number {
+	const match = expiry.match(/^(\d+)([smhd])$/);
+	if (!match) throw new Error(`Cannot parse expiry: "${expiry}"`);
+	const value = Number.parseInt(match[1] as string, 10);
+	switch (match[2]) {
+		case 's':
+			return value * 1000;
+		case 'm':
+			return value * 60 * 1000;
+		case 'h':
+			return value * 3600 * 1000;
+		case 'd':
+			return value * 86400 * 1000;
+		default:
+			throw new Error(`Unknown unit: ${match[2]}`);
+	}
+}
+
 export function parseConfig(): AppConfig {
 	const jwtSecret = requireEnv('JWT_SECRET');
-	if (jwtSecret.length < 16) {
-		throw new Error('JWT_SECRET must be at least 16 characters');
+	if (jwtSecret.length < 32) {
+		throw new Error('JWT_SECRET must be at least 32 characters (256 bits for HS256)');
 	}
 
 	const portStr = process.env.PORT;
@@ -130,7 +161,8 @@ export function parseConfig(): AppConfig {
 		KMS_LOCAL_KEY_FILE: kmsLocalKeyFile,
 
 		JWT_SECRET: jwtSecret,
-		JWT_EXPIRY: optionalEnv('JWT_EXPIRY', '24h'),
+		JWT_EXPIRY: parseAndValidateExpiry(optionalEnv('JWT_EXPIRY', '15m')),
+		JWT_EXPIRY_MS: parseExpiryToMs(optionalEnv('JWT_EXPIRY', '15m')),
 
 		RP_ID: optionalEnv('RP_ID', 'localhost'),
 		RP_NAME: optionalEnv('RP_NAME', 'Guardian Wallet'),

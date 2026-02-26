@@ -17,6 +17,7 @@ import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { base64ToBytes, bytesToBase64, hexToBytes } from '../common/encoding.js';
 import { SessionGuard } from '../common/session.guard.js';
 import { NetworkService } from '../networks/network.service.js';
+import { SignerService } from '../signers/signer.service.js';
 import { CompleteSignDto } from './dto/complete-sign.dto.js';
 import { CreateMessageSignSessionDto } from './dto/create-message-sign-session.dto.js';
 import { CreateSignSessionDto } from './dto/create-sign-session.dto.js';
@@ -29,6 +30,7 @@ export class SigningController {
 	constructor(
 		@Inject(InteractiveSignService) private readonly interactiveSign: InteractiveSignService,
 		@Inject(NetworkService) private readonly networkService: NetworkService,
+		@Inject(SignerService) private readonly signerService: SignerService,
 	) {}
 
 	/**
@@ -42,7 +44,8 @@ export class SigningController {
 		@Param('id') signerId: string,
 		@Body() body: CreateSignSessionDto,
 	) {
-		requireSessionUser(req);
+		const userId = requireSessionUser(req);
+		await this.requireSignerOwnership(signerId, userId);
 		const result = await this.interactiveSign.createSession({
 			signerId,
 			signerFirstMessage: body.signerFirstMessage
@@ -72,7 +75,8 @@ export class SigningController {
 		@Param('id') signerId: string,
 		@Body() body: ProcessSignRoundDto,
 	) {
-		requireSessionUser(req);
+		const userId = requireSessionUser(req);
+		await this.requireSignerOwnership(signerId, userId);
 		const result = await this.interactiveSign.processRound({
 			sessionId: body.sessionId,
 			signerId,
@@ -96,7 +100,8 @@ export class SigningController {
 		@Param('id') signerId: string,
 		@Body() body: CompleteSignDto,
 	) {
-		requireSessionUser(req);
+		const userId = requireSessionUser(req);
+		await this.requireSignerOwnership(signerId, userId);
 		return this.interactiveSign.completeSign({
 			sessionId: body.sessionId,
 			signerId,
@@ -186,6 +191,13 @@ export class SigningController {
 		});
 	}
 
+	private async requireSignerOwnership(signerId: string, userId: string): Promise<void> {
+		const signer = await this.signerService.get(signerId);
+		if (signer.ownerId !== userId) {
+			throw new ForbiddenException('You do not own this signer');
+		}
+	}
+
 	private async resolveChainId(tx: CreateSignSessionDto['transaction']): Promise<number> {
 		if (tx.chainId && tx.chainId > 0) return tx.chainId;
 		if (tx.network) {
@@ -219,6 +231,6 @@ function requireSignerId(req: AuthenticatedRequest): string {
 }
 
 function requireSessionUser(req: AuthenticatedRequest): string {
-	if (!req.sessionUser) throw new ForbiddenException('Missing session user');
-	return req.sessionUser;
+	if (!req.sessionUserId) throw new ForbiddenException('Missing session user');
+	return req.sessionUserId;
 }
