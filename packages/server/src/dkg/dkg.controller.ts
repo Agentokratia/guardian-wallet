@@ -27,9 +27,12 @@ export class DKGController {
 	}
 
 	private async verifyOwnership(signerId: string, req: AuthenticatedRequest): Promise<void> {
+		if (!req.sessionUserId) {
+			throw new ForbiddenException('No authenticated identity');
+		}
 		const signer = await this.signerRepo.findById(signerId);
 		if (!signer) return; // DKGService.init/finalize will throw NotFoundException
-		if (req.sessionUser && signer.ownerAddress.toLowerCase() !== req.sessionUser.toLowerCase()) {
+		if (signer.ownerId !== req.sessionUserId) {
 			throw new ForbiddenException('You do not own this signer');
 		}
 	}

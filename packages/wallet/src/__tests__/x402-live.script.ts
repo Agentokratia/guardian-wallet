@@ -64,18 +64,21 @@ async function main() {
 	console.log('4. fetchWithX402:', X402_URL);
 	const { ThresholdSigner } = await import('@agentokratia/guardian-signer');
 	const { CGGMP24Scheme } = await import('@agentokratia/guardian-schemes');
-	const { readFileSync } = await import('node:fs');
 
-	// Load config from ~/.gw/config.json
-	const configPath = `${process.env.HOME}/.gw/config.json`;
-	const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+	const apiSecret = process.env.GUARDIAN_API_SECRET;
+	const serverUrl = process.env.GUARDIAN_SERVER || 'http://localhost:8080';
+	const apiKey = process.env.GUARDIAN_API_KEY || '';
 
-	console.log('   Loading signer from:', config.apiSecretFile);
-	const apiSecret = readFileSync(config.apiSecretFile, 'utf-8').trim();
+	if (!apiSecret) {
+		console.log('   GUARDIAN_API_SECRET not set — skipping payment test');
+		return;
+	}
+
+	console.log('   Loading signer from GUARDIAN_API_SECRET env var');
 	const signer = await ThresholdSigner.fromSecret({
 		apiSecret,
-		serverUrl: config.serverUrl,
-		apiKey: config.apiKey,
+		serverUrl,
+		apiKey,
 		scheme: new CGGMP24Scheme(),
 	});
 

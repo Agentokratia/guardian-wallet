@@ -19,7 +19,7 @@ export interface CreateSignerInput {
 	chain?: ChainName;
 	scheme?: SchemeName;
 	network?: string;
-	ownerAddress: string;
+	ownerId: string;
 }
 
 export interface CreateSignerOutput {
@@ -45,8 +45,8 @@ export class SignerService {
 		return this.signerRepo.findAll();
 	}
 
-	async listByOwner(ownerAddress: string): Promise<Signer[]> {
-		return this.signerRepo.findByOwner(ownerAddress);
+	async listByOwnerId(ownerId: string): Promise<Signer[]> {
+		return this.signerRepo.findByOwnerId(ownerId);
 	}
 
 	async get(id: string): Promise<Signer> {
@@ -72,10 +72,10 @@ export class SignerService {
 			chain: input.chain ?? ('ethereum' as ChainName),
 			scheme: input.scheme ?? ('cggmp24' as SchemeName),
 			network: input.network,
-			ownerAddress: input.ownerAddress,
+			ownerId: input.ownerId,
 			apiKeyHash,
 			vaultSharePath,
-		} as CreateSignerData);
+		});
 
 		return { signer, apiKey };
 	}

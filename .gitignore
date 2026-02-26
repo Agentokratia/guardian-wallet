@@ -49,6 +49,17 @@ docs/
 # Scripts (migration/internal)
 scripts/
 
+# Stray screenshots / marketing research artifacts
+/*.png
+/*.jpg
+/*.jpeg
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Debug / investigation scripts
+packages/wallet/src/__tests__/find-txs.mts
+
 # Claude
 CLAUDE.md
 .claude/

@@ -160,10 +160,6 @@ export class PolicyDocumentService {
 		return this.repo.findBySigner(signerId);
 	}
 
-	async getDraft(signerId: string): Promise<PolicyDocumentEntity | null> {
-		return this.repo.findDraftBySigner(signerId);
-	}
-
 	async save(
 		signerId: string,
 		rules: readonly PolicyRule[],
@@ -171,19 +167,6 @@ export class PolicyDocumentService {
 	): Promise<PolicyDocumentEntity> {
 		this.validateRules(rules);
 		return this.repo.upsert(signerId, rules, description);
-	}
-
-	async saveDraft(
-		signerId: string,
-		rules: readonly PolicyRule[],
-		description?: string,
-	): Promise<PolicyDocumentEntity> {
-		this.validateRules(rules);
-		return this.repo.saveDraft(signerId, rules, description);
-	}
-
-	async activate(signerId: string): Promise<PolicyDocumentEntity> {
-		return this.repo.activate(signerId);
 	}
 
 	validateRules(rules: readonly PolicyRule[]): void {

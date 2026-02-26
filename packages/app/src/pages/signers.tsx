@@ -4,16 +4,61 @@ import { Button } from '@/components/ui/button';
 import { Dot } from '@/components/ui/dot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuditLog } from '@/hooks/use-audit-log';
+import { useAuth } from '@/hooks/use-auth';
 import { useNetworks } from '@/hooks/use-networks';
 import { usePortfolioBalance } from '@/hooks/use-portfolio-balance';
 import { useSignerPolicyCounts } from '@/hooks/use-signer-policy-counts';
 import { useSigners } from '@/hooks/use-signers';
-import { formatTimestamp } from '@/lib/formatters';
+import { ApiError, api } from '@/lib/api-client';
+import { formatTimestamp, formatWei } from '@/lib/formatters';
 import { getTypeIcon, statusConfig } from '@/lib/signer-constants';
 import { cn } from '@/lib/utils';
-import { Activity, ArrowUpRight, Lock, Plus, Shield, ShieldAlert, TrendingUp } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
+import {
+	Activity,
+	AlertTriangle,
+	ArrowUpRight,
+	Lock,
+	Plus,
+	Shield,
+	ShieldAlert,
+	TrendingUp,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+
+/* -------------------------------------------------------------------------- */
+/*  Recovery status hook                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** Check which signers have an encrypted user share (recovery key). */
+function useRecoveryStatuses(signerIds: string[], isAuthenticated: boolean) {
+	const queries = useQueries({
+		queries: signerIds.map((id) => ({
+			queryKey: ['user-share-check', id],
+			queryFn: async () => {
+				try {
+					await api.get(`/signers/${id}/user-share`);
+					return true;
+				} catch (err) {
+					if (err instanceof ApiError && err.status === 404) return false;
+					throw err;
+				}
+			},
+			enabled: !!id && isAuthenticated,
+			staleTime: 60_000,
+		})),
+	});
+
+	const map: Record<string, boolean> = {};
+	for (let i = 0; i < signerIds.length; i++) {
+		const q = queries[i];
+		if (q?.data !== undefined) {
+			map[signerIds[i]] = q.data;
+		}
+	}
+	return map;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Constants                                                                  */
@@ -247,9 +292,11 @@ interface AccountRowProps {
 	balance?: string;
 	policyCount: number;
 	lastAction?: string;
+	/** Whether this signer has an encrypted recovery key stored */
+	hasRecoveryKey?: boolean;
 }
 
-function AccountRow({ signer, balance, policyCount, lastAction }: AccountRowProps) {
+function AccountRow({ signer, balance, policyCount, lastAction, hasRecoveryKey }: AccountRowProps) {
 	const status = statusConfig[signer.status];
 	const icon = getTypeIcon(signer.type, 'h-3.5 w-3.5');
 	const typeColor = TYPE_COLORS[signer.type] ?? '#6366f1';
@@ -307,6 +354,19 @@ function AccountRow({ signer, balance, policyCount, lastAction }: AccountRowProp
 					>
 						{status.label}
 					</span>
+					{hasRecoveryKey === false && (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<span className="inline-flex items-center gap-1 rounded px-1 py-0.5 bg-warning/10">
+									<AlertTriangle className="h-2.5 w-2.5 text-warning" aria-hidden="true" />
+									<span className="text-[9px] font-medium text-warning">No backup</span>
+								</span>
+							</TooltipTrigger>
+							<TooltipContent>
+								Backup not set up. Can't sign from dashboard or recover this account.
+							</TooltipContent>
+						</Tooltip>
+					)}
 				</div>
 			</div>
 
@@ -377,12 +437,14 @@ function HeroSkeleton() {
 /* -------------------------------------------------------------------------- */
 
 export function SignersPage() {
+	const { isAuthenticated } = useAuth();
 	const { data: signers, isLoading: signersLoading } = useSigners();
 	const { data: recentActivity, isLoading: activityLoading } = useAuditLog({
 		limit: 20,
 	});
 	const signerIds = useMemo(() => signers?.map((s) => s.id) ?? [], [signers]);
 	const { data: policyCounts } = useSignerPolicyCounts(signerIds);
+	const recoveryStatuses = useRecoveryStatuses(signerIds, isAuthenticated);
 	const {
 		totalFormatted,
 		balances,
@@ -429,7 +491,7 @@ export function SignersPage() {
 	}, [networks]);
 
 	// Aggregate balances across all signers per network for donut chart
-	const networkSegments = useMemo<DonutSegment[]>(() => {
+	const networkSegments = useMemo<(DonutSegment & { formatted: string })[]>(() => {
 		if (enabledNetworks.length === 0) return [];
 
 		const totals = new Map<string, bigint>();
@@ -440,12 +502,16 @@ export function SignersPage() {
 			}
 		}
 
-		return enabledNetworks.map((n) => ({
-			name: n.name,
-			label: n.displayName,
-			color: n.color,
-			value: Number(totals.get(n.name) ?? 0n),
-		}));
+		return enabledNetworks.map((n) => {
+			const wei = totals.get(n.name) ?? 0n;
+			return {
+				name: n.name,
+				label: n.displayName,
+				color: n.color,
+				value: Number(wei),
+				formatted: formatWei(wei.toString()),
+			};
+		});
 	}, [enabledNetworks, networkBalances]);
 
 	// Derive the last action per signer from audit log
@@ -580,7 +646,9 @@ export function SignersPage() {
 											}}
 										/>
 										<span className="truncate text-xs text-text-muted">{seg.label}</span>
-										<span className="ml-auto text-xs tabular-nums text-text-dim">{seg.value}</span>
+										<span className="ml-auto text-xs tabular-nums text-text-dim">
+											{seg.formatted}
+										</span>
 									</div>
 								))
 							) : (
@@ -674,6 +742,7 @@ export function SignersPage() {
 									balance={balances[signer.id]}
 									policyCount={policyCounts?.[signer.id] ?? 0}
 									lastAction={lastActionBySigner[signer.id]}
+									hasRecoveryKey={recoveryStatuses[signer.id]}
 								/>
 							</div>
 						))}

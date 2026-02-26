@@ -35,11 +35,11 @@ export class SignerRepository {
 		return (data as SignerRow[]).map((row) => signerRowToDomain(row));
 	}
 
-	async findByOwner(ownerAddress: string): Promise<Signer[]> {
+	async findByOwnerId(ownerId: string): Promise<Signer[]> {
 		const { data, error } = await this.supabase.client
 			.from(this.tableName)
 			.select('*')
-			.eq('owner_address', ownerAddress.toLowerCase())
+			.eq('owner_id', ownerId)
 			.order('created_at', { ascending: false });
 
 		if (error || !data) return [];
@@ -54,7 +54,7 @@ export class SignerRepository {
 			eth_address: input.ethAddress,
 			chain: input.chain,
 			scheme: input.scheme,
-			owner_address: input.ownerAddress.toLowerCase(),
+			owner_id: input.ownerId,
 			api_key_hash: input.apiKeyHash,
 			vault_share_path: input.vaultSharePath,
 		};
@@ -72,6 +72,13 @@ export class SignerRepository {
 		}
 
 		return signerRowToDomain(data as SignerRow);
+	}
+
+	async delete(id: string): Promise<void> {
+		const { error } = await this.supabase.client.from(this.tableName).delete().eq('id', id);
+		if (error) {
+			throw new Error(`Failed to delete signer: ${error.message}`);
+		}
 	}
 
 	async update(id: string, partial: Partial<Signer>): Promise<Signer> {

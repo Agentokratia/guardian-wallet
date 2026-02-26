@@ -15,15 +15,16 @@ import { useNetworks } from '@/hooks/use-networks';
 import { useSigner } from '@/hooks/use-signer';
 import { useToast } from '@/hooks/use-toast';
 import { useTokenBalances } from '@/hooks/use-token-balances';
-import { api } from '@/lib/api-client';
+import { ApiError, api } from '@/lib/api-client';
 import { browserInteractiveSign } from '@/lib/browser-signer';
 import { getChainId, getExplorerTxUrl } from '@/lib/chains';
 import { formatTokenBalance, formatWei } from '@/lib/formatters';
 import { decryptUserShare } from '@/lib/user-share-store';
 import { cn } from '@/lib/utils';
 import { wipePRF } from '@agentokratia/guardian-auth/browser';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
+	AlertTriangle,
 	ArrowLeft,
 	ArrowUpRight,
 	ChevronDown,
@@ -121,9 +122,25 @@ export function SignPage() {
 	const [searchParams] = useSearchParams();
 	const { data: signer, isLoading: signerLoading } = useSigner(id ?? '');
 	const { toast } = useToast();
-	const { isAuthenticated, refreshPRF } = useAuth();
+	const { isAuthenticated, hasPasskey, setupPasskey, refreshPRF } = useAuth();
 	const { data: networks } = useNetworks();
 	const { data: balanceData } = useBalance(id ?? '');
+
+	// Check if user share exists (determines if dashboard signing is possible)
+	const { data: hasUserShare } = useQuery({
+		queryKey: ['user-share-check', id],
+		queryFn: async () => {
+			try {
+				await api.get(`/signers/${id}/user-share`);
+				return true;
+			} catch (err) {
+				if (err instanceof ApiError && err.status === 404) return false;
+				throw err;
+			}
+		},
+		enabled: !!id && isAuthenticated,
+		staleTime: 30_000,
+	});
 
 	// Pre-select token from URL params (when clicking Send on a token row)
 	const preselectedToken = searchParams.get('token') ?? 'ETH';
@@ -182,7 +199,8 @@ export function SignPage() {
 		value.length > 0 &&
 		!Number.isNaN(Number(value)) &&
 		Number(value) > 0 &&
-		isAuthenticated;
+		isAuthenticated &&
+		hasUserShare === true;
 
 	// Token balance for selected token
 	const selectedTokenData = tokenData?.tokens.find(
@@ -216,44 +234,62 @@ export function SignPage() {
 	const signMutation = useMutation({
 		mutationFn: async (): Promise<SignResult> => {
 			if (!id) throw new Error('No signer ID');
-			console.log('[sign] Starting signing flow for signer:', id, 'network:', network);
+			const isDev = import.meta.env.DEV;
 
-			// Always get fresh PRF via passkey tap — never kept in memory.
+			if (isDev) console.log('[sign] Starting signing flow for signer:', id, 'network:', network);
+
+			// Passkey gate: register passkey on first signing attempt (PRD-67 §3.2)
+			// If registering, reuse the PRF from registration to avoid a second prompt.
 			setSigningStep('decrypt');
-			console.log('[sign] Step 1: Authenticating with passkey...');
-			let prfOutput: Uint8Array;
-			try {
-				prfOutput = await refreshPRF();
-				console.log('[sign] Step 1 OK: Got PRF, length:', prfOutput.length);
-			} catch (err) {
-				console.error('[sign] Step 1 FAILED:', err);
-				throw new Error('Failed to verify your identity. Please try again.');
+			let prfOutput: Uint8Array | null = null;
+			if (!hasPasskey) {
+				if (isDev) console.log('[sign] No passkey registered — initiating setup...');
+				try {
+					prfOutput = await setupPasskey();
+					if (isDev) console.log('[sign] Passkey setup complete');
+				} catch (err) {
+					if (isDev) console.error('[sign] Passkey setup FAILED:', err);
+					throw new Error(
+						'Passkey setup is required to sign from the dashboard. Please try again.',
+					);
+				}
 			}
 
-			// Log PRF fingerprint for debugging
-			const prfHex = Array.from(prfOutput.slice(0, 8))
-				.map((b) => b.toString(16).padStart(2, '0'))
-				.join('');
-			console.log('[sign] PRF fingerprint (first 8 bytes):', prfHex);
+			// Only prompt for passkey if we didn't get PRF from registration above.
+			if (!prfOutput) {
+				if (isDev) console.log('[sign] Step 1: Authenticating with passkey...');
+				try {
+					prfOutput = await refreshPRF();
+					if (isDev) console.log('[sign] Step 1 OK: Got PRF, length:', prfOutput.length);
+				} catch (err) {
+					if (isDev) console.error('[sign] Step 1 FAILED:', err);
+					throw new Error('Failed to verify your identity. Please try again.');
+				}
+			}
+
+			if (isDev) {
+				const prfHex = Array.from(prfOutput.slice(0, 8))
+					.map((b) => b.toString(16).padStart(2, '0'))
+					.join('');
+				console.log('[sign] PRF fingerprint (first 8 bytes):', prfHex);
+			}
 
 			let userShareBytes: Uint8Array;
 			// Step 2a: Fetch the encrypted share from server
 			let encrypted: EncryptedShareResponse;
 			try {
 				setSigningStep('fetch');
-				console.log('[sign] Step 2a: Fetching encrypted user share...');
+				if (isDev) console.log('[sign] Step 2a: Fetching encrypted user share...');
 				encrypted = await api.get<EncryptedShareResponse>(`/signers/${id}/user-share`);
-				console.log(
-					'[sign] Step 2a OK: iv:',
-					encrypted.iv?.slice(0, 20),
-					'salt:',
-					encrypted.salt?.slice(0, 20),
-					'ct length:',
-					encrypted.ciphertext?.length,
-				);
+				if (isDev) console.log('[sign] Step 2a OK: ct length:', encrypted.ciphertext?.length);
 			} catch (err) {
-				console.error('[sign] Step 2a FAILED: Fetch error:', err);
+				if (isDev) console.error('[sign] Step 2a FAILED:', err);
 				wipePRF(prfOutput);
+				if (err instanceof ApiError && err.status === 404) {
+					throw new Error(
+						'No signing key linked to the dashboard. Run "gw link" from the CLI to enable dashboard signing.',
+					);
+				}
 				throw new Error(
 					'Could not retrieve your signing key. Check your connection and try again.',
 				);
@@ -261,11 +297,11 @@ export function SignPage() {
 
 			// Step 2b: Decrypt the share with PRF
 			try {
-				console.log('[sign] Step 2b: Decrypting share...');
+				if (isDev) console.log('[sign] Step 2b: Decrypting share...');
 				userShareBytes = await decryptUserShare(encrypted, prfOutput);
-				console.log('[sign] Step 2b OK: Share decrypted, length:', userShareBytes.length);
+				if (isDev) console.log('[sign] Step 2b OK: Share decrypted');
 			} catch (err) {
-				console.error('[sign] Step 2b FAILED: AES-GCM error:', err);
+				if (isDev) console.error('[sign] Step 2b FAILED:', err);
 				wipePRF(prfOutput);
 				throw new Error(
 					'Failed to unlock your signing key. Your passkey may have changed — try again or re-register.',
@@ -276,25 +312,22 @@ export function SignPage() {
 			setSigningStep('signing');
 			const chainId = getChainId(network);
 			const valueWei = value ? parseEther(value).toString() : undefined;
-			console.log(
-				'[sign] Step 3: Starting interactive signing — chainId:',
-				chainId,
-				'to:',
-				toAddress,
-				'value:',
-				valueWei,
-			);
+			if (isDev) console.log('[sign] Step 3: Starting interactive signing — chainId:', chainId);
 
-			const result = await browserInteractiveSign(userShareBytes, id, {
-				to: toAddress,
-				value: valueWei,
-				data: calldata || undefined,
-				chainId,
-			});
+			try {
+				const result = await browserInteractiveSign(userShareBytes, id, {
+					to: toAddress,
+					value: valueWei,
+					data: calldata || undefined,
+					chainId,
+				});
 
-			console.log('[sign] Step 3 OK: Signing complete — txHash:', result.txHash);
-			setSigningStep(null);
-			return result;
+				if (isDev) console.log('[sign] Step 3 OK: Signing complete — txHash:', result.txHash);
+				setSigningStep(null);
+				return result;
+			} finally {
+				userShareBytes.fill(0);
+			}
 		},
 		onSuccess: (result) => {
 			setTxResult(result);
@@ -302,7 +335,7 @@ export function SignPage() {
 		},
 		onError: (err: unknown) => {
 			setSigningStep(null);
-			console.error('[sign] Transaction failed:', err);
+			if (import.meta.env.DEV) console.error('[sign] Transaction failed:', err);
 			const message = err instanceof Error ? err.message : 'Transaction failed';
 			toast({ title: 'Transaction failed', description: message, variant: 'destructive' });
 		},
@@ -729,6 +762,55 @@ export function SignPage() {
 						</div>
 					)}
 
+					{/* ── No share linked — guide user to link ── */}
+					{isAuthenticated && hasUserShare === false && (
+						<div className="rounded-xl border border-warning/30 bg-warning/[0.04] overflow-hidden">
+							<div className="px-4 py-3.5 flex items-start gap-3">
+								<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-warning/10">
+									<AlertTriangle className="h-3.5 w-3.5 text-warning" />
+								</div>
+								<div className="flex-1">
+									<p className="text-[12px] font-semibold text-text">
+										Link your signing key to send from the dashboard
+									</p>
+									<p className="text-[11px] text-text-dim mt-1 leading-relaxed">
+										This account was created from the CLI. Two quick steps to enable dashboard
+										signing:
+									</p>
+									<ol className="mt-2 space-y-1.5 text-[11px] text-text-muted">
+										<li className="flex items-start gap-2">
+											<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[9px] font-bold text-text-dim mt-0.5">
+												1
+											</span>
+											<span>
+												Run{' '}
+												<code className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-text">
+													gw link {signer.name}
+												</code>{' '}
+												in your terminal
+											</span>
+										</li>
+										<li className="flex items-start gap-2">
+											<span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[9px] font-bold text-text-dim mt-0.5">
+												2
+											</span>
+											<span>
+												Go to{' '}
+												<Link
+													to={`/signers/${id}`}
+													className="font-medium text-accent hover:underline"
+												>
+													account overview
+												</Link>{' '}
+												and click <strong>Link from CLI</strong>
+											</span>
+										</li>
+									</ol>
+								</div>
+							</div>
+						</div>
+					)}
+
 					{/* ── Actions ── */}
 					<div className="space-y-2.5 pt-1">
 						{/* Simulate button (secondary) */}
@@ -762,8 +844,8 @@ export function SignPage() {
 
 						{!isAuthenticated && (
 							<p className="text-[11px] text-center text-warning">
-								Sign in with your passkey to unlock sending. Your signing key is secured on the
-								server and can only be accessed by your device.
+								Log in to unlock sending. Your signing key is secured on the server and can only be
+								accessed with your passkey.
 							</p>
 						)}
 					</div>

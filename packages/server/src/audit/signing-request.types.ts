@@ -63,7 +63,7 @@ export interface AuditLogFilters {
 	readonly requestType?: string;
 	readonly from?: Date;
 	readonly to?: Date;
-	ownerAddress?: string;
+	ownerId?: string;
 }
 
 export interface CreateSigningRequestDto {
@@ -81,6 +81,6 @@ export interface CreateSigningRequestDto {
 	readonly policyViolations?: readonly Record<string, unknown>[];
 	readonly policiesEvaluated?: number;
 	readonly evaluationTimeMs?: number;
-	readonly ownerAddress?: string;
+	readonly ownerId?: string;
 	readonly valueUsd?: number;
 }

@@ -14,6 +14,8 @@ import { SupabaseService } from './supabase.service.js';
 /**
  * Accepts either a valid session token (JWT cookie / Bearer)
  * or a valid x-api-key header. At least one must be present.
+ *
+ * No anonymous auth — PRD-67 clean break.
  */
 @Injectable()
 export class EitherAuthGuard implements CanActivate {
@@ -25,19 +27,18 @@ export class EitherAuthGuard implements CanActivate {
 	async canActivate(context: ExecutionContext): Promise<boolean> {
 		const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-		// Try session auth first (dashboard)
+		// Try session auth first (dashboard / CLI with JWT)
 		const token = request.cookies?.session || extractBearerToken(request.headers.authorization);
 		if (token) {
 			const payload = this.sessionService.validateToken(token);
 			if (payload) {
-				request.sessionUser = payload.address?.toLowerCase() ?? payload.sub.toLowerCase();
 				request.sessionEmail = payload.email;
 				request.sessionUserId = payload.sub;
 				return true;
 			}
 		}
 
-		// Try API key auth (CLI / SDK)
+		// Try API key auth (agent / SDK)
 		const apiKey = request.headers['x-api-key'];
 		if (apiKey && typeof apiKey === 'string') {
 			const hash = hashApiKey(apiKey);

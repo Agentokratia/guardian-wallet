@@ -1,12 +1,13 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { SignerModule } from '../signers/signer.module.js';
+import { AuxInfoPoolRepository } from './aux-info-pool.repository.js';
 import { AuxInfoPoolService } from './aux-info-pool.service.js';
 import { DKGController } from './dkg.controller.js';
 import { DKGService } from './dkg.service.js';
 
 @Module({
 	imports: [forwardRef(() => SignerModule)],
-	providers: [AuxInfoPoolService, DKGService],
+	providers: [AuxInfoPoolRepository, AuxInfoPoolService, DKGService],
 	controllers: [DKGController],
 	exports: [AuxInfoPoolService, DKGService],
 })

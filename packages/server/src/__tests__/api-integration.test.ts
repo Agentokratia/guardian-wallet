@@ -25,7 +25,7 @@ import {
 	SignerStatus,
 	SignerType,
 } from '@agentokratia/guardian-core';
-import { HttpException, NotFoundException } from '@nestjs/common';
+import { HttpException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import type { AuxInfoPoolService } from '../dkg/aux-info-pool.service.js';
@@ -137,13 +137,16 @@ const CANNED_SIGNER = {
 	scheme: 'cggmp24',
 	network: 'sepolia',
 	status: 'active',
-	ownerAddress: '0xTestOwner',
+	ownerId: 'test-user-id',
 	apiKeyHash: 'hash-test',
 	vaultSharePath: 'pending',
 	dkgCompleted: false,
 	createdAt: new Date().toISOString(),
 	updatedAt: new Date().toISOString(),
 };
+
+/** Alias used by tests that go through createWithDKG (returns flat shape). */
+const MOCK_SIGNER = CANNED_SIGNER;
 
 function createMockSignerService() {
 	return {
@@ -152,7 +155,7 @@ function createMockSignerService() {
 			apiKey: `gw_live_${Buffer.from(randomUUID()).toString('base64url')}`,
 		}),
 		list: vi.fn().mockResolvedValue([CANNED_SIGNER]),
-		listByOwner: vi.fn().mockResolvedValue([CANNED_SIGNER]),
+		listByOwnerId: vi.fn().mockResolvedValue([CANNED_SIGNER]),
 		get: vi.fn().mockResolvedValue(CANNED_SIGNER),
 		update: vi.fn().mockResolvedValue({ ...CANNED_SIGNER, name: 'Renamed' }),
 		pause: vi.fn().mockResolvedValue({ ...CANNED_SIGNER, status: 'paused' }),
@@ -170,19 +173,28 @@ describe('Guardian API Integration Tests', () => {
 	let signerService: ReturnType<typeof createMockSignerService>;
 	let vault: MockShareStore;
 
-	const defaultReq = { sessionUser: '0xTestOwner' } as AuthenticatedRequest;
+	const defaultReq = { sessionUserId: 'test-user-id' } as AuthenticatedRequest;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		signerService = createMockSignerService();
 		vault = new MockShareStore();
+		const mockDkgService = {
+			createWithDKG: vi.fn().mockImplementation(async (input: { name: string }) => ({
+				signerId: MOCK_SIGNER.id,
+				ethAddress: MOCK_SIGNER.ethAddress,
+				apiKey: 'gw_live_testkey123',
+				signerShare: 'bW9jay1zaWduZXItc2hhcmU=',
+				userShare: 'bW9jay11c2VyLXNoYXJl',
+			})),
+		};
 		controller = new SignerController(
 			signerService as unknown as SignerService,
 			mockChainRegistry as any,
 			mockNetworkService as any,
 			vault,
 			{} as any,
-			{} as any, // DKGService
+			mockDkgService as unknown as DKGService,
 			{ PUBLIC_CREATE_LIMIT: 20 } as any, // AppConfig
 		);
 	});
@@ -204,15 +216,15 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			expect(result.signer.status).toBe('active');
+			expect(result.signerId).toBe(MOCK_SIGNER.id);
+			expect(result.ethAddress).toBe(MOCK_SIGNER.ethAddress);
 			expect(result.apiKey).toMatch(/^gw_live_/);
-			expect(signerService.create).toHaveBeenCalledOnce();
 		});
 
 		it('lists all signers for session auth', async () => {
-			const req = { sessionUser: '0xABC' } as AuthenticatedRequest;
+			const req = { sessionUserId: 'test-user-id' } as AuthenticatedRequest;
 			const list = await controller.list(req);
-			expect(signerService.listByOwner).toHaveBeenCalledWith('0xABC');
+			expect(signerService.listByOwnerId).toHaveBeenCalledWith('test-user-id');
 			expect(list).toHaveLength(1);
 		});
 
@@ -299,7 +311,7 @@ describe('Guardian API Integration Tests', () => {
 		};
 
 		it('stores encrypted user share blob in Vault', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Share',
 					type: 'autonomous' as never,
@@ -310,15 +322,19 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			const result = await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
+			const result = await controller.storeUserShare(
+				MOCK_SIGNER.id,
+				encryptedShareData,
+				defaultReq,
+			);
 			expect(result.success).toBe(true);
 
 			// Verify it's in Vault at the correct path
-			expect(vault.has(`user-encrypted/${signer.id}`)).toBe(true);
+			expect(vault.has(`user-encrypted/${MOCK_SIGNER.id}`)).toBe(true);
 		});
 
 		it('retrieves encrypted user share blob from Vault', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Retrieve',
 					type: 'autonomous' as never,
@@ -329,8 +345,8 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
-			const retrieved = await controller.getUserShare(signer.id, defaultReq);
+			await controller.storeUserShare(MOCK_SIGNER.id, encryptedShareData, defaultReq);
+			const retrieved = await controller.getUserShare(MOCK_SIGNER.id, defaultReq);
 
 			expect(retrieved.walletAddress).toBe(encryptedShareData.walletAddress);
 			expect(retrieved.iv).toBe(encryptedShareData.iv);
@@ -339,7 +355,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('roundtrip: stored bytes are JSON-encoded ciphertext, NOT raw share', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Roundtrip',
 					type: 'autonomous' as never,
@@ -350,10 +366,10 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
+			await controller.storeUserShare(MOCK_SIGNER.id, encryptedShareData, defaultReq);
 
 			// Read raw bytes from Vault directly
-			const rawBytes = await vault.getShare(`user-encrypted/${signer.id}`);
+			const rawBytes = await vault.getShare(`user-encrypted/${MOCK_SIGNER.id}`);
 			const json = JSON.parse(new TextDecoder().decode(rawBytes));
 
 			// The server stores the DTO as JSON — it never sees plaintext share bytes
@@ -364,7 +380,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('overwrites existing encrypted share', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Overwrite',
 					type: 'autonomous' as never,
@@ -375,7 +391,7 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
+			await controller.storeUserShare(MOCK_SIGNER.id, encryptedShareData, defaultReq);
 
 			const newData = {
 				walletAddress: '0xTestOwner',
@@ -383,15 +399,15 @@ describe('Guardian API Integration Tests', () => {
 				ciphertext: 'bmV3LWNpcGhlcnRleHQ=',
 				salt: 'bmV3LXNhbHQ=',
 			};
-			await controller.storeUserShare(signer.id, newData, defaultReq);
+			await controller.storeUserShare(MOCK_SIGNER.id, newData, defaultReq);
 
-			const retrieved = await controller.getUserShare(signer.id, defaultReq);
+			const retrieved = await controller.getUserShare(MOCK_SIGNER.id, defaultReq);
 			expect(retrieved.walletAddress).toBe(newData.walletAddress);
 			expect(retrieved.ciphertext).toBe(newData.ciphertext);
 		});
 
 		it('returns 404 when no encrypted share exists', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'NoShare',
 					type: 'autonomous' as never,
@@ -403,7 +419,7 @@ describe('Guardian API Integration Tests', () => {
 			);
 
 			try {
-				await controller.getUserShare(signer.id, defaultReq);
+				await controller.getUserShare(MOCK_SIGNER.id, defaultReq);
 				expect.fail('Should have thrown');
 			} catch (error) {
 				expect(error).toBeInstanceOf(HttpException);
@@ -427,7 +443,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('server never holds raw user share — only encrypted blob', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Security',
 					type: 'autonomous' as never,
@@ -439,10 +455,10 @@ describe('Guardian API Integration Tests', () => {
 			);
 
 			// Store encrypted blob
-			await controller.storeUserShare(signer.id, encryptedShareData, defaultReq);
+			await controller.storeUserShare(MOCK_SIGNER.id, encryptedShareData, defaultReq);
 
 			// Read raw vault content
-			const rawBytes = await vault.getShare(`user-encrypted/${signer.id}`);
+			const rawBytes = await vault.getShare(`user-encrypted/${MOCK_SIGNER.id}`);
 			const rawStr = new TextDecoder().decode(rawBytes);
 
 			// The stored content must be JSON with encrypted fields — not raw binary
@@ -487,7 +503,7 @@ describe('Guardian API Integration Tests', () => {
 		});
 
 		it('Vault paths are correctly separated: server share vs encrypted user share', async () => {
-			const { signer } = await controller.create(
+			await controller.create(
 				{
 					name: 'Paths',
 					type: 'autonomous' as never,
@@ -500,7 +516,7 @@ describe('Guardian API Integration Tests', () => {
 
 			// Store user encrypted share
 			await controller.storeUserShare(
-				signer.id,
+				MOCK_SIGNER.id,
 				{
 					walletAddress: '0xabc',
 					iv: 'aXY=',
@@ -511,11 +527,11 @@ describe('Guardian API Integration Tests', () => {
 			);
 
 			// User encrypted share at user-encrypted/{id}
-			expect(vault.has(`user-encrypted/${signer.id}`)).toBe(true);
+			expect(vault.has(`user-encrypted/${MOCK_SIGNER.id}`)).toBe(true);
 
 			// Server share would be at {id} (set by DKG, not by user share endpoint)
 			// The user share endpoint NEVER writes to the server share path
-			expect(vault.has(signer.id)).toBe(false);
+			expect(vault.has(MOCK_SIGNER.id)).toBe(false);
 		});
 	});
 
@@ -546,9 +562,9 @@ describe('Guardian API Integration Tests', () => {
 
 			const dkgVault = new MockShareStore();
 			const mockAuxInfoPool = {
-				take: vi.fn().mockResolvedValue(null),
+				take: vi.fn().mockResolvedValue('{"aux_infos":[{},{},{}]}'),
 				getStatus: vi.fn().mockReturnValue({
-					size: 0,
+					size: 3,
 					target: 5,
 					lowWatermark: 2,
 					activeGenerators: 0,
@@ -576,7 +592,7 @@ describe('Guardian API Integration Tests', () => {
 				scheme: SchemeName.CGGMP24,
 				network: NetworkName.SEPOLIA,
 				status: SignerStatus.ACTIVE,
-				ownerAddress: '0xTestOwner',
+				ownerId: 'test-user-id',
 				apiKeyHash: 'hash-dkg-test',
 				vaultSharePath: 'pending',
 				dkgCompleted: false,
@@ -637,7 +653,9 @@ describe('Guardian API Integration Tests', () => {
 
 			// Single-call DKG: runDkg called exactly once
 			expect(mockScheme.runDkg).toHaveBeenCalledTimes(1);
-			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, undefined);
+			expect(mockScheme.runDkg).toHaveBeenCalledWith(3, 2, {
+				cachedAuxInfo: '{"aux_infos":[{},{},{}]}',
+			});
 
 			console.log('');
 			console.log('  ┌─── DKG E2E FLOW (CGGMP24 single-call WASM) ──────');
@@ -662,6 +680,68 @@ describe('Guardian API Integration Tests', () => {
 			console.log('  └────────────────────────────────────────────────────');
 			console.log('');
 		});
+
+		it('finalize throws 503 when pool is empty (fail fast — no cold start)', async () => {
+			const mockScheme = {
+				runDkg: vi.fn(),
+				deriveAddress: vi.fn(),
+			};
+
+			const signers = new Map<string, Signer>();
+			const signerRepo: Partial<SignerRepository> = {
+				findById: vi.fn(async (id: string) => signers.get(id) ?? null),
+				update: vi.fn(),
+			};
+
+			const dkgVault = new MockShareStore();
+			const emptyPoolMock = {
+				take: vi.fn().mockResolvedValue(null),
+				getStatus: vi.fn().mockReturnValue({
+					size: 0,
+					target: 5,
+					lowWatermark: 2,
+					activeGenerators: 0,
+					maxGenerators: 2,
+					healthy: false,
+				}),
+			};
+			const dkgService = new DKGService(
+				signerRepo as unknown as SignerRepository,
+				{} as any,
+				dkgVault,
+				emptyPoolMock as unknown as AuxInfoPoolService,
+			);
+			(dkgService as unknown as Record<string, unknown>).scheme = mockScheme;
+
+			const signerId = randomUUID();
+			signers.set(signerId, {
+				id: signerId,
+				name: 'Empty Pool Test',
+				type: SignerType.AI_AGENT,
+				ethAddress: '',
+				chain: ChainName.ETHEREUM,
+				scheme: SchemeName.CGGMP24,
+				network: NetworkName.SEPOLIA,
+				status: SignerStatus.ACTIVE,
+				ownerId: 'test-user-id',
+				apiKeyHash: 'hash-empty-pool',
+				vaultSharePath: 'pending',
+				dkgCompleted: false,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+			});
+
+			const initResult = await dkgService.init({ signerId });
+
+			await expect(
+				dkgService.finalize({ sessionId: initResult.sessionId, signerId }),
+			).rejects.toThrow(ServiceUnavailableException);
+
+			// DKG never ran — no cold start fallback
+			expect(mockScheme.runDkg).not.toHaveBeenCalled();
+			// No share stored in Vault
+			expect(dkgVault.has(signerId)).toBe(false);
+		});
 	});
 
 	// -----------------------------------------------------------------------
@@ -670,8 +750,8 @@ describe('Guardian API Integration Tests', () => {
 
 	describe('Full Guardian Flow', () => {
 		it('end-to-end: create signer → store encrypted share → retrieve → verify', async () => {
-			// Step 1: Create signer
-			const { signer, apiKey } = await controller.create(
+			// Step 1: Create signer (createWithDKG returns flat shape)
+			const result = await controller.create(
 				{
 					name: 'E2E Agent',
 					type: 'autonomous' as never,
@@ -682,16 +762,16 @@ describe('Guardian API Integration Tests', () => {
 				defaultReq,
 			);
 
-			expect(signer.id).toBeDefined();
-			expect(apiKey).toMatch(/^gw_live_/);
+			expect(result.signerId).toBeDefined();
+			expect(result.apiKey).toMatch(/^gw_live_/);
 
 			// Step 2: Check balance
-			const balance = await controller.getBalance(signer.id, undefined, undefined, defaultReq);
+			const balance = await controller.getBalance(MOCK_SIGNER.id, undefined, undefined, defaultReq);
 			expect(balance.balances[0]!.balance).toBe('1000000000000000000');
 
 			// Step 3: Simulate transaction
 			const sim = await controller.simulate(
-				signer.id,
+				MOCK_SIGNER.id,
 				{
 					to: `0x${'11'.repeat(20)}`,
 					value: '0.05',
@@ -708,45 +788,45 @@ describe('Guardian API Integration Tests', () => {
 				ciphertext: Buffer.from('encrypted-user-share-bytes-here').toString('base64'),
 				salt: Buffer.from('random-salt-16byte').toString('base64'),
 			};
-			const storeResult = await controller.storeUserShare(signer.id, shareBlob, defaultReq);
+			const storeResult = await controller.storeUserShare(MOCK_SIGNER.id, shareBlob, defaultReq);
 			expect(storeResult.success).toBe(true);
 
 			// Step 5: Retrieve encrypted share (browser would do this before signing)
-			const retrieved = await controller.getUserShare(signer.id, defaultReq);
+			const retrieved = await controller.getUserShare(MOCK_SIGNER.id, defaultReq);
 			expect(retrieved.walletAddress).toBe(shareBlob.walletAddress);
 			expect(retrieved.ciphertext).toBe(shareBlob.ciphertext);
 
 			// Step 6: Verify Vault contains the encrypted blob at correct path
-			const vaultBytes = await vault.getShare(`user-encrypted/${signer.id}`);
+			const vaultBytes = await vault.getShare(`user-encrypted/${MOCK_SIGNER.id}`);
 			const vaultJson = JSON.parse(new TextDecoder().decode(vaultBytes));
 			expect(vaultJson.walletAddress).toBe(shareBlob.walletAddress);
 
 			// Step 7: Lifecycle — pause, resume
-			await controller.pause(signer.id, defaultReq);
+			await controller.pause(MOCK_SIGNER.id, defaultReq);
 			signerService.get.mockResolvedValueOnce({
 				...CANNED_SIGNER,
-				id: signer.id,
+				id: MOCK_SIGNER.id,
 				status: 'paused',
 			});
-			const paused = await controller.get(signer.id, defaultReq);
+			const paused = await controller.get(MOCK_SIGNER.id, defaultReq);
 			expect(paused.status).toBe('paused');
 
-			await controller.resume(signer.id, defaultReq);
+			await controller.resume(MOCK_SIGNER.id, defaultReq);
 			signerService.get.mockResolvedValueOnce({
 				...CANNED_SIGNER,
-				id: signer.id,
+				id: MOCK_SIGNER.id,
 				status: 'active',
 			});
-			const active = await controller.get(signer.id, defaultReq);
+			const active = await controller.get(MOCK_SIGNER.id, defaultReq);
 			expect(active.status).toBe('active');
 
 			console.log('');
 			console.log('  ┌─── GUARDIAN E2E FLOW ────────────────────────────────');
-			console.log(`  │ Signer ID    : ${signer.id}`);
-			console.log(`  │ API Key      : ${apiKey.slice(0, 16)}...`);
+			console.log(`  │ Signer ID    : ${MOCK_SIGNER.id}`);
+			console.log(`  │ API Key      : ${result.apiKey.slice(0, 16)}...`);
 			console.log(`  │ ETH Balance  : ${balance.balances[0]?.balance ?? '0'} wei`);
 			console.log(`  │ Gas Estimate : ${sim.estimatedGas}`);
-			console.log(`  │ Share Stored : user-encrypted/${signer.id}`);
+			console.log(`  │ Share Stored : user-encrypted/${MOCK_SIGNER.id}`);
 			console.log(`  │ Share Wallet : ${shareBlob.walletAddress.slice(0, 14)}...`);
 			console.log('  │');
 			console.log('  │ VERIFIED:');

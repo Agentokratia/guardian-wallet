@@ -4,7 +4,6 @@ import {
 	readFileSync,
 	readdirSync,
 	renameSync,
-	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -21,18 +20,11 @@ export interface SignerConfig {
 	serverUrl: string;
 	apiKey: string;
 	apiSecret?: string;
-	apiSecretFile?: string;
 	network?: string;
 	signerName: string;
 	ethAddress: string;
 	signerId?: string;
 	createdAt?: string;
-}
-
-export interface AdminToken {
-	token: string;
-	createdAt: string;
-	expiresAt?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,10 +41,6 @@ export function getSignerConfigPath(name: string): string {
 	return join(CONFIG_DIR, 'signers', `${name}.json`);
 }
 
-export function getAdminTokenPath(name: string): string {
-	return join(CONFIG_DIR, 'admin', `${name}.token`);
-}
-
 // ---------------------------------------------------------------------------
 // Name validation
 // ---------------------------------------------------------------------------
@@ -60,7 +48,7 @@ export function getAdminTokenPath(name: string): string {
 const VALID_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 export function validateSignerName(name: string): string | null {
-	if (!name) return 'Signer name cannot be empty';
+	if (!name) return 'Account name cannot be empty';
 	if (!VALID_NAME_RE.test(name)) {
 		return 'Must be 1-64 chars: letters, numbers, hyphens, underscores. Start with alphanumeric.';
 	}
@@ -90,7 +78,7 @@ export function listSigners(): string[] {
 	const dir = join(CONFIG_DIR, 'signers');
 	if (!existsSync(dir)) return [];
 	return readdirSync(dir)
-		.filter((f) => f.endsWith('.json'))
+		.filter((f) => f.endsWith('.json') && !f.endsWith('.recovery.json'))
 		.map((f) => f.replace(/\.json$/, ''))
 		.filter((name) => {
 			try {
@@ -112,10 +100,10 @@ export function resolveSignerName(explicit?: string): string {
 	const signers = listSigners();
 	if (signers.length === 1) return signers[0] as string;
 	if (signers.length === 0) {
-		throw new Error('No signers configured. Run `gw init` first.');
+		throw new Error('No accounts configured. Run `gw init` first.');
 	}
 	throw new Error(
-		`Multiple signers found: ${signers.join(', ')}.\nUse --signer <name> or run \`gw init\` to set a default.`,
+		`Multiple accounts found: ${signers.join(', ')}.\nUse --signer <name> or run \`gw init\` to set a default.`,
 	);
 }
 
@@ -127,7 +115,7 @@ export function loadSignerConfig(name?: string): SignerConfig {
 	const signerName = resolveSignerName(name);
 	const p = getSignerConfigPath(signerName);
 	if (!existsSync(p)) {
-		throw new Error(`Signer "${signerName}" not found. Run \`gw init\` first.`);
+		throw new Error(`Account "${signerName}" not found. Run \`gw init\` first.`);
 	}
 	return JSON.parse(readFileSync(p, 'utf-8')) as SignerConfig;
 }
@@ -141,43 +129,53 @@ export function saveSignerConfig(name: string, config: SignerConfig): void {
 }
 
 // ---------------------------------------------------------------------------
-// Admin token I/O
+// Recovery metadata (recovery-only devices — no secrets, public info only)
 // ---------------------------------------------------------------------------
 
-export type AdminTokenResult =
-	| { status: 'valid'; token: AdminToken }
-	| { status: 'expired' }
-	| { status: 'missing' }
-	| { status: 'corrupt' };
-
-export function loadAdminToken(name: string): AdminTokenResult {
-	const p = getAdminTokenPath(name);
-	if (!existsSync(p)) return { status: 'missing' };
-	try {
-		const token = JSON.parse(readFileSync(p, 'utf-8')) as AdminToken;
-		if (token.expiresAt && new Date(token.expiresAt) < new Date()) {
-			unlinkSync(p);
-			return { status: 'expired' };
-		}
-		return { status: 'valid', token };
-	} catch {
-		return { status: 'corrupt' };
-	}
+export interface RecoveryMeta {
+	signerName: string;
+	signerId: string;
+	ethAddress: string;
+	serverUrl: string;
+	network?: string;
+	receivedAt: string;
 }
 
-export function saveAdminToken(name: string, token: AdminToken): void {
-	ensureDir(join(CONFIG_DIR, 'admin'));
-	const p = getAdminTokenPath(name);
+function getRecoveryMetaPath(name: string): string {
+	return join(CONFIG_DIR, 'signers', `${name}.recovery.json`);
+}
+
+export function saveRecoveryMeta(name: string, meta: RecoveryMeta): void {
+	ensureDir(join(CONFIG_DIR, 'signers'));
+	const p = getRecoveryMetaPath(name);
 	const tmp = `${p}.tmp`;
-	writeFileSync(tmp, JSON.stringify(token, null, '\t'), { mode: 0o600 });
+	writeFileSync(tmp, JSON.stringify(meta, null, '\t'), { mode: 0o600 });
 	renameSync(tmp, p);
 }
 
-export function deleteAdminToken(name: string): boolean {
-	const p = getAdminTokenPath(name);
-	if (!existsSync(p)) return false;
-	unlinkSync(p);
-	return true;
+export function loadRecoveryMeta(name: string): RecoveryMeta | null {
+	const p = getRecoveryMetaPath(name);
+	if (!existsSync(p)) return null;
+	try {
+		return JSON.parse(readFileSync(p, 'utf-8')) as RecoveryMeta;
+	} catch {
+		return null;
+	}
+}
+
+export function listRecoveryMetas(): RecoveryMeta[] {
+	const dir = join(CONFIG_DIR, 'signers');
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter((f) => f.endsWith('.recovery.json'))
+		.map((f) => {
+			try {
+				return JSON.parse(readFileSync(join(dir, f), 'utf-8')) as RecoveryMeta;
+			} catch {
+				return null;
+			}
+		})
+		.filter((m): m is RecoveryMeta => m !== null);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,13 +184,9 @@ export function deleteAdminToken(name: string): boolean {
 
 export function resolveApiSecret(config: SignerConfig): string {
 	if (config.apiSecret) return config.apiSecret;
-	if (config.apiSecretFile) {
-		const filePath = config.apiSecretFile.startsWith('~')
-			? join(homedir(), config.apiSecretFile.slice(1))
-			: config.apiSecretFile;
-		return readFileSync(filePath, 'utf-8').trim();
-	}
-	throw new Error('No API secret configured. Set apiSecret or apiSecretFile in config.');
+	throw new Error(
+		'No API secret found in config. Run `gw init` to reconfigure with your API Secret from Guardian.',
+	);
 }
 
 // ---------------------------------------------------------------------------

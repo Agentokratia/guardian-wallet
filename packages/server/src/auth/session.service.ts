@@ -1,12 +1,23 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
-import { APP_CONFIG, type AppConfig } from '../common/config.js';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+	Inject,
+	Injectable,
+	InternalServerErrorException,
+	Logger,
+	type OnModuleDestroy,
+	type OnModuleInit,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { SupabaseService } from '../common/supabase.service.js';
+
+const REFRESH_TOKEN_TTL_MS = 7 * 86400 * 1000; // 7 days
+const CLEANUP_INTERVAL_MS = 3600 * 1000; // 1 hour
 
 export interface JwtPayload {
 	sub: string;
 	address?: string;
 	email?: string;
-	type?: string;
+	type: 'session';
 	iat: number;
 	exp: number;
 }
@@ -18,126 +29,137 @@ export interface CreateTokenInput {
 }
 
 @Injectable()
-export class SessionService {
-	constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+export class SessionService implements OnModuleInit, OnModuleDestroy {
+	private readonly logger = new Logger(SessionService.name);
+	private cleanupTimer!: ReturnType<typeof setInterval>;
 
-	createToken(input: CreateTokenInput | string): string {
-		const now = Math.floor(Date.now() / 1000);
-		const expiresIn = this.parseExpiry(this.config.JWT_EXPIRY);
+	constructor(
+		@Inject(JwtService) private readonly jwtService: JwtService,
+		@Inject(SupabaseService) private readonly supabase: SupabaseService,
+	) {}
 
-		const header = { alg: 'HS256', typ: 'JWT' };
-
-		// Support both old string-based (backward compat) and new object-based input
-		const payload: JwtPayload =
-			typeof input === 'string'
-				? { sub: input, iat: now, exp: now + expiresIn }
-				: {
-						sub: input.userId,
-						address: input.address,
-						email: input.email,
-						iat: now,
-						exp: now + expiresIn,
-					};
-
-		const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
-		const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-
-		const signature = createHmac('sha256', this.config.JWT_SECRET)
-			.update(`${headerB64}.${payloadB64}`)
-			.digest('base64url');
-
-		return `${headerB64}.${payloadB64}.${signature}`;
+	onModuleInit(): void {
+		this.cleanupTimer = setInterval(() => this.cleanupExpiredTokens(), CLEANUP_INTERVAL_MS);
 	}
 
-	validateToken(token: string): JwtPayload | null {
+	onModuleDestroy(): void {
+		clearInterval(this.cleanupTimer);
+	}
+
+	private async cleanupExpiredTokens(): Promise<void> {
+		const { error } = await this.supabase.client.rpc('cleanup_expired_refresh_tokens');
+		if (error) {
+			this.logger.error('Failed to cleanup expired refresh tokens', error.message);
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// Access token — short-lived (15min), stateless verification via JwtService
+	// ---------------------------------------------------------------------------
+
+	createAccessToken(input: CreateTokenInput): string {
+		return this.jwtService.sign({
+			sub: input.userId,
+			email: input.email,
+			address: input.address,
+			type: 'session',
+		});
+	}
+
+	validateAccessToken(token: string): JwtPayload | null {
 		try {
-			const parts = token.split('.');
-			if (parts.length !== 3) return null;
-
-			const [headerB64, payloadB64, signatureB64] = parts as [string, string, string];
-
-			const expected = createHmac('sha256', this.config.JWT_SECRET)
-				.update(`${headerB64}.${payloadB64}`)
-				.digest('base64url');
-
-			const expectedBuf = Buffer.from(expected, 'utf-8');
-			const actualBuf = Buffer.from(signatureB64, 'utf-8');
-			if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
-				return null;
-			}
-
-			const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString()) as JwtPayload;
-
-			if (payload.exp * 1000 < Date.now()) return null;
-
+			const payload = this.jwtService.verify<JwtPayload>(token);
+			// Defense-in-depth: only accept session tokens
+			if (payload.type !== 'session') return null;
 			return payload;
 		} catch {
 			return null;
 		}
 	}
 
+	// ---------------------------------------------------------------------------
+	// Refresh token — long-lived (7 days), DB-backed, opaque
+	// ---------------------------------------------------------------------------
+
+	async createRefreshToken(userId: string): Promise<string> {
+		const token = randomBytes(32).toString('base64url');
+		const hash = createHash('sha256').update(token).digest('hex');
+		const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+
+		const { error } = await this.supabase.client.from('refresh_tokens').insert({
+			user_id: userId,
+			token_hash: hash,
+			expires_at: expiresAt.toISOString(),
+		});
+
+		if (error) {
+			this.logger.error('Failed to create refresh token', error.message);
+			throw new InternalServerErrorException('Failed to create session');
+		}
+
+		return token;
+	}
+
+	async validateRefreshToken(token: string): Promise<{ userId: string } | null> {
+		const hash = createHash('sha256').update(token).digest('hex');
+		const { data, error } = await this.supabase.client
+			.from('refresh_tokens')
+			.select('id, user_id, expires_at')
+			.eq('token_hash', hash)
+			.is('revoked_at', null)
+			.single();
+
+		if (error || !data) return null;
+		if (new Date(data.expires_at as string) < new Date()) return null;
+
+		return { userId: data.user_id as string };
+	}
+
 	/**
-	 * Issue a short-lived admin JWT (5 min) for anonymous CLI signers.
-	 * The CLI exchanges its X-Admin-Token (singleHash) for this JWT,
-	 * then uses the JWT for subsequent admin requests — limits replay window.
+	 * Rotation: revoke old refresh token, issue new one.
+	 * Prevents replay — each refresh token is single-use.
 	 */
-	createAdminToken(signerId: string, ttlSeconds?: number): { token: string; expiresIn: number } {
-		const MAX_ADMIN_TTL = 86_400; // 24 hours
-		const DEFAULT_ADMIN_TTL = 300; // 5 minutes
-		const raw = Number(ttlSeconds);
-		const ttl = Math.min(
-			Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_ADMIN_TTL,
-			MAX_ADMIN_TTL,
-		);
-		const now = Math.floor(Date.now() / 1000);
+	async rotateRefreshToken(oldToken: string): Promise<{ userId: string; newToken: string } | null> {
+		const hash = createHash('sha256').update(oldToken).digest('hex');
 
-		const header = { alg: 'HS256', typ: 'JWT' };
-		const payload: JwtPayload = {
-			sub: signerId,
-			type: 'anon-admin',
-			iat: now,
-			exp: now + ttl,
-		};
+		const { data } = await this.supabase.client
+			.from('refresh_tokens')
+			.update({ revoked_at: new Date().toISOString() })
+			.eq('token_hash', hash)
+			.is('revoked_at', null)
+			.gte('expires_at', new Date().toISOString())
+			.select('user_id')
+			.single();
 
-		const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
-		const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+		if (!data) return null;
 
-		const signature = createHmac('sha256', this.config.JWT_SECRET)
-			.update(`${headerB64}.${payloadB64}`)
-			.digest('base64url');
-
-		return {
-			token: `${headerB64}.${payloadB64}.${signature}`,
-			expiresIn: ttl,
-		};
+		const userId = data.user_id as string;
+		const newToken = await this.createRefreshToken(userId);
+		return { userId, newToken };
 	}
 
-	getExpirySeconds(): number {
-		return this.parseExpiry(this.config.JWT_EXPIRY);
+	/** Revoke ALL refresh tokens for a user (logout). */
+	async revokeAllTokens(userId: string): Promise<void> {
+		const { error } = await this.supabase.client
+			.from('refresh_tokens')
+			.update({ revoked_at: new Date().toISOString() })
+			.eq('user_id', userId)
+			.is('revoked_at', null);
+
+		if (error) {
+			this.logger.error(`Failed to revoke tokens for user ${userId}`, error.message);
+		}
 	}
 
-	private parseExpiry(expiry: string): number {
-		const match = expiry.match(/^(\d+)([smhd])$/);
-		if (!match) {
-			const hours = Number.parseInt(expiry, 10);
-			if (!Number.isNaN(hours)) return hours * 3600;
-			return 86400;
-		}
+	// ---------------------------------------------------------------------------
+	// Backward-compat aliases — guards call these
+	// ---------------------------------------------------------------------------
 
-		const value = Number.parseInt(match[1] as string, 10);
-		const unit = match[2];
+	createToken(input: CreateTokenInput): string {
+		return this.createAccessToken(input);
+	}
 
-		switch (unit) {
-			case 's':
-				return value;
-			case 'm':
-				return value * 60;
-			case 'h':
-				return value * 3600;
-			case 'd':
-				return value * 86400;
-			default:
-				return 86400;
-		}
+	validateToken(token: string): JwtPayload | null {
+		return this.validateAccessToken(token);
 	}
 }

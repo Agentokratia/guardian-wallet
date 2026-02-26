@@ -17,7 +17,7 @@ export interface SignerRow {
 	scheme: string;
 	network: string | null;
 	status: string;
-	owner_address: string;
+	owner_id: string;
 	api_key_hash: string;
 	vault_share_path: string;
 	dkg_completed: boolean;
@@ -35,7 +35,7 @@ export interface CreateSignerData {
 	chain: string;
 	scheme: string;
 	network?: string;
-	ownerAddress: string;
+	ownerId: string;
 	apiKeyHash: string;
 	vaultSharePath: string;
 }
@@ -51,7 +51,7 @@ export function signerRowToDomain(row: SignerRow): Signer {
 		scheme: row.scheme as SchemeName,
 		network: row.network ? (row.network as NetworkName) : undefined,
 		status: row.status as SignerStatus,
-		ownerAddress: row.owner_address,
+		ownerId: row.owner_id,
 		apiKeyHash: row.api_key_hash,
 		vaultSharePath: row.vault_share_path,
 		dkgCompleted: row.dkg_completed,
@@ -65,8 +65,8 @@ export function signerRowToDomain(row: SignerRow): Signer {
 /** Strip internal fields before returning to clients. */
 export function signerToPublic(
 	signer: Signer,
-): Omit<Signer, 'apiKeyHash' | 'vaultSharePath' | 'ownerAddress'> {
-	const { apiKeyHash: _, vaultSharePath: __, ownerAddress: ___, ...pub } = signer;
+): Omit<Signer, 'apiKeyHash' | 'vaultSharePath' | 'ownerId'> {
+	const { apiKeyHash: _, vaultSharePath: __, ownerId: ___, ...pub } = signer;
 	return pub;
 }
 
@@ -82,7 +82,7 @@ export function signerDomainToRow(signer: Partial<Signer>): Partial<SignerRow> {
 	if (signer.status !== undefined) row.status = signer.status;
 	if (signer.apiKeyHash !== undefined) row.api_key_hash = signer.apiKeyHash;
 	if (signer.vaultSharePath !== undefined) row.vault_share_path = signer.vaultSharePath;
-	if (signer.ownerAddress !== undefined) row.owner_address = signer.ownerAddress;
+	if (signer.ownerId !== undefined) row.owner_id = signer.ownerId;
 	if (signer.dkgCompleted !== undefined) row.dkg_completed = signer.dkgCompleted;
 	return row;
 }

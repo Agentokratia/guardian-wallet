@@ -21,7 +21,6 @@ import {
 import type { AuthenticatedRequest } from '../common/authenticated-request.js';
 import { ChainRegistryService } from '../common/chain.module.js';
 import { APP_CONFIG, type AppConfig } from '../common/config.js';
-import { EitherAdminGuard } from '../common/either-admin.guard.js';
 import { EitherAuthGuard } from '../common/either-auth.guard.js';
 import { hexToBytes } from '../common/encoding.js';
 import { SessionGuard } from '../common/session.guard.js';
@@ -31,7 +30,6 @@ import type { Network } from '../networks/network.repository.js';
 import { NetworkService } from '../networks/network.service.js';
 import { AddTokenDto } from '../tokens/dto/add-token.dto.js';
 import { TokenService } from '../tokens/token.service.js';
-import { CreatePublicSignerDto } from './dto/create-public-signer.dto.js';
 import { CreateSignerDto } from './dto/create-signer.dto.js';
 import { SimulateDto } from './dto/simulate.dto.js';
 import { StoreUserShareDto } from './dto/store-user-share.dto.js';
@@ -39,21 +37,33 @@ import { UpdateSignerDto } from './dto/update-signer.dto.js';
 import { SignerService } from './signer.service.js';
 import { signerToPublic } from './signer.types.js';
 
-const PUBLIC_CREATE_WINDOW_MS = 3_600_000; // 1 hour
 const BALANCE_CACHE_TTL = 15_000;
+const BALANCE_CACHE_MAX = 500;
 interface BalanceResult {
 	address: string;
 	balances: { network: string; chainId: number; balance: string; rpcError?: boolean }[];
 }
 const balanceCache = new Map<string, { data: BalanceResult; ts: number }>();
 
+/** Evict expired entries; if still over cap, drop oldest by timestamp. */
+function pruneBalanceCache(now: number): void {
+	if (balanceCache.size <= BALANCE_CACHE_MAX) return;
+	// First pass: remove expired
+	for (const [key, entry] of balanceCache) {
+		if (now - entry.ts > BALANCE_CACHE_TTL) balanceCache.delete(key);
+	}
+	// Second pass: if still over cap, drop oldest
+	if (balanceCache.size <= BALANCE_CACHE_MAX) return;
+	const sorted = [...balanceCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+	const toRemove = sorted.length - BALANCE_CACHE_MAX;
+	for (let i = 0; i < toRemove; i++) {
+		balanceCache.delete(sorted[i]?.[0] as string);
+	}
+}
+
 @Controller('signers')
 export class SignerController {
 	private readonly logger = new Logger(SignerController.name);
-
-	// Rate limit: N public creations per IP per hour
-	private readonly publicCreateLimits = new Map<string, { count: number; resetAt: number }>();
-	private publicCreateLastCleanup = 0;
 
 	constructor(
 		@Inject(SignerService) private readonly signerService: SignerService,
@@ -68,17 +78,17 @@ export class SignerController {
 	/**
 	 * Verify that the authenticated user owns the requested signer.
 	 * - API key auth: req.signerId must match the requested id.
-	 * - Session auth: signer.ownerAddress must match req.sessionUser.
+	 * - Session auth: signer.ownerId must match req.sessionUserId.
 	 */
 	private async getOwnedSigner(id: string, req: AuthenticatedRequest) {
-		if (!req.signerId && !req.sessionUser) {
+		if (!req.signerId && !req.sessionUserId) {
 			throw new ForbiddenException('No authenticated identity');
 		}
 		if (req.signerId && req.signerId !== id) {
 			throw new ForbiddenException('API key does not match this signer');
 		}
 		const signer = await this.signerService.get(id);
-		if (req.sessionUser && signer.ownerAddress.toLowerCase() !== req.sessionUser.toLowerCase()) {
+		if (req.sessionUserId && signer.ownerId !== req.sessionUserId) {
 			throw new ForbiddenException('You do not own this signer');
 		}
 		return signer;
@@ -87,54 +97,18 @@ export class SignerController {
 	@Post()
 	@UseGuards(SessionGuard)
 	async create(@Body() body: CreateSignerDto, @Req() req: AuthenticatedRequest) {
-		if (!req.sessionUser) {
-			throw new BadRequestException('Signer creation requires wallet authentication');
+		if (!req.sessionUserId) {
+			throw new BadRequestException('Signer creation requires session authentication');
 		}
-		const result = await this.signerService.create({
-			...body,
-			ownerAddress: req.sessionUser,
-		});
-		return { signer: signerToPublic(result.signer), apiKey: result.apiKey };
-	}
-
-	/**
-	 * Public signer creation — no auth required.
-	 * Creates signer + runs DKG atomically. Returns all credentials.
-	 * Rate-limited per IP per hour (configurable via PUBLIC_CREATE_LIMIT).
-	 */
-	@Post('public')
-	async createPublic(@Body() body: CreatePublicSignerDto, @Req() req: AuthenticatedRequest) {
-		// Rate limit per IP per hour (with periodic cleanup)
-		const maxPerHour = this.config.PUBLIC_CREATE_LIMIT;
-		const ip = req.ip ?? 'unknown';
-		const now = Date.now();
-		if (now - this.publicCreateLastCleanup > PUBLIC_CREATE_WINDOW_MS) {
-			for (const [key, entry] of this.publicCreateLimits) {
-				if (now >= entry.resetAt) this.publicCreateLimits.delete(key);
-			}
-			this.publicCreateLastCleanup = now;
-		}
-		const limit = this.publicCreateLimits.get(ip);
-		if (limit && now < limit.resetAt) {
-			if (limit.count >= maxPerHour) {
-				throw new HttpException(
-					`Rate limit exceeded (${maxPerHour} signers/hour)`,
-					HttpStatus.TOO_MANY_REQUESTS,
-				);
-			}
-			limit.count++;
-		} else {
-			this.publicCreateLimits.set(ip, { count: 1, resetAt: now + PUBLIC_CREATE_WINDOW_MS });
-		}
-
 		const result = await this.dkgService.createWithDKG({
 			name: body.name,
 			type: body.type ?? SignerType.AI_AGENT,
 			scheme: body.scheme ?? SchemeName.CGGMP24,
 			network: body.network ?? 'base-sepolia',
+			ownerId: req.sessionUserId,
 		});
 
-		this.logger.log(`Public signer created: ${result.signerId} (${result.ethAddress})`);
+		this.logger.log(`Signer created: ${result.signerId} (${result.ethAddress})`);
 
 		return result;
 	}
@@ -146,8 +120,8 @@ export class SignerController {
 			const signer = await this.signerService.get(req.signerId);
 			return [signerToPublic(signer)];
 		}
-		if (req.sessionUser) {
-			const signers = await this.signerService.listByOwner(req.sessionUser);
+		if (req.sessionUserId) {
+			const signers = await this.signerService.listByOwnerId(req.sessionUserId);
 			return signers.map(signerToPublic);
 		}
 		return [];
@@ -160,7 +134,7 @@ export class SignerController {
 	}
 
 	@Patch(':id')
-	@UseGuards(EitherAdminGuard)
+	@UseGuards(SessionGuard)
 	async update(
 		@Param('id') id: string,
 		@Body() body: UpdateSignerDto,
@@ -171,14 +145,14 @@ export class SignerController {
 	}
 
 	@Delete(':id')
-	@UseGuards(EitherAdminGuard)
+	@UseGuards(SessionGuard)
 	async revoke(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.revoke(id));
 	}
 
 	@Post(':id/regenerate-key')
-	@UseGuards(EitherAdminGuard)
+	@UseGuards(SessionGuard)
 	async regenerateApiKey(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		const result = await this.signerService.regenerateApiKey(id);
@@ -186,14 +160,14 @@ export class SignerController {
 	}
 
 	@Post(':id/pause')
-	@UseGuards(EitherAdminGuard)
+	@UseGuards(SessionGuard)
 	async pause(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.pause(id));
 	}
 
 	@Post(':id/resume')
-	@UseGuards(EitherAdminGuard)
+	@UseGuards(SessionGuard)
 	async resume(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		await this.getOwnedSigner(id, req);
 		return signerToPublic(await this.signerService.resume(id));
@@ -247,7 +221,9 @@ export class SignerController {
 		});
 
 		const response = { address: signer.ethAddress, balances };
-		balanceCache.set(cacheKey, { data: response, ts: Date.now() });
+		const now = Date.now();
+		balanceCache.set(cacheKey, { data: response, ts: now });
+		pruneBalanceCache(now);
 		return response;
 	}
 
@@ -309,19 +285,6 @@ export class SignerController {
 			const bytes = await this.shareStore.getShare(`user-encrypted/${id}`);
 			const json = new TextDecoder().decode(bytes);
 			const blob = JSON.parse(json);
-			this.logger.log(
-				`getUserShare: sessionUser=${req.sessionUser}, blob.walletAddress=${blob.walletAddress}, iv=${blob.iv?.slice(0, 20)}, salt=${blob.salt?.slice(0, 20)}, ct_len=${blob.ciphertext?.length}`,
-			);
-			if (
-				req.sessionUser &&
-				blob.walletAddress &&
-				req.sessionUser.toLowerCase() !== blob.walletAddress.toLowerCase()
-			) {
-				this.logger.warn(
-					`getUserShare: walletAddress MISMATCH — session=${req.sessionUser} vs stored=${blob.walletAddress}`,
-				);
-				throw new ForbiddenException('Wallet address mismatch');
-			}
 			return blob;
 		} catch (error: unknown) {
 			if (error instanceof HttpException) throw error;

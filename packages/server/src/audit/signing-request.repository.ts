@@ -32,7 +32,7 @@ export class SigningRequestRepository {
 			policy_violations: dto.policyViolations ?? [],
 			policies_evaluated: dto.policiesEvaluated ?? 0,
 			evaluation_time_ms: dto.evaluationTimeMs ?? null,
-			owner_address: dto.ownerAddress ?? '0x0000000000000000000000000000000000000000',
+			owner_id: dto.ownerId ?? null,
 			value_usd: dto.valueUsd ?? null,
 		};
 
@@ -67,8 +67,8 @@ export class SigningRequestRepository {
 		if (filters.requestType) {
 			query = query.eq('request_type', filters.requestType);
 		}
-		if (filters.ownerAddress) {
-			query = query.eq('owner_address', filters.ownerAddress);
+		if (filters.ownerId) {
+			query = query.eq('owner_id', filters.ownerId);
 		}
 		if (filters.from) {
 			query = query.gte('created_at', filters.from.toISOString());

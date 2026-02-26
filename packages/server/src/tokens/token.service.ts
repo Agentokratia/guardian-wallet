@@ -88,9 +88,11 @@ export class TokenService {
 			}),
 		);
 
-		const tokensWithBalances: TokenWithBalance[] = results.map((r, i) =>
-			r.status === 'fulfilled' ? r.value : { ...tokens[i]!, balance: '0' },
-		);
+		const tokensWithBalances: TokenWithBalance[] = results.map((r, i) => {
+			// Safe: results and tokens have same length from Promise.allSettled
+			const token = tokens[i] as TokenInfo;
+			return r.status === 'fulfilled' ? r.value : { ...token, balance: '0' };
+		});
 
 		const response = { address: ethAddress, chainId, tokens: tokensWithBalances };
 		tokenBalanceCache.set(cacheKey, { data: response, ts: Date.now() });

@@ -45,7 +45,7 @@ export class AuditController {
 			requestType: requestType || undefined,
 			from: from ? new Date(from) : undefined,
 			to: to ? new Date(to) : undefined,
-			ownerAddress: req.sessionUser?.toLowerCase(),
+			ownerId: req.sessionUserId,
 		};
 
 		const pagination = {
@@ -84,7 +84,7 @@ export class AuditController {
 			status: (status as RequestStatus) || undefined,
 			from: from ? new Date(from) : undefined,
 			to: to ? new Date(to) : undefined,
-			ownerAddress: req.sessionUser?.toLowerCase(),
+			ownerId: req.sessionUserId,
 		};
 
 		// Fetch all matching records (up to 10k for export)

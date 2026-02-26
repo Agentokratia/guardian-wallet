@@ -8,27 +8,11 @@ import type {
 	CreateSignSessionResponse,
 	ProcessSignRoundResponse,
 } from './http-client.js';
-import { loadShareFromFile, wipeShare } from './share-loader.js';
+import { wipeShare } from './share-loader.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** Options accepted by the {@link ThresholdSigner.fromFile} factory. */
-export interface FromFileOptions {
-	/** Path to the encrypted `.enc` share file. */
-	readonly sharePath: string;
-	/** Passphrase used to decrypt the share file. */
-	readonly passphrase: string;
-	/** Base URL of the threshold signing server (e.g. `http://localhost:8080`). */
-	readonly serverUrl: string;
-	/** API key for authenticating with the server (`gw_live_*` / `gw_test_*`). */
-	readonly apiKey: string;
-	/** Threshold signing scheme implementation. Defaults to CGGMP24. */
-	readonly scheme?: IThresholdScheme;
-	/** Optional HTTP timeout in milliseconds (default: 30 000). */
-	readonly timeout?: number;
-}
 
 /** Options accepted by the {@link ThresholdSigner.fromSecret} factory. */
 export interface FromSecretOptions {
@@ -107,63 +91,53 @@ export class ThresholdSigner {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Create a {@link ThresholdSigner} from an encrypted share file on disk.
-	 */
-	static async fromFile(opts: FromFileOptions): Promise<ThresholdSigner> {
-		const share = await loadShareFromFile(opts.sharePath, opts.passphrase);
-		const scheme = opts.scheme ?? (await getDefaultScheme());
-
-		const httpClient = new HttpClient({
-			baseUrl: opts.serverUrl,
-			apiKey: opts.apiKey,
-			timeout: opts.timeout,
-		});
-
-		return new ThresholdSigner(share, scheme, httpClient);
-	}
-
-	/**
 	 * Create a {@link ThresholdSigner} from a base64-encoded key material secret.
 	 *
 	 * The apiSecret is a base64-encoded JSON: { coreShare: base64, auxInfo: base64 }
 	 */
 	static async fromSecret(opts: FromSecretOptions): Promise<ThresholdSigner> {
 		const data = new Uint8Array(Buffer.from(opts.apiSecret, 'base64'));
-		const scheme = opts.scheme ?? (await getDefaultScheme());
 
-		// Initialize WASM if the scheme supports it (needed for signing + key extraction)
-		if (
-			'initWasm' in scheme &&
-			typeof (scheme as Record<string, unknown>).initWasm === 'function'
-		) {
-			await (scheme as { initWasm: () => Promise<void> }).initWasm();
-		}
-
-		// Try to extract public key from the key material
-		let publicKey = new Uint8Array(0);
 		try {
-			const keyMaterial = parseKeyMaterial(data);
-			const extracted = scheme.extractPublicKey?.(keyMaterial.coreShare);
-			publicKey = extracted ? new Uint8Array(extracted) : new Uint8Array(0);
-		} catch {
-			// Key extraction failed — signing still works, address derivation won't
+			const scheme = opts.scheme ?? (await getDefaultScheme());
+
+			// Initialize WASM if the scheme supports it (needed for signing + key extraction)
+			if (
+				'initWasm' in scheme &&
+				typeof (scheme as Record<string, unknown>).initWasm === 'function'
+			) {
+				await (scheme as { initWasm: () => Promise<void> }).initWasm();
+			}
+
+			// Try to extract public key from the key material
+			let publicKey = new Uint8Array(0);
+			try {
+				const keyMaterial = parseKeyMaterial(data);
+				const extracted = scheme.extractPublicKey?.(keyMaterial.coreShare);
+				publicKey = extracted ? new Uint8Array(extracted) : new Uint8Array(0);
+			} catch {
+				// Key extraction failed — signing still works, address derivation won't
+			}
+
+			const share: Share = {
+				data,
+				participantIndex: 1,
+				publicKey,
+				scheme: 'cggmp24' as Share['scheme'],
+				curve: 'secp256k1' as Share['curve'],
+			};
+
+			const httpClient = new HttpClient({
+				baseUrl: opts.serverUrl,
+				apiKey: opts.apiKey,
+				timeout: opts.timeout,
+			});
+
+			return new ThresholdSigner(share, scheme, httpClient);
+		} catch (err) {
+			data.fill(0);
+			throw err;
 		}
-
-		const share: Share = {
-			data,
-			participantIndex: 1,
-			publicKey,
-			scheme: 'cggmp24' as Share['scheme'],
-			curve: 'secp256k1' as Share['curve'],
-		};
-
-		const httpClient = new HttpClient({
-			baseUrl: opts.serverUrl,
-			apiKey: opts.apiKey,
-			timeout: opts.timeout,
-		});
-
-		return new ThresholdSigner(share, scheme, httpClient);
 	}
 
 	// -----------------------------------------------------------------------

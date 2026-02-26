@@ -24,7 +24,7 @@ export const infoCommand = new Command('info')
 			console.log(`  ${dim('API Key')}    ${config.apiKey.slice(0, 12)}…`);
 			console.log(`  ${dim('Policy')}     ${config.serverUrl}`);
 			if (config.signerId) {
-				console.log(`  ${dim('Signer ID')}  ${config.signerId}`);
+				console.log(`  ${dim('Account ID')} ${config.signerId}`);
 			}
 			console.log(`  ${dim('Config')}     ${getSignerConfigPath(config.signerName)}`);
 			console.log('');

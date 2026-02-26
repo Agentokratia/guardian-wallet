@@ -1,6 +1,6 @@
 import type { PolicyRule } from '@agentokratia/guardian-core';
 
-export type PolicyDocumentStatus = 'draft' | 'active';
+export type PolicyDocumentStatus = 'active';
 
 export interface PolicyDocumentEntity {
 	readonly id: string;

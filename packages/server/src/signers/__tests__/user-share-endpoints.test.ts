@@ -22,7 +22,7 @@ function createMocks() {
 			id: 'signer-1',
 			name: 'Test',
 			ethAddress: '0xabc',
-			ownerAddress: '0xTestOwner',
+			ownerId: 'user-123',
 			network: 'sepolia',
 		}),
 		list: vi.fn(),
@@ -63,7 +63,7 @@ function createMocks() {
 describe('SignerController — user share endpoints', () => {
 	let controller: SignerController;
 	let mocks: ReturnType<typeof createMocks>;
-	const defaultReq = { sessionUser: '0xTestOwner' } as AuthenticatedRequest;
+	const defaultReq = { sessionUserId: 'user-123' } as AuthenticatedRequest;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -213,7 +213,7 @@ describe('SignerController — user share endpoints', () => {
 			);
 
 			await expect(
-				controller.getUserShare('nonexistent', { sessionUser: '0xwallet' } as never),
+				controller.getUserShare('nonexistent', { sessionUserId: 'user-123' } as never),
 			).rejects.toThrow('Signer not found');
 		});
 	});

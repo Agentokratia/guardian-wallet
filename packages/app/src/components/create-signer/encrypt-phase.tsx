@@ -19,14 +19,13 @@ const PASSKEY_BENEFITS = [
 
 interface EncryptPhaseProps {
 	onEncrypt: () => Promise<void>;
-	onSkip: () => void;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Component                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export function EncryptPhase({ onEncrypt, onSkip }: EncryptPhaseProps) {
+export function EncryptPhase({ onEncrypt }: EncryptPhaseProps) {
 	const [encrypting, setEncrypting] = useState(false);
 	const [error, setError] = useState('');
 
@@ -58,19 +57,19 @@ export function EncryptPhase({ onEncrypt, onSkip }: EncryptPhaseProps) {
 
 					<div>
 						<h2 className="text-[15px] font-semibold text-text">
-							{encrypting ? 'Waiting for passkey\u2026' : 'Secure your backup'}
+							{encrypting ? 'Waiting for passkey\u2026' : 'Secure your recovery key'}
 						</h2>
 						<p className="mt-1.5 text-[12px] text-text-muted leading-relaxed max-w-sm mx-auto">
 							{encrypting
-								? 'Complete the passkey prompt in your browser to secure your backup.'
-								: 'Use your passkey to create a secure backup. This lets you sign transactions from the dashboard without the CLI.'}
+								? 'Complete the passkey prompt in your browser to secure your recovery key.'
+								: 'Your passkey encrypts a recovery key that lets you sign from the dashboard and recover access if needed. This only takes a second.'}
 						</p>
 					</div>
 				</div>
 
-				{/* What this enables — shown before action buttons */}
+				{/* What this enables */}
 				<div className="rounded-lg bg-surface-hover px-4 py-3 space-y-1.5">
-					<p className="text-[11px] font-semibold text-text-muted">With passkey backup you can:</p>
+					<p className="text-[11px] font-semibold text-text-muted">This enables:</p>
 					<ul className="space-y-1">
 						{PASSKEY_BENEFITS.map((item) => (
 							<li key={item} className="flex items-start gap-2 text-[11px] text-text-dim">
@@ -95,7 +94,7 @@ export function EncryptPhase({ onEncrypt, onSkip }: EncryptPhaseProps) {
 									className="h-4 w-4 animate-spin motion-reduce:animate-none"
 									aria-hidden="true"
 								/>
-								Encrypting\u2026
+								Encrypting{'\u2026'}
 							</>
 						) : error ? (
 							<>
@@ -109,16 +108,8 @@ export function EncryptPhase({ onEncrypt, onSkip }: EncryptPhaseProps) {
 							</>
 						)}
 					</Button>
-					<button
-						type="button"
-						onClick={onSkip}
-						disabled={encrypting}
-						className="w-full text-center text-[12px] text-text-dim hover:text-text-muted transition-colors py-1 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
-					>
-						Skip for now
-					</button>
 					<p className="text-center text-[10px] text-text-dim">
-						You can add this later from account settings.
+						Required to secure your recovery key. It only takes a second.
 					</p>
 				</div>
 			</CardContent>

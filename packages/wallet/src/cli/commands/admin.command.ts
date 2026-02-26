@@ -1,18 +1,11 @@
-import { createHash } from 'node:crypto';
 import { CRITERION_CATALOG } from '@agentokratia/guardian-core';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { Command, type Command as CommandType } from 'commander';
 import ora from 'ora';
 import { formatEther } from 'viem';
-import {
-	type SignerConfig,
-	deleteAdminToken,
-	loadAdminToken,
-	loadSignerConfig,
-	saveAdminToken,
-} from '../../lib/config.js';
-import { getUserShare } from '../../lib/keychain.js';
+import { type SignerConfig, loadSignerConfig } from '../../lib/config.js';
+import { getSession } from '../../lib/keychain.js';
 import { buildRules, parseFormValues } from '../../lib/policy-conversions.js';
 import { brand, danger, dim, failMark, promptTheme, success, warn } from '../theme.js';
 
@@ -54,8 +47,6 @@ interface AdminContext {
 
 interface PolicyDocument {
 	rules: Record<string, unknown>[];
-	status?: 'draft' | 'active';
-	activatedAt?: string;
 	version?: number;
 }
 
@@ -73,45 +64,7 @@ interface AuditEntry {
 }
 
 // ---------------------------------------------------------------------------
-// TTL parsing
-// ---------------------------------------------------------------------------
-
-function parseTtlSeconds(ttl: string): number {
-	const match = ttl.match(/^(\d+)\s*(s|m|h|d)$/);
-	if (!match) throw new Error('Invalid TTL format. Use e.g. 30m, 8h, 1d.');
-	const n = Number.parseInt(match[1] ?? '0', 10);
-	const unit = match[2] ?? 's';
-	const multiplier = { s: 1, m: 60, h: 3600, d: 86_400 }[unit] ?? 1;
-	return n * multiplier;
-}
-
-async function exchangeForJwt(
-	serverUrl: string,
-	signerId: string,
-	hash: string,
-	ttlSeconds?: number,
-): Promise<{ token: string; expiresIn: number }> {
-	const url = `${serverUrl.replace(/\/+$/, '')}/api/v1/auth/admin-token`;
-	const body: Record<string, unknown> = { signerId, adminToken: hash };
-	if (ttlSeconds) body.ttl = ttlSeconds;
-
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body),
-		signal: AbortSignal.timeout(15_000),
-	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`Failed to get admin token: ${response.status} ${text}`);
-	}
-
-	return response.json() as Promise<{ token: string; expiresIn: number }>;
-}
-
-// ---------------------------------------------------------------------------
-// Auth resolution
+// Auth resolution — uses session JWT from `gw login`
 // ---------------------------------------------------------------------------
 
 async function getAdminContext(command: CommandType): Promise<AdminContext> {
@@ -122,30 +75,17 @@ async function getAdminContext(command: CommandType): Promise<AdminContext> {
 		throw new Error('No signer ID in config. Re-run `gw init` or add signerId to config.');
 	}
 
+	const token = await getSession();
+	if (!token) {
+		throw new Error(`Not logged in. Run ${chalk.bold('gw login')} first.`);
+	}
+
 	const headers: Record<string, string> = {
-		'x-api-key': config.apiKey,
-		'x-signer-id': config.signerId,
 		'content-type': 'application/json',
+		authorization: `Bearer ${token}`,
 	};
 
-	// Admin token file (JWT issued by `gw admin unlock`)
-	const result = loadAdminToken(config.signerName);
-
-	switch (result.status) {
-		case 'valid':
-			headers['x-admin-token'] = result.token.token;
-			return { config, signerName: config.signerName, signerId: config.signerId, headers };
-		case 'expired':
-			throw new Error(
-				`Admin token expired. Run ${chalk.bold('gw admin unlock')} to re-authenticate.`,
-			);
-		case 'corrupt':
-			throw new Error(
-				`Admin token file is corrupt. Run ${chalk.bold('gw admin unlock')} to get a new one.`,
-			);
-		case 'missing':
-			throw new Error(`Not unlocked. Run ${chalk.bold('gw admin unlock')} first.`);
-	}
+	return { config, signerName: config.signerName, signerId: config.signerId, headers };
 }
 
 function getAuditContext(command: CommandType): {
@@ -269,65 +209,6 @@ function pad(str: string, width: number): string {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const unlockCommand = new Command('unlock')
-	.description('Enable admin access (reads recovery key from keychain)')
-	.option('--ttl <duration>', 'Token expiry (e.g. 30m, 8h, 1d)', '5m')
-	.action(
-		withErrorHandler(async (opts: { ttl: string }, command: CommandType) => {
-			const signerName = command.optsWithGlobals().signer;
-			const config = loadSignerConfig(signerName);
-
-			if (!config.signerId) {
-				throw new Error('No signer ID in config. Re-run `gw init` or add signerId to config.');
-			}
-
-			const spinner = ora({ text: 'Reading recovery key from keychain…', indent: 2 }).start();
-
-			const userShare = await getUserShare(config.signerName);
-			if (!userShare) {
-				spinner.fail('No recovery key found in keychain');
-				console.error(dim('\n  Was this wallet created via `gw init`?\n'));
-				process.exitCode = 1;
-				return;
-			}
-
-			spinner.text = 'Exchanging for admin token…';
-
-			const hash = createHash('sha256').update(userShare).digest('hex');
-			const ttlSeconds = parseTtlSeconds(opts.ttl);
-			const { token, expiresIn } = await exchangeForJwt(
-				config.serverUrl,
-				config.signerId,
-				hash,
-				ttlSeconds,
-			);
-
-			const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-			saveAdminToken(config.signerName, {
-				token,
-				createdAt: new Date().toISOString(),
-				expiresAt,
-			});
-
-			spinner.succeed(`Admin access enabled for "${config.signerName}" (expires: ${opts.ttl})`);
-			console.log('');
-		}),
-	);
-
-const lockCommand = new Command('lock').description('Revoke admin access (deletes token)').action(
-	withErrorHandler(async (_opts: unknown, command: CommandType) => {
-		const signerName = command.optsWithGlobals().signer;
-		const config = loadSignerConfig(signerName);
-
-		const deleted = deleteAdminToken(config.signerName);
-		if (deleted) {
-			console.log(`\n  ${success('✓')} Admin access revoked for "${config.signerName}"\n`);
-		} else {
-			console.log(`\n  ${dim('No admin token found for')} "${config.signerName}"\n`);
-		}
-	}),
-);
-
 // -- Policies ----------------------------------------------------------------
 
 async function handlePoliciesList(command: CommandType): Promise<void> {
@@ -357,9 +238,7 @@ async function handlePoliciesList(command: CommandType): Promise<void> {
 		console.log(dim('  No policy configured.'));
 		console.log(dim(`  Run ${chalk.reset('gw admin policies edit')} to create one.`));
 	} else {
-		console.log(
-			`  ${dim('Status:')} ${doc.status === 'active' ? success('active') : warn('draft')}`,
-		);
+		console.log(`  ${dim('Status:')} ${success('active')}`);
 		if (doc.version) console.log(`  ${dim('Version:')} ${doc.version}`);
 		console.log('');
 
@@ -398,20 +277,6 @@ const policiesEditCommand = new Command('edit')
 				currentRules = doc.rules ?? [];
 			} catch {
 				// No active policy
-			}
-
-			// Also check for draft
-			try {
-				const draft = await adminFetch<PolicyDocument>(
-					ctx.config.serverUrl,
-					`/signers/${ctx.signerId}/policy/draft`,
-					ctx.headers,
-				);
-				if (draft.rules && draft.rules.length > 0) {
-					currentRules = draft.rules;
-				}
-			} catch {
-				// No draft
 			}
 
 			spinner.stop();
@@ -501,7 +366,7 @@ const policiesEditCommand = new Command('edit')
 			}
 
 			const ok = await confirm({
-				message: 'Save and activate this policy?',
+				message: 'Save policy?',
 				default: true,
 				theme: promptTheme,
 			});
@@ -515,51 +380,13 @@ const policiesEditCommand = new Command('edit')
 
 			await adminFetch<void>(
 				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policy/draft`,
+				`/signers/${ctx.signerId}/policy`,
 				ctx.headers,
 				'PUT',
 				{ rules },
 			);
 
-			await adminFetch<void>(
-				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policy/activate`,
-				ctx.headers,
-				'POST',
-			);
-
-			saveSpinner.succeed(`Policy activated (${enabledCount} rules)`);
-			console.log('');
-		}),
-	);
-
-const policiesActivateCommand = new Command('activate')
-	.description('Activate the draft policy')
-	.action(
-		withErrorHandler(async (_opts: unknown, command: CommandType) => {
-			const ctx = await getAdminContext(command);
-
-			const ok = await confirm({
-				message: 'Activate draft policy? This replaces the current active policy.',
-				default: true,
-				theme: promptTheme,
-			});
-
-			if (!ok) {
-				console.log(dim('\n  Cancelled.\n'));
-				return;
-			}
-
-			const spinner = ora({ text: 'Activating\u2026', indent: 2 }).start();
-
-			await adminFetch<void>(
-				ctx.config.serverUrl,
-				`/signers/${ctx.signerId}/policy/activate`,
-				ctx.headers,
-				'POST',
-			);
-
-			spinner.succeed('Policy activated');
+			saveSpinner.succeed(`Policy saved (${enabledCount} rules)`);
 			console.log('');
 		}),
 	);
@@ -633,23 +460,16 @@ const auditCommand = new Command('audit')
 	.action(
 		withErrorHandler(
 			async (opts: { limit: string; status?: string; export?: boolean }, command: CommandType) => {
-				// Audit uses API key auth only — no admin token needed
-				const { config } = getAuditContext(command);
-				const signerId = config.signerId;
-
-				if (!signerId) {
-					throw new Error('No signer ID in config.');
-				}
-
 				const params = new URLSearchParams();
-				params.set('signerId', signerId);
-				params.set('limit', opts.limit);
-				if (opts.status) params.set('status', opts.status);
 
-				const baseUrl = config.serverUrl.replace(/\/+$/, '');
-				const headers: Record<string, string> = { 'x-api-key': config.apiKey };
-
+				// Export requires session auth (SessionGuard); list accepts either
 				if (opts.export) {
+					const { config, headers } = await getAdminContext(command);
+					if (!config.signerId) throw new Error('No signer ID in config.');
+					params.set('signerId', config.signerId);
+					if (opts.status) params.set('status', opts.status);
+
+					const baseUrl = config.serverUrl.replace(/\/+$/, '');
 					const url = `${baseUrl}/api/v1/audit-log/export?${params}`;
 					const response = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
 					if (!response.ok) throw new Error(`Server returned ${response.status}`);
@@ -657,6 +477,17 @@ const auditCommand = new Command('audit')
 					process.stdout.write(csv);
 					return;
 				}
+
+				const { config } = getAuditContext(command);
+				const signerId = config.signerId;
+				if (!signerId) throw new Error('No signer ID in config.');
+
+				params.set('signerId', signerId);
+				params.set('limit', opts.limit);
+				if (opts.status) params.set('status', opts.status);
+
+				const baseUrl = config.serverUrl.replace(/\/+$/, '');
+				const headers: Record<string, string> = { 'x-api-key': config.apiKey };
 
 				const spinner = ora({ text: 'Fetching audit log…', indent: 2 }).start();
 				const url = `${baseUrl}/api/v1/audit-log?${params}`;
@@ -723,12 +554,9 @@ const policiesCommand = new Command('policies').description('Manage signing poli
 );
 
 policiesCommand.addCommand(policiesEditCommand);
-policiesCommand.addCommand(policiesActivateCommand);
 
 export const adminCommand = new Command('admin')
-	.description('Admin operations (policies, pause/resume, audit)')
-	.addCommand(unlockCommand)
-	.addCommand(lockCommand)
+	.description('Admin operations — requires gw login (policies, pause/resume, audit)')
 	.addCommand(policiesCommand)
 	.addCommand(pauseCommand)
 	.addCommand(resumeCommand)

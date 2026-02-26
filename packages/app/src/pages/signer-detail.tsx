@@ -3,22 +3,27 @@ import { AddTokenDialog } from '@/components/add-token-dialog';
 import { BadgeDialog } from '@/components/certification/badge-dialog';
 import { NetworkIcon } from '@/components/network-icon';
 import { ReceiveDialog } from '@/components/receive-dialog';
+import { ShareTransferDialog } from '@/components/share-transfer-dialog';
 import { SignerSubnav } from '@/components/signer-subnav';
 import { TokenLogo } from '@/components/token-logo';
 import { Button } from '@/components/ui/button';
 import { useAllTokenBalances } from '@/hooks/use-all-token-balances';
 import { useAuditLog } from '@/hooks/use-audit-log';
+import { useAuth } from '@/hooks/use-auth';
 import { useBalance } from '@/hooks/use-balance';
 import { useCertification } from '@/hooks/use-certification';
 import { type Network, useNetworks } from '@/hooks/use-networks';
 import { usePolicy } from '@/hooks/use-policies';
 import { useSigner } from '@/hooks/use-signer';
 import type { TokenBalance } from '@/hooks/use-token-balances';
+import { ApiError, api } from '@/lib/api-client';
 import { TIER_COLORS } from '@/lib/certification-score';
 import { formatTokenBalance, formatWei } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 import { CRITERION_CATALOG } from '@agentokratia/guardian-core';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+	AlertTriangle,
 	ArrowDownLeft,
 	ArrowRight,
 	ArrowUpRight,
@@ -26,10 +31,12 @@ import {
 	CheckCircle2,
 	ChevronDown,
 	Copy,
+	Link2,
 	Loader2,
 	Plus,
 	Shield,
 	ShieldCheck,
+	Terminal,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -225,15 +232,37 @@ export function SignerDetailPage() {
 	const { id } = useParams<{ id: string }>();
 	const signerId = id ?? '';
 
+	const { isAuthenticated } = useAuth();
+	const queryClient = useQueryClient();
 	const { data: signer, isLoading: signerLoading } = useSigner(signerId);
 	const { data: balanceData, isLoading: balanceLoading } = useBalance(signerId);
 	const { data: networks } = useNetworks();
 	const { data: policyDoc } = usePolicy(signerId);
 	const certification = useCertification(signerId);
 
+	// Check if user share is linked (enables dashboard signing)
+	const { data: hasUserShare } = useQuery({
+		queryKey: ['user-share-check', signerId],
+		queryFn: async () => {
+			try {
+				await api.get(`/signers/${signerId}/user-share`);
+				return true;
+			} catch (err) {
+				if (err instanceof ApiError && err.status === 404) return false;
+				throw err;
+			}
+		},
+		enabled: !!signerId && isAuthenticated,
+		staleTime: 30_000,
+	});
+
 	const [selectedNetwork, setSelectedNetwork] = useState<string | null>(null);
 	const [addTokenOpen, setAddTokenOpen] = useState(false);
 	const [receiveOpen, setReceiveOpen] = useState(false);
+	const [transferOpen, setTransferOpen] = useState(false);
+	const [transferInitialMode, setTransferInitialMode] = useState<'import' | 'export' | undefined>(
+		undefined,
+	);
 	const [badgeOpen, setBadgeOpen] = useState(false);
 	const [showNetworks, setShowNetworks] = useState(false);
 	const [showZeroTokens, setShowZeroTokens] = useState(false);
@@ -434,6 +463,20 @@ export function SignerDetailPage() {
 								<ArrowDownLeft className="h-3 w-3" />
 								Receive
 							</button>
+							{hasUserShare === true && (
+								<button
+									type="button"
+									onClick={() => {
+										setTransferInitialMode('export');
+										setTransferOpen(true);
+									}}
+									className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3.5 py-1.5 text-[11px] font-semibold text-text-muted transition-[background-color,transform] hover:bg-surface-hover active:scale-[0.97]"
+									title="Transfer your recovery key to the CLI for admin operations"
+								>
+									<Shield className="h-3 w-3" />
+									Recovery Key
+								</button>
+							)}
 						</div>
 					</div>
 				</div>
@@ -506,6 +549,57 @@ export function SignerDetailPage() {
 					</div>
 				)}
 			</div>
+
+			{/* ══════════════════════════════════════════════════════════ */}
+			{/*  LINK GUIDANCE — shown when signing key is not linked    */}
+			{/* ══════════════════════════════════════════════════════════ */}
+			{isAuthenticated && hasUserShare === false && (
+				<div className="rounded-xl border border-border bg-surface overflow-hidden">
+					<div className="px-5 py-4">
+						<div className="flex items-start gap-3">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+								<Shield className="h-4 w-4 text-accent" />
+							</div>
+							<div className="flex-1 min-w-0">
+								<p className="text-[13px] font-semibold text-text">Enable dashboard signing</p>
+								<p className="text-[11px] text-text-dim mt-1 leading-relaxed">
+									Your CLI can already sign transactions. To also sign from this dashboard, transfer
+									your recovery key from the CLI.
+								</p>
+								<p className="text-[10px] text-text-dim mt-2 leading-relaxed">
+									This lets you: sign transactions from the browser, manage guardrails visually, and
+									override signing if the CLI is offline.
+								</p>
+							</div>
+						</div>
+					</div>
+					<div className="border-t border-border bg-background/50 px-5 py-3">
+						<div className="flex items-center gap-3">
+							<button
+								type="button"
+								onClick={() => {
+									setTransferInitialMode('import');
+									setTransferOpen(true);
+								}}
+								className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[11px] font-semibold text-accent-foreground shadow-sm transition-[background-color,transform] hover:bg-accent-hover active:scale-[0.97]"
+							>
+								<Shield className="h-3.5 w-3.5" />
+								Transfer Recovery Key
+							</button>
+							<div className="flex items-center gap-2 text-[10px] text-text-dim">
+								<Terminal className="h-3 w-3 shrink-0" />
+								<span>
+									Run{' '}
+									<code className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
+										gw link {signer?.name ?? ''}
+									</code>{' '}
+									first
+								</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* ══════════════════════════════════════════════════════════ */}
 			{/*  PROTECTION BAND — guardrails + cert side by side        */}
@@ -752,6 +846,19 @@ export function SignerDetailPage() {
 				onOpenChange={setReceiveOpen}
 				address={signer.ethAddress}
 				accountName={signer.name}
+			/>
+			<ShareTransferDialog
+				open={transferOpen}
+				onOpenChange={(open) => {
+					setTransferOpen(open);
+					if (!open) {
+						// Refresh user-share status — linking may have completed
+						queryClient.invalidateQueries({ queryKey: ['user-share-check', signerId] });
+					}
+				}}
+				signerId={signerId}
+				signerName={signer.name}
+				initialMode={transferInitialMode}
 			/>
 			{certification && (
 				<BadgeDialog

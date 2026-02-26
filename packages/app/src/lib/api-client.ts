@@ -22,6 +22,35 @@ export const AUTH_EXPIRED_EVENT = 'auth:expired';
 const MAX_RETRIES = 1;
 const RETRY_DELAY_MS = 500;
 
+// ---------------------------------------------------------------------------
+// Silent refresh — try once before dispatching AUTH_EXPIRED_EVENT
+// ---------------------------------------------------------------------------
+
+let refreshing: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+	// Deduplicate concurrent refresh calls
+	if (refreshing) return refreshing;
+	refreshing = (async () => {
+		try {
+			const res = await fetch(`${BASE_URL}/auth/refresh`, {
+				method: 'POST',
+				credentials: 'include',
+			});
+			return res.ok;
+		} catch {
+			return false;
+		} finally {
+			refreshing = null;
+		}
+	})();
+	return refreshing;
+}
+
+// ---------------------------------------------------------------------------
+// Core request function
+// ---------------------------------------------------------------------------
+
 async function request<T>(
 	method: string,
 	path: string,
@@ -46,15 +75,46 @@ async function request<T>(
 
 			if (!res.ok) {
 				if (res.status === 401) {
-					// Only 401 (Unauthorized) means the session expired.
-					// 403 (Forbidden) means authenticated but not authorized for this action
-					// (e.g. policy block, ownership check) — do NOT clear auth state.
+					// Try silent refresh before giving up
+					const refreshed = await tryRefresh();
+					if (refreshed) {
+						// Retry the original request with new cookie
+						const retryRes = await fetch(`${BASE_URL}${path}`, {
+							method,
+							headers: body ? { 'Content-Type': 'application/json' } : undefined,
+							body: body ? JSON.stringify(body) : undefined,
+							credentials: 'include',
+							signal: AbortSignal.timeout(timeoutMs),
+						});
+						if (retryRes.ok) {
+							if (retryRes.status === 204) return undefined as T;
+							return retryRes.json() as Promise<T>;
+						}
+						// Retry failed — throw from retry response, not original
+						const retryText = await retryRes.text().catch(() => retryRes.statusText);
+						let retryMessage = retryText;
+						try {
+							const json = JSON.parse(retryText) as { message?: string };
+							if (json.message) retryMessage = json.message;
+						} catch {
+							// Not JSON
+						}
+						authEvents.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+						throw new ApiError(retryRes.status, retryMessage);
+					}
+					// Refresh itself failed — session is truly expired
 					authEvents.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
-					const text = await res.text().catch(() => res.statusText);
-					throw new ApiError(res.status, text);
 				}
 				const text = await res.text().catch(() => res.statusText);
-				throw new ApiError(res.status, text);
+				// Extract human-readable message from JSON error responses
+				let message = text;
+				try {
+					const json = JSON.parse(text) as { message?: string };
+					if (json.message) message = json.message;
+				} catch {
+					// Not JSON — use raw text
+				}
+				throw new ApiError(res.status, message);
 			}
 
 			if (res.status === 204) return undefined as T;
@@ -62,8 +122,8 @@ async function request<T>(
 		} catch (err) {
 			lastError = err instanceof Error ? err : new Error(String(err));
 
-			// Don't retry auth errors or client errors
-			if (err instanceof ApiError && err.status < 500) throw err;
+			// Don't retry auth errors, client errors, or 503 (deliberate "not ready")
+			if (err instanceof ApiError && (err.status < 500 || err.status === 503)) throw err;
 
 			// Retry on network errors or 5xx
 			if (attempt < MAX_RETRIES) {

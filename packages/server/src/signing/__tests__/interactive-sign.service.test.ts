@@ -94,7 +94,7 @@ function makeSigner(overrides: Partial<Signer> = {}): Signer {
 		scheme: SchemeName.CGGMP24,
 		network: NetworkName.SEPOLIA,
 		status: SignerStatus.ACTIVE,
-		ownerAddress: '0xTestOwner',
+		ownerId: 'test-user-id',
 		apiKeyHash: 'hash123',
 		vaultSharePath: 'threshold/shares/signer-1',
 		dkgCompleted: true,

@@ -33,7 +33,7 @@ export interface VerifyAuthInput {
 	credentialCounter: number;
 	credentialId: string;
 	rpId: string;
-	origin: string;
+	origin: string | string[];
 }
 
 export interface VerifiedAuth {
@@ -73,7 +73,7 @@ export async function verifyRegistration(
 	response: RegistrationResponseJSON,
 	expectedChallenge: string,
 	rpId: string,
-	origin: string,
+	origin: string | string[],
 ): Promise<VerifiedRegistration> {
 	const verification = await verifyRegistrationResponse({
 		response,
