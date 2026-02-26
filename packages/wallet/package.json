@@ -1,6 +1,6 @@
 {
 	"name": "@agentokratia/guardian-wallet",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Guardian Wallet — CLI + MCP server for threshold signing. The key never exists.",
 	"license": "Apache-2.0",
 	"author": "Agentokratia <hello@agentokratia.com>",
