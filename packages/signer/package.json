@@ -1,6 +1,6 @@
 {
 	"name": "@agentokratia/guardian-signer",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "SDK for threshold signing — the key never exists",
 	"license": "Apache-2.0",
 	"author": "Agentokratia <hello@agentokratia.com>",

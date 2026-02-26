@@ -1,6 +1,6 @@
 {
 	"name": "@agentokratia/guardian-schemes",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "CGGMP24 threshold ECDSA signing scheme (WASM)",
 	"license": "Apache-2.0",
 	"author": "Agentokratia <hello@agentokratia.com>",
