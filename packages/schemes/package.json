@@ -39,7 +39,7 @@
 		"@noble/curves": "^2.0.1",
 		"@agentokratia/guardian-core": "workspace:*",
 		"@agentokratia/guardian-mpc-wasm": "workspace:*",
-		"viem": "^2.21.0"
+		"viem": "^2.47.1"
 	},
 	"devDependencies": {}
 }
