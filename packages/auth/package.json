@@ -41,9 +41,9 @@
 	},
 	"dependencies": {
 		"@noble/curves": "^2.0.1",
-		"@noble/hashes": "^1.7.1",
-		"@simplewebauthn/browser": "^13.0.0",
-		"@simplewebauthn/server": "^13.0.0"
+		"@noble/hashes": "^2.0.1",
+		"@simplewebauthn/browser": "^13.3.0",
+		"@simplewebauthn/server": "^13.3.0"
 	},
 	"peerDependencies": {
 		"viem": "^2.0.0"
