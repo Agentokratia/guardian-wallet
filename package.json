@@ -36,16 +36,16 @@
 		"*.{ts,tsx,js,jsx,json,css}": ["biome check --fix --no-errors-on-unmatched"]
 	},
 	"devDependencies": {
-		"@anthropic-ai/sdk": "^0.75.0",
-		"@biomejs/biome": "^1.9.0",
-		"@changesets/changelog-github": "^0.5.2",
-		"@changesets/cli": "^2.29.8",
+		"@anthropic-ai/sdk": "^0.79.0",
+		"@biomejs/biome": "^2.4.7",
+		"@changesets/changelog-github": "^0.6.0",
+		"@changesets/cli": "^2.30.0",
 		"@google/generative-ai": "^0.24.1",
 		"husky": "^9.1.7",
-		"lint-staged": "^16.2.7",
-		"openai": "^6.22.0",
+		"lint-staged": "^16.4.0",
+		"openai": "^6.32.0",
 		"tsx": "^4.19.0",
-		"turbo": "^2.3.0",
+		"turbo": "^2.8.17",
 		"typescript": "^5.6.0",
 		"vitest": "^2.0.0"
 	}
