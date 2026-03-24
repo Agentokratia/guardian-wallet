@@ -7,7 +7,7 @@
 	},
 	"dependencies": {
 		"@agentokratia/guardian-signer": "workspace:*",
-		"viem": "^2.21.0"
+		"viem": "^2.47.6"
 	},
 	"devDependencies": {
 		"tsx": "^4.19.0"
