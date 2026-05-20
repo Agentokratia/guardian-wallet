@@ -7,12 +7,12 @@
 	},
 	"dependencies": {
 		"@agentokratia/guardian-signer": "workspace:*",
-		"@ai-sdk/openai": "^1.2.0",
-		"ai": "^4.3.0",
-		"viem": "^2.21.0",
-		"zod": "^3.23.0"
+		"@ai-sdk/openai": "^3.0.64",
+		"ai": "^6.0.185",
+		"viem": "^2.50.4",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"tsx": "^4.19.0"
+		"tsx": "^4.22.3"
 	}
 }
