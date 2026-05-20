@@ -3,10 +3,10 @@
 	"private": true,
 	"type": "module",
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.12.0",
+		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@google/generative-ai": "^0.24.1"
 	},
 	"devDependencies": {
-		"tsx": "^4.19.0"
+		"tsx": "^4.22.3"
 	}
 }
